@@ -4,14 +4,15 @@
  */
 
 const GAS_STORAGE_KEY = 'cpm_gas_webapp_url';
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzT9MF8xOPiiGZvGbZRZB1T3erYYrOLGxhgfegsnJySMIlRlyNmIWmfNCOI_fdVicKjow/exec';
 
 export const gasService = {
   /**
    * ดึง URL ของ Google Apps Script ที่บันทึกไว้ใน LocalStorage
    */
   getUrl() {
-    if (typeof localStorage === 'undefined') return '';
-    return localStorage.getItem(GAS_STORAGE_KEY) || '';
+    if (typeof localStorage === 'undefined') return DEFAULT_GAS_URL;
+    return localStorage.getItem(GAS_STORAGE_KEY) || DEFAULT_GAS_URL;
   },
 
   /**
