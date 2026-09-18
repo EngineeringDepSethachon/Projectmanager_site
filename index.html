@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ระบบรายงานประจำวันหน้างาน (Foreman Site) | เปิดงานเช้า & รายงานจบงาน</title>
+  <meta name="description" content="ระบบรายงานประจำวันหน้างานก่อสร้างสำหรับโฟร์แมน 2 จังหวะ: เปิดงานตอนเช้า (งานที่คาดการณ์) และรายงานจบงานตอนเย็น เชื่อมต่อ LINE LIFF และ GAS">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- LINE LIFF SDK (v2) -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Mobile App Wrapper -->
+  <div class="mobile-container">
+    
+    <!-- Top Bar -->
+    <header class="app-header">
+      <div class="header-top">
+        <div class="brand-title">
+          <span class="brand-icon">👷‍♂️</span>
+          <h1>รายงานหน้างานประจำวัน</h1>
+        </div>
+        <div class="header-badge" id="shift-badge-top">🌅 รอบเช้า</div>
+      </div>
+      
+      <div class="header-subinfo">
+        <div class="date-badge">
+          <span>📅 วันที่:</span>
+          <strong id="display-report-date">18 ก.ย. 2026</strong>
+        </div>
+        <div class="project-tag">โครงการ: อาคารสำนักงาน 8 ชั้น</div>
+      </div>
+
+      <!-- Subcontractor selection -->
+      <div class="subcontractor-row">
+        <label for="subcontractor-select">ผู้รับเหมา / แผนก:</label>
+        <select id="subcontractor-select" class="subcontractor-dropdown">
+          <option value="SUB-01" selected>หจก. นครพิงค์โครงสร้าง (งานโครงสร้างฐานราก)</option>
+          <option value="SUB-02">บจก. สยามสถาปัตย์ (งานผนังและก่อฉาบ)</option>
+          <option value="SUB-03">บจก. เอ็นจิเนียริ่ง ซิสเต็ม (งานระบบ MEP)</option>
+          <option value="SUB-04">หจก. ภูมิทัศน์และถนน (งานภายนอก)</option>
+        </select>
+      </div>
+
+      <!-- SHIFT MODE SWITCHER (แท็บสลับรอบเช้า vs รอบจบงาน) -->
+      <div class="shift-switcher-container">
+        <button type="button" class="shift-tab active" id="tab-morning-shift" data-shift="morning">
+          <span class="shift-emoji">🌅</span>
+          <div class="shift-text">
+            <strong>เปิดงานตอนเช้า</strong>
+            <span>งานที่คาดการณ์วันนี้</span>
+          </div>
+        </button>
+        <button type="button" class="shift-tab" id="tab-evening-shift" data-shift="evening">
+          <span class="shift-emoji">🌆</span>
+          <div class="shift-text">
+            <strong>รายงานจบงาน</strong>
+            <span>ผลงานจริงเทียบแผน</span>
+          </div>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Body -->
+    <main class="app-main">
+
+      <!-- 1. LINE Profile & UID Binding Card -->
+      <section class="card line-card">
+        <div class="card-inner">
+          <div class="line-user-profile">
+            <div class="avatar-wrap">
+              <img id="line-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80" alt="Avatar" class="line-avatar-img">
+              <span id="line-status-dot" class="status-dot online"></span>
+            </div>
+            <div class="line-info-meta">
+              <div class="line-name-row">
+                <strong id="line-display-name">ช่างสมหมาย แก้วตา (โฟร์แมน)</strong>
+                <span id="line-mode-badge" class="line-badge">🟢 LINE UID</span>
+              </div>
+              <div class="line-uid-row">
+                <span>UID:</span>
+                <code id="line-uid-text">U98a7b6c5d4e3f210987654321fedcba</code>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn-icon-text" id="btn-open-line-modal">
+            <span>✏️ ตั้งค่า LINE</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 2. Google Apps Script Status Banner -->
+      <div class="gas-banner" id="gas-banner">
+        <div class="gas-banner-left">
+          <span class="gas-icon">📊</span>
+          <div>
+            <div class="gas-status-title">
+              Google Sheets (GAS): <strong id="gas-status-label">รอระบุ Web App URL</strong>
+            </div>
+            <div class="gas-status-desc" id="gas-status-desc">ส่งข้อมูลเข้า Google Sheets และแจ้งเตือน LINE Bot</div>
+          </div>
+        </div>
+        <button type="button" class="btn-secondary-sm" id="btn-open-gas-modal">⚙️ ตั้งค่า GAS</button>
+      </div>
+
+      <!-- Notification Banner for Evening mode showing morning plan status -->
+      <div class="morning-plan-banner" id="morning-plan-banner" style="display: none;">
+        <span class="banner-icon">💡</span>
+        <div class="banner-content">
+          <strong>ดึงรายการงานที่คาดการณ์จากรอบเช้าแล้ว</strong>
+          <p>คุณสามารถประเมินผลงานจริง (%) และปริมาณงานที่ทำได้จริงเทียบกับเป้าหมาย</p>
+        </div>
+      </div>
+
+      <!-- 3. Weather Condition -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="icon">☀️</span>
+            <h2 id="weather-section-title">สภาพอากาศตอนเปิดงาน</h2>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="weather-selector-grid">
+            <button type="button" class="weather-btn active" data-type="sunny" data-text="☀️ ท้องฟ้าแจ่มใส แดดจัดทั้งวัน">
+              <span class="w-emoji">☀️</span>
+              <span class="w-label">แดดจัด ทำงานปกติ</span>
+            </button>
+            <button type="button" class="weather-btn" data-type="cloudy" data-text="⛅ มีเมฆมาก ลมสงบ">
+              <span class="w-emoji">⛅</span>
+              <span class="w-label">มีเมฆมาก ลมสงบ</span>
+            </button>
+            <button type="button" class="weather-btn" data-type="rain_light" data-text="🌧️ ฝนตกชั่วคราว (หยุดงาน 1 ชม.)">
+              <span class="w-emoji">🌧️</span>
+              <span class="w-label">ฝนตกหยุดชั่วคราว</span>
+            </button>
+            <button type="button" class="weather-btn" data-type="rain_heavy" data-text="⛈️ ฝนตกหนัก น้ำท่วมขังหลุมงาน">
+              <span class="w-emoji">⛈️</span>
+              <span class="w-label">ฝนตกหนัก น้ำท่วม</span>
+            </button>
+          </div>
+
+          <!-- Rain delay hours stepper -->
+          <div class="rain-hours-box" id="rain-hours-box">
+            <span class="rain-label" id="rain-hours-label">เวลาที่หยุดงานจากฝนตก:</span>
+            <div class="stepper-wrap">
+              <button type="button" class="btn-step" id="btn-rain-minus">-</button>
+              <span class="step-value" id="rain-hours-val">0 ชม.</span>
+              <button type="button" class="btn-step" id="btn-rain-plus">+</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Workforce Counts (+ / - Steppers) -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="icon">👥</span>
+            <h2 id="workforce-section-title">ยอดกำลังพลเข้างานรอบเช้า (ปุ่ม + -)</h2>
+          </div>
+          <div class="total-workers-pill">
+            รวม: <strong id="total-workers-sum">25</strong> คน
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="worker-stepper-list">
+            
+            <!-- Foreman -->
+            <div class="worker-row">
+              <div class="worker-meta">
+                <span class="worker-title">โฟร์แมน / หัวหน้าช่าง</span>
+                <span class="worker-sub">ควบคุมและตรวจสอบคุณภาพ</span>
+              </div>
+              <div class="stepper-wrap">
+                <button type="button" class="btn-step" data-role="foreman" data-delta="-1">-</button>
+                <span class="step-value" id="count-foreman">2</span>
+                <button type="button" class="btn-step" data-role="foreman" data-delta="1">+</button>
+              </div>
+            </div>
+
+            <!-- Skilled Workers -->
+            <div class="worker-row">
+              <div class="worker-meta">
+                <span class="worker-title">ช่างฝีมือ (ผูกเหล็ก/ช่างไม้/ปูน)</span>
+                <span class="worker-sub">ช่างชำนาญการเฉพาะทาง</span>
+              </div>
+              <div class="stepper-wrap">
+                <button type="button" class="btn-step" data-role="skilled_workers" data-delta="-1">-</button>
+                <span class="step-value" id="count-skilled_workers">8</span>
+                <button type="button" class="btn-step" data-role="skilled_workers" data-delta="1">+</button>
+              </div>
+            </div>
+
+            <!-- General Labor -->
+            <div class="worker-row">
+              <div class="worker-meta">
+                <span class="worker-title">แรงงานทั่วไป (กรรมกร)</span>
+                <span class="worker-sub">งานขนย้าย ขุดดิน ผสมปูน</span>
+              </div>
+              <div class="stepper-wrap">
+                <button type="button" class="btn-step" data-role="general_labor" data-delta="-1">-</button>
+                <span class="step-value" id="count-general_labor">14</span>
+                <button type="button" class="btn-step" data-role="general_labor" data-delta="1">+</button>
+              </div>
+            </div>
+
+            <!-- Safety Officer -->
+            <div class="worker-row">
+              <div class="worker-meta">
+                <span class="worker-title">จป. ความปลอดภัย</span>
+                <span class="worker-sub">ตรวจความปลอดภัยหน้างาน</span>
+              </div>
+              <div class="stepper-wrap">
+                <button type="button" class="btn-step" data-role="safety_officer" data-delta="-1">-</button>
+                <span class="step-value" id="count-safety_officer">1</span>
+                <button type="button" class="btn-step" data-role="safety_officer" data-delta="1">+</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Dynamic Tasks List (งานที่คาดการณ์ / ผลงานจริง) -->
+      <section class="card">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon" id="tasks-icon">📋</span>
+            <h2 id="tasks-section-title">งานที่คาดการณ์ว่าจะทำวันนี้</h2>
+          </div>
+          <span class="badge-hint" id="tasks-badge-hint">กด + เพิ่มแผนงาน</span>
+        </div>
+        <div class="card-body">
+          <div id="dynamic-tasks-container" class="dynamic-tasks-container">
+            <!-- Dynamic task rows will be injected here -->
+          </div>
+
+          <!-- Add Task Button -->
+          <button type="button" class="btn-add-task" id="btn-add-task-row">
+            <span id="btn-add-task-text">➕ กดเพิ่มงานที่คาดการณ์วันนี้</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 6. Site Photo Upload (Phone Camera & Canvas Compression) -->
+      <section class="card">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon">📸</span>
+            <h2 id="photo-section-title">ภาพถ่ายแถวเปิดงาน / Safety Talk</h2>
+          </div>
+          <span class="photo-counter" id="photo-counter">1 รูป</span>
+        </div>
+        <div class="card-body">
+          
+          <!-- Camera click area -->
+          <div class="camera-trigger" id="camera-trigger-btn">
+            <div class="camera-circle">📷</div>
+            <div class="camera-text">
+              <strong id="camera-trigger-title">แตะถ่ายรูปแถวคนงาน หรือหน้างาน</strong>
+              <p id="camera-trigger-desc">ระบบจะประทับวันที่ เวลา รอบกะ และ LINE UID อัตโนมัติ</p>
+            </div>
+          </div>
+          <input type="file" id="camera-file-input" accept="image/*" capture="environment" multiple style="display: none;">
+
+          <!-- Preset sample photos -->
+          <div class="sample-photos-row">
+            <button type="button" class="btn-sample" id="btn-sample-morning">+ รูปแถว Safety เช้า</button>
+            <button type="button" class="btn-sample" id="btn-sample-foundation">+ รูปผลงานหน้างาน</button>
+          </div>
+
+          <!-- Photos Preview Grid -->
+          <div class="photos-preview-grid" id="photos-preview-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. Machinery Used -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="icon">🚜</span>
+            <h2 id="machinery-section-title">เครื่องจักรที่พร้อมใช้งานวันนี้</h2>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="chips-grid" id="machinery-chips-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. Issues & Notes (Evening emphasis) -->
+      <section class="card" id="issues-card-section">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="icon">⚠️</span>
+            <h2 id="issues-section-title">ข้อสังเกต / ปัญหาอุปสรรคหน้างาน</h2>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="quick-tags-grid" id="issues-tags-grid">
+            <!-- Quick tag buttons -->
+          </div>
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label for="custom-issue-text" id="custom-issue-label" style="font-size: 0.75rem; color: var(--text-muted);">รายละเอียดเพิ่มเติมถึง PM เจ้าของโครงการ:</label>
+            <textarea id="custom-issue-text" class="form-textarea" placeholder="ระบุสิ่งที่ต้องการให้ประสานงาน หรือปัญหาที่พบ..." rows="3"></textarea>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Action Bar (Fixed) -->
+    <div class="bottom-action-bar">
+      <button type="button" class="btn-submit-report morning" id="btn-submit-daily-report">
+        <span id="btn-submit-text">🌅 ส่งรายงานเปิดงานตอนเช้า (LINE UID + Google Sheets)</span>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Modal 1: LINE Profile & LIFF Configuration -->
+  <div class="modal-backdrop" id="modal-line-config">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🟢</span>
+          <h3>ตั้งค่าผูกบัญชี LINE & LIFF</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-line-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="line-preview-profile">
+          <img id="modal-line-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80" alt="Avatar">
+          <div>
+            <h4 id="modal-line-name">ช่างสมหมาย แก้วตา</h4>
+            <code id="modal-line-uid-preview">U98a7b6c5d4e3f210987654321fedcba</code>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-line-uid">LINE User ID (UID):</label>
+          <input type="text" id="input-line-uid" class="form-input" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+          <small class="form-hint">UID ประจำตัวผู้ใช้ใน LINE (ถ้าเปิดใน LIFF จะดึงให้อัตโนมัติ)</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-line-name">ชื่อที่แสดง (Display Name):</label>
+          <input type="text" id="input-line-name" class="form-input" placeholder="ชื่อโฟร์แมน">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-liff-id">LINE LIFF ID (เมื่อเปิดใช้งานจริงบน LINE):</label>
+          <input type="text" id="input-liff-id" class="form-input" placeholder="เช่น 200xxxxxxx-xxxxxxxx">
+          <small class="form-hint">สร้างจาก LINE Developers Console > LIFF App</small>
+        </div>
+
+        <button type="button" class="btn-outline-sm" id="btn-generate-test-uid" style="width: 100%; margin-top: 0.25rem;">
+          🎲 สุ่ม LINE UID ทดสอบใหม่
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" id="btn-cancel-line-modal">ยกเลิก</button>
+        <button type="button" class="btn-primary" id="btn-save-line-config">บันทึกข้อมูล LINE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Google Apps Script URL Configuration -->
+  <div class="modal-backdrop" id="modal-gas-config">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>📊</span>
+          <h3>ตั้งค่าเชื่อมต่อ Google Apps Script (GAS)</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-gas-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-alert">
+          <p>เมื่อนำไฟล์ <code>gas/Code.gs</code> ไป Deploy เป็น Web App ใน Google Sheets แล้ว ให้นำ URL ที่ได้มาวางที่นี่</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-gas-url">GAS Web App URL:</label>
+          <input type="url" id="input-gas-url" class="form-input" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+          <button type="button" class="btn-outline-sm" id="btn-test-gas-connection" style="flex: 1;">
+            ⚡ ทดสอบการเชื่อมต่อ (Ping)
+          </button>
+        </div>
+        <div id="gas-test-result" style="margin-top: 0.5rem; font-size: 0.78rem; display: none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" id="btn-cancel-gas-modal">ยกเลิก</button>
+        <button type="button" class="btn-primary" id="btn-save-gas-config">บันทึก URL</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Application Modules -->
+  <script type="module" src="js/gas_service.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

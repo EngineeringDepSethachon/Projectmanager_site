@@ -1,0 +1,940 @@
+/**
+ * app.js - Foreman Daily Report Controller (Projectmanager_site)
+ * รองรับระบบรายงาน 2 จังหวะ:
+ * 1. 🌅 เปิดงานตอนเช้า (Morning Shift) - ยอดคนงานเข้างาน, งานที่คาดการณ์วันนี้ (Plan)
+ * 2. 🌆 รายงานจบงาน (Evening Shift) - ดึงแผนงานเช้ามาเทียบผลงานจริง (Actual vs Plan)
+ */
+
+import { gasService } from './gas_service.js';
+
+// ==========================================
+// App State
+// ==========================================
+const state = {
+  activeShift: 'morning', // 'morning' | 'evening'
+  lineUser: {
+    uid: localStorage.getItem('site_line_uid') || 'U98a7b6c5d4e3f210987654321fedcba',
+    name: localStorage.getItem('site_line_name') || 'ช่างสมหมาย แก้วตา (โฟร์แมน)',
+    avatar: localStorage.getItem('site_line_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+    liffId: localStorage.getItem('site_liff_id') || '',
+    isLiff: false
+  },
+  reportDate: '2026-09-18',
+  subcontractor: {
+    id: 'SUB-01',
+    name: 'หจก. นครพิงค์โครงสร้าง (งานโครงสร้างฐานราก)'
+  },
+  weather: {
+    type: 'sunny',
+    text: '☀️ ท้องฟ้าแจ่มใส แดดจัดทั้งวัน',
+    rainDelayHours: 0
+  },
+  workforce: {
+    foreman: 2,
+    skilled_workers: 8,
+    general_labor: 14,
+    safety_officer: 1
+  },
+  // รายการงานช่วงเช้า (งานที่คาดการณ์)
+  morningPlannedTasks: [
+    {
+      id: 'TASK-1',
+      name: 'งานตัดหัวเสาเข็มและเทลีนคอนกรีตฐานราก โซน A',
+      description: 'ตัดหัวเข็มเป้าหมาย 8 ต้น และเตรียมเทลีนฐานราก F1-F4',
+      quantity: 'เป้าหมาย 8 ต้น, 35 ตร.ม.',
+      progress: 25,
+      isPlanned: true
+    }
+  ],
+  // รายการงานช่วงจบงาน (ผลงานจริงเทียบแผน)
+  eveningActualTasks: [],
+  photos: [
+    {
+      id: 'PH-1',
+      url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
+      caption: 'การประชุมแถวความปลอดภัย (Safety Talk) ก่อนเริ่มงานรอบเช้า',
+      timestamp: '2026-09-18 08:15',
+      base64: null
+    }
+  ],
+  machinery: ['รถขุดแบคโฮ PC200', 'เครื่องสกัดลมตัดหัวเข็ม'],
+  issues: ['✅ งานราบรื่นตามแผน']
+};
+
+const ALL_MACHINERY = [
+  'รถขุดแบคโฮ PC200',
+  'เครื่องสกัดลมตัดหัวเข็ม',
+  'เครื่องสูบน้ำ 4 นิ้ว',
+  'รถเครน 25 ตัน',
+  'รถโม่คอนกรีต',
+  'เครื่องปั่นไฟ 100kVA',
+  'เครื่องดัดเหล็กไฟฟ้า'
+];
+
+const QUICK_ISSUES = [
+  '✅ งานราบรื่นตามแผน',
+  '🌧️ ฝนตกชะลอการเทปูน',
+  '⚡ ระดับน้ำใต้ดินสูง ต้องสูบน้ำ',
+  '🚚 รอเหล็กเส้นเข้าหน้างาน'
+];
+
+// ==========================================
+// Initialization
+// ==========================================
+document.addEventListener('DOMContentLoaded', async () => {
+  initDateDisplay();
+  loadSavedMorningPlan();
+  await initLiff();
+  renderLineProfile();
+  renderGasStatus();
+  renderShiftUI();
+  renderWeather();
+  renderWorkforce();
+  renderDynamicTasks();
+  renderPhotos();
+  renderMachinery();
+  renderIssues();
+  bindEventHandlers();
+});
+
+// ==========================================
+// Load Saved Morning Plan
+// ==========================================
+function loadSavedMorningPlan() {
+  try {
+    const saved = localStorage.getItem(`site_morning_plan_${state.reportDate}`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        state.morningPlannedTasks = parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Load morning plan error:', err);
+  }
+}
+
+// ==========================================
+// LINE LIFF Initialization
+// ==========================================
+async function initLiff() {
+  const liffId = state.lineUser.liffId.trim();
+  if (typeof liff !== 'undefined' && liffId) {
+    try {
+      await liff.init({ liffId });
+      if (liff.isLoggedIn()) {
+        const profile = await liff.getProfile();
+        state.lineUser.uid = profile.userId;
+        state.lineUser.name = profile.displayName;
+        if (profile.pictureUrl) state.lineUser.avatar = profile.pictureUrl;
+        state.lineUser.isLiff = true;
+
+        localStorage.setItem('site_line_uid', profile.userId);
+        localStorage.setItem('site_line_name', profile.displayName);
+        if (profile.pictureUrl) localStorage.setItem('site_line_avatar', profile.pictureUrl);
+      }
+    } catch (err) {
+      console.warn('LIFF Initialization info:', err);
+    }
+  }
+}
+
+// ==========================================
+// Render Functions
+// ==========================================
+function initDateDisplay() {
+  const dateEl = document.getElementById('display-report-date');
+  if (dateEl) {
+    const today = new Date();
+    dateEl.innerText = `${today.getDate()} ก.ย. 2026`;
+  }
+}
+
+function renderLineProfile() {
+  const avatarEl = document.getElementById('line-avatar');
+  const nameEl = document.getElementById('line-display-name');
+  const uidEl = document.getElementById('line-uid-text');
+  const badgeEl = document.getElementById('line-mode-badge');
+
+  if (avatarEl) avatarEl.src = state.lineUser.avatar;
+  if (nameEl) nameEl.innerText = state.lineUser.name;
+  if (uidEl) uidEl.innerText = state.lineUser.uid;
+  if (badgeEl) {
+    badgeEl.innerText = state.lineUser.isLiff ? '🟢 LINE LIFF' : '🟢 LINE UID';
+  }
+}
+
+function renderGasStatus() {
+  const statusLabel = document.getElementById('gas-status-label');
+  const statusDesc = document.getElementById('gas-status-desc');
+  if (!statusLabel || !statusDesc) return;
+
+  if (gasService.isConfigured()) {
+    statusLabel.innerHTML = '<span style="color:#10b981;">🟢 เชื่อมต่อ GAS แล้ว</span>';
+    statusDesc.innerText = 'ข้อมูลจะถูกบันทึกลง Google Sheets และสั่ง LINE Bot แจ้งเตือน';
+  } else {
+    statusLabel.innerHTML = '<span style="color:#f59e0b;">⚪ ยังไม่ได้ระบุ Web App URL</span>';
+    statusDesc.innerText = 'คลิกปุ่มตั้งค่าเพื่อใส่ URL ของ Google Apps Script';
+  }
+}
+
+/**
+ * ปรับเปลี่ยน UI ตามกะการทำงาน (เช้า vs จบงาน)
+ */
+function renderShiftUI() {
+  const isMorning = state.activeShift === 'morning';
+
+  // 1. Shift Tab Active State
+  const tabMorning = document.getElementById('tab-morning-shift');
+  const tabEvening = document.getElementById('tab-evening-shift');
+  const topBadge = document.getElementById('shift-badge-top');
+  const morningBanner = document.getElementById('morning-plan-banner');
+
+  if (tabMorning && tabEvening) {
+    if (isMorning) {
+      tabMorning.classList.add('active');
+      tabEvening.classList.remove('active');
+      if (topBadge) {
+        topBadge.className = 'header-badge';
+        topBadge.innerText = '🌅 รอบเช้า (เปิดงาน)';
+      }
+      if (morningBanner) morningBanner.style.display = 'none';
+    } else {
+      tabMorning.classList.remove('active');
+      tabEvening.classList.add('active');
+      if (topBadge) {
+        topBadge.className = 'header-badge evening';
+        topBadge.innerText = '🌆 รอบเย็น (จบงาน)';
+      }
+      if (morningBanner) morningBanner.style.display = 'flex';
+    }
+  }
+
+  // 2. Section Titles & Labels
+  const weatherTitle = document.getElementById('weather-section-title');
+  if (weatherTitle) {
+    weatherTitle.innerText = isMorning ? 'สภาพอากาศตอนเปิดงาน' : 'สภาพอากาศตลอดวัน & สรุปเวลาฝนตก';
+  }
+
+  const workforceTitle = document.getElementById('workforce-section-title');
+  if (workforceTitle) {
+    workforceTitle.innerText = isMorning ? 'ยอดกำลังพลเข้างานรอบเช้า (ปุ่ม + -)' : 'ยอดกำลังพลเมื่อสิ้นสุดวัน (ปุ่ม + -)';
+  }
+
+  const tasksTitle = document.getElementById('tasks-section-title');
+  const tasksBadgeHint = document.getElementById('tasks-badge-hint');
+  const btnAddTaskText = document.getElementById('btn-add-task-text');
+  const btnAddTask = document.getElementById('btn-add-task-row');
+
+  if (tasksTitle) {
+    tasksTitle.innerText = isMorning ? 'งานที่คาดการณ์ว่าจะทำวันนี้' : 'ผลงานจริงเทียบกับแผนงานเช้า';
+  }
+  if (tasksBadgeHint) {
+    tasksBadgeHint.className = isMorning ? 'badge-hint morning' : 'badge-hint';
+    tasksBadgeHint.innerText = isMorning ? 'เป้าหมายที่คาดการณ์' : 'ผลงานจริงที่ทำได้';
+  }
+  if (btnAddTaskText) {
+    btnAddTaskText.innerText = isMorning ? '➕ กดเพิ่มงานที่คาดการณ์วันนี้' : '➕ กดเพิ่มงานนอกแผนที่ทำเพิ่ม';
+  }
+  if (btnAddTask) {
+    if (isMorning) btnAddTask.classList.add('morning');
+    else btnAddTask.classList.remove('morning');
+  }
+
+  const photoTitle = document.getElementById('photo-section-title');
+  const camTriggerTitle = document.getElementById('camera-trigger-title');
+  const camTriggerDesc = document.getElementById('camera-trigger-desc');
+  if (photoTitle) {
+    photoTitle.innerText = isMorning ? 'ภาพถ่ายแถวเปิดงาน / Safety Talk' : 'ภาพถ่ายผลงานจริงหน้างาน';
+  }
+  if (camTriggerTitle) {
+    camTriggerTitle.innerText = isMorning ? 'แตะถ่ายรูปแถวคนงาน หรือประชุม Safety' : 'แตะถ่ายรูปผลงานจริง หรือหน้างาน';
+  }
+  if (camTriggerDesc) {
+    camTriggerDesc.innerText = isMorning ? 'ประทับเวลาเปิดงานรอบเช้า และ LINE UID' : 'ประทับเวลาจบงาน และผลงานจริง';
+  }
+
+  const submitBtn = document.getElementById('btn-submit-daily-report');
+  const submitText = document.getElementById('btn-submit-text');
+  if (submitBtn && submitText) {
+    if (isMorning) {
+      submitBtn.className = 'btn-submit-report morning';
+      submitText.innerText = '🌅 ส่งรายงานเปิดงานตอนเช้า (LINE UID + Google Sheets)';
+    } else {
+      submitBtn.className = 'btn-submit-report evening';
+      submitText.innerText = '🌆 ส่งรายงานสรุปจบงานประจำวัน (LINE UID + Google Sheets)';
+    }
+  }
+
+  renderDynamicTasks();
+}
+
+function renderWeather() {
+  document.querySelectorAll('.weather-btn').forEach(btn => {
+    if (btn.dataset.type === state.weather.type) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  const rainHoursEl = document.getElementById('rain-hours-val');
+  if (rainHoursEl) {
+    rainHoursEl.innerText = `${state.weather.rainDelayHours} ชม.`;
+  }
+}
+
+function renderWorkforce() {
+  let sum = 0;
+  for (const [role, count] of Object.entries(state.workforce)) {
+    const el = document.getElementById(`count-${role}`);
+    if (el) el.innerText = count;
+    sum += count;
+  }
+  const sumEl = document.getElementById('total-workers-sum');
+  if (sumEl) sumEl.innerText = sum;
+}
+
+function getActiveTasksList() {
+  return state.activeShift === 'morning' ? state.morningPlannedTasks : state.eveningActualTasks;
+}
+
+function renderDynamicTasks() {
+  const container = document.getElementById('dynamic-tasks-container');
+  if (!container) return;
+
+  const isMorning = state.activeShift === 'morning';
+  const tasks = getActiveTasksList();
+
+  if (tasks.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; font-size: 0.8rem; color: var(--text-muted); padding: 1.5rem 0;">
+        ${isMorning ? 'ยังไม่มีรายการงานที่คาดการณ์วันนี้ กดปุ่มด้านล่างเพื่อเพิ่มแผนงาน' : 'ยังไม่มีรายการงาน กดปุ่มด้านล่างเพื่อเพิ่มงาน'}
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = tasks.map((t, idx) => `
+    <div class="dynamic-task-card ${isMorning ? 'plan-card' : 'actual-card'}" data-task-id="${t.id}">
+      <div class="dynamic-task-top">
+        <div class="task-tag-group">
+          <span class="task-index-badge">งานที่ ${idx + 1}</span>
+          <span class="shift-phase-badge ${isMorning ? 'plan' : 'actual'}">
+            ${isMorning ? '🎯 คาดการณ์' : '⚡ ผลงานจริง'}
+          </span>
+        </div>
+        ${tasks.length > 1 ? `
+          <button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">
+            🗑️ ลบ
+          </button>
+        ` : ''}
+      </div>
+
+      <!-- Task Title -->
+      <div>
+        <label style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 2px; display: block;">ชื่องาน / หมวดงาน:</label>
+        <input type="text" class="form-input" value="${escapeHtml(t.name)}" placeholder="เช่น ตัดหัวเข็ม, เทลีน, ผูกเหล็ก..." oninput="window.updateTaskField('${t.id}', 'name', this.value)">
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
+          ${isMorning ? 'รายละเอียดแผนงานที่ตั้งเป้าหมายวันนี้:' : 'รายละเอียดสิ่งที่ทำได้จริงวันนี้:'}
+        </label>
+        <input type="text" class="form-input" value="${escapeHtml(t.description)}" placeholder="${isMorning ? 'ระบุเป้าหมายที่ต้องทำให้เสร็จในวันนี้...' : 'ระบุผลลัพธ์จริงที่ทำได้เสร็จสิ้น...'}" oninput="window.updateTaskField('${t.id}', 'description', this.value)">
+      </div>
+
+      <!-- Quantity & Progress -->
+      <div class="task-metrics-grid">
+        <div>
+          <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
+            ${isMorning ? 'เป้าหมายปริมาณงาน:' : 'ปริมาณงานจริงที่ทำได้:'}
+          </label>
+          <input type="text" class="form-input" style="font-size: 0.76rem;" value="${escapeHtml(t.quantity)}" placeholder="เช่น 8 ต้น, 35 ตร.ม." oninput="window.updateTaskField('${t.id}', 'quantity', this.value)">
+        </div>
+        <div>
+          <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
+            ${isMorning ? 'ความคืบหน้าที่คาดหมาย:' : 'ความคืบหน้าสะสมจริง:'}
+          </label>
+          <div class="progress-pills-row">
+            ${[25, 50, 75, 100].map(pct => `
+              <button type="button" class="pill-pct ${isMorning ? 'morning' : ''} ${t.progress === pct ? 'active' : ''}" onclick="window.updateTaskProgress('${t.id}', ${pct})">
+                ${pct}%
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderPhotos() {
+  const countEl = document.getElementById('photo-counter');
+  if (countEl) countEl.innerText = `${state.photos.length} รูป`;
+
+  const gridEl = document.getElementById('photos-preview-grid');
+  if (!gridEl) return;
+
+  gridEl.innerHTML = state.photos.map((p, idx) => `
+    <div class="photo-card">
+      <img src="${p.url}" alt="${p.caption || 'รูปหน้างาน'}">
+      <div class="photo-stamp">${p.timestamp || '2026-09-18'}</div>
+      <button type="button" class="btn-remove-photo" onclick="window.removePhoto(${idx})">&times;</button>
+    </div>
+  `).join('');
+}
+
+function renderMachinery() {
+  const grid = document.getElementById('machinery-chips-grid');
+  if (!grid) return;
+
+  grid.innerHTML = ALL_MACHINERY.map(item => {
+    const isSelected = state.machinery.includes(item);
+    return `
+      <div class="chip-item ${isSelected ? 'active' : ''}" onclick="window.toggleMachinery('${item}')">
+        <span>${isSelected ? '✓ ' : '+ '}</span>
+        <span>${item}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderIssues() {
+  const grid = document.getElementById('issues-tags-grid');
+  if (!grid) return;
+
+  grid.innerHTML = QUICK_ISSUES.map(tag => {
+    const isSelected = state.issues.includes(tag);
+    return `
+      <div class="tag-btn ${isSelected ? 'active' : ''}" onclick="window.toggleIssue('${tag}')">
+        ${tag}
+      </div>
+    `;
+  }).join('');
+}
+
+// ==========================================
+// Event Bindings
+// ==========================================
+function bindEventHandlers() {
+  // 1. Shift Switcher (สลับรอบเช้า vs จบงาน)
+  const tabMorning = document.getElementById('tab-morning-shift');
+  const tabEvening = document.getElementById('tab-evening-shift');
+
+  if (tabMorning) {
+    tabMorning.addEventListener('click', () => switchShift('morning'));
+  }
+  if (tabEvening) {
+    tabEvening.addEventListener('click', () => switchShift('evening'));
+  }
+
+  // Subcontractor select
+  const subSelect = document.getElementById('subcontractor-select');
+  if (subSelect) {
+    subSelect.addEventListener('change', (e) => {
+      state.subcontractor.id = e.target.value;
+      state.subcontractor.name = e.target.options[e.target.selectedIndex].text;
+      showToast(`เปลี่ยนแผนกเป็น ${state.subcontractor.name}`, 'info');
+    });
+  }
+
+  // Weather selector buttons
+  document.querySelectorAll('.weather-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.weather.type = btn.dataset.type;
+      state.weather.text = btn.dataset.text;
+      if (btn.dataset.type === 'rain_heavy') {
+        state.weather.rainDelayHours = 3;
+      } else if (btn.dataset.type === 'rain_light') {
+        state.weather.rainDelayHours = 1;
+      } else {
+        state.weather.rainDelayHours = 0;
+      }
+      renderWeather();
+    });
+  });
+
+  // Rain delay hours steppers
+  const rainMinus = document.getElementById('btn-rain-minus');
+  const rainPlus = document.getElementById('btn-rain-plus');
+  if (rainMinus) {
+    rainMinus.addEventListener('click', () => {
+      state.weather.rainDelayHours = Math.max(0, state.weather.rainDelayHours - 1);
+      renderWeather();
+    });
+  }
+  if (rainPlus) {
+    rainPlus.addEventListener('click', () => {
+      state.weather.rainDelayHours += 1;
+      renderWeather();
+    });
+  }
+
+  // Workforce +/- Stepper Buttons
+  document.querySelectorAll('.btn-step[data-role]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const role = btn.dataset.role;
+      const delta = parseInt(btn.dataset.delta, 10);
+      if (state.workforce[role] !== undefined) {
+        state.workforce[role] = Math.max(0, state.workforce[role] + delta);
+        renderWorkforce();
+        if (navigator.vibrate) navigator.vibrate(20);
+      }
+    });
+  });
+
+  // Dynamic Tasks: Add row
+  const btnAddTask = document.getElementById('btn-add-task-row');
+  if (btnAddTask) {
+    btnAddTask.addEventListener('click', () => {
+      const newId = 'TASK-' + Date.now();
+      const isMorning = state.activeShift === 'morning';
+      const targetList = isMorning ? state.morningPlannedTasks : state.eveningActualTasks;
+
+      targetList.push({
+        id: newId,
+        name: isMorning ? 'งานที่คาดการณ์เพิ่มเติม' : 'งานนอกแผนที่ทำเพิ่ม',
+        description: '',
+        quantity: '',
+        progress: isMorning ? 25 : 50,
+        isPlanned: isMorning
+      });
+
+      renderDynamicTasks();
+      showToast(isMorning ? 'เพิ่มแผนงานที่คาดการณ์แล้ว' : 'เพิ่มรายการงานจริงแล้ว', 'info');
+    });
+  }
+
+  // Camera Capture Input Trigger
+  const camTrigger = document.getElementById('camera-trigger-btn');
+  const fileInput = document.getElementById('camera-file-input');
+  if (camTrigger && fileInput) {
+    camTrigger.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleFileUpload);
+  }
+
+  // Sample Photos
+  const btnSampleMorning = document.getElementById('btn-sample-morning');
+  const btnSampleFoundation = document.getElementById('btn-sample-foundation');
+  if (btnSampleMorning) {
+    btnSampleMorning.addEventListener('click', () => {
+      const timeStr = getCurrentTimeString();
+      state.photos.unshift({
+        id: 'PH-' + Date.now(),
+        url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
+        caption: 'การประชุมแถวความปลอดภัย (Safety Talk) ก่อนเริ่มงาน',
+        timestamp: `2026-09-18 ${timeStr}`,
+        base64: null
+      });
+      renderPhotos();
+      showToast('เพิ่มรูปแถวความปลอดภัยรอบเช้าแล้ว', 'info');
+    });
+  }
+  if (btnSampleFoundation) {
+    btnSampleFoundation.addEventListener('click', () => {
+      const timeStr = getCurrentTimeString();
+      state.photos.unshift({
+        id: 'PH-' + Date.now(),
+        url: 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=600&auto=format&fit=crop&q=80',
+        caption: 'ผลงานการตัดหัวเข็มและเทลีนคอนกรีตฐานราก F1-F4',
+        timestamp: `2026-09-18 ${timeStr}`,
+        base64: null
+      });
+      renderPhotos();
+      showToast('เพิ่มรูปผลงานหน้างานแล้ว', 'info');
+    });
+  }
+
+  // Submit Daily Report
+  const btnSubmit = document.getElementById('btn-submit-daily-report');
+  if (btnSubmit) {
+    btnSubmit.addEventListener('click', submitReport);
+  }
+
+  // Modals Setup
+  setupModals();
+}
+
+// ==========================================
+// Switch Shift Handler (เช้า <-> จบงาน)
+// ==========================================
+function switchShift(shift) {
+  if (state.activeShift === shift) return;
+  state.activeShift = shift;
+
+  if (shift === 'evening') {
+    // เมื่อสลับมาช่วงจบงาน: ดึงรายการงานที่คาดการณ์ไว้ตอนเช้าขึ้นมาเป็น Baseline
+    if (state.eveningActualTasks.length === 0) {
+      state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
+        ...t,
+        id: 'ACT-' + t.id,
+        planned_name: t.name,
+        planned_quantity: t.quantity,
+        progress: 75, // ค่าตั้งต้นสำหรับประเมินผลงานจริง
+        isPlanned: false
+      }));
+    }
+    showToast('🌆 สลับสู่โหมด: รายงานสรุปจบงานประจำวัน', 'info');
+  } else {
+    showToast('🌅 สลับสู่โหมด: เปิดงานตอนเช้า (งานที่คาดการณ์)', 'info');
+  }
+
+  renderShiftUI();
+}
+
+// ==========================================
+// Dynamic Tasks Global Functions
+// ==========================================
+window.updateTaskField = function(id, field, value) {
+  const list = getActiveTasksList();
+  const task = list.find(t => t.id === id);
+  if (task) {
+    task[field] = value;
+  }
+};
+
+window.updateTaskProgress = function(id, progress) {
+  const list = getActiveTasksList();
+  const task = list.find(t => t.id === id);
+  if (task) {
+    task.progress = progress;
+    renderDynamicTasks();
+  }
+};
+
+window.removeDynamicTask = function(id) {
+  if (state.activeShift === 'morning') {
+    state.morningPlannedTasks = state.morningPlannedTasks.filter(t => t.id !== id);
+  } else {
+    state.eveningActualTasks = state.eveningActualTasks.filter(t => t.id !== id);
+  }
+  renderDynamicTasks();
+  showToast('ลบรายการงานแล้ว', 'info');
+};
+
+// ==========================================
+// Machinery & Issues Handlers
+// ==========================================
+window.toggleMachinery = function(item) {
+  if (state.machinery.includes(item)) {
+    state.machinery = state.machinery.filter(m => m !== item);
+  } else {
+    state.machinery.push(item);
+  }
+  renderMachinery();
+};
+
+window.toggleIssue = function(tag) {
+  if (state.issues.includes(tag)) {
+    state.issues = state.issues.filter(i => i !== tag);
+  } else {
+    state.issues.push(tag);
+  }
+  renderIssues();
+};
+
+window.removePhoto = function(idx) {
+  state.photos.splice(idx, 1);
+  renderPhotos();
+};
+
+// ==========================================
+// Photo Upload & Canvas Compression
+// ==========================================
+function handleFileUpload(event) {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  const timeStr = getCurrentTimeString();
+  const shiftText = state.activeShift === 'morning' ? 'เปิดงานเช้า' : 'จบงานเย็น';
+
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+
+        state.photos.unshift({
+          id: 'PH-' + Date.now(),
+          url: compressedBase64,
+          base64: compressedBase64,
+          caption: `ภาพหน้างาน (${shiftText}) โดย ${state.lineUser.name} (${timeStr})`,
+          timestamp: `2026-09-18 ${timeStr}`
+        });
+
+        renderPhotos();
+        showToast(`📸 ถ่ายรูปและประทับเวลารอบ ${shiftText} สำเร็จ`, 'success');
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ==========================================
+// Submit Report Handler
+// ==========================================
+async function submitReport() {
+  const btn = document.getElementById('btn-submit-daily-report');
+  const isMorning = state.activeShift === 'morning';
+  const shiftCode = isMorning ? 'morning' : 'evening';
+  const shiftLabel = isMorning ? 'เปิดงานตอนเช้า' : 'รายงานจบงาน';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span>⏳ กำลังบันทึกรายงานรอบ ${shiftLabel}...</span>`;
+  }
+
+  const customIssues = document.getElementById('custom-issue-text')?.value || '';
+  const finalIssues = [...state.issues];
+  if (customIssues.trim()) finalIssues.push(customIssues.trim());
+
+  const totalWorkers = Object.values(state.workforce).reduce((a, b) => a + b, 0);
+  const now = new Date();
+  const reportPrefix = isMorning ? 'MORN' : 'EVEN';
+  const reportId = `${reportPrefix}-${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+
+  const currentTasks = getActiveTasksList();
+
+  const payload = {
+    id: reportId,
+    shift_type: shiftCode,
+    shift_label: shiftLabel,
+    report_date: state.reportDate,
+    timestamp: now.toISOString().replace('T', ' ').slice(0, 19),
+    line_uid: state.lineUser.uid,
+    line_name: state.lineUser.name,
+    line_avatar: state.lineUser.avatar,
+    sub_id: state.subcontractor.id,
+    sub_name: state.subcontractor.name,
+    foreman_name: state.lineUser.name,
+    weather: state.weather.text,
+    rain_delay_hours: state.weather.rainDelayHours,
+    workforce: {
+      ...state.workforce,
+      total: totalWorkers
+    },
+    machinery: state.machinery,
+    task_progress: currentTasks,
+    photos: state.photos,
+    issues: finalIssues,
+    status: isMorning ? 'morning_opened' : 'evening_closed'
+  };
+
+  // 1. ถ้าเป็นรอบเช้า ให้บันทึก morning plan ลง localStorage เพื่อให้รอบเย็นดึงได้อัตโนมัติ
+  if (isMorning) {
+    try {
+      localStorage.setItem(`site_morning_plan_${state.reportDate}`, JSON.stringify(state.morningPlannedTasks));
+    } catch (err) {
+      console.warn('Save morning plan:', err);
+    }
+  }
+
+  // 2. เก็บประวัติลงเครื่อง LocalStorage
+  try {
+    const existing = JSON.parse(localStorage.getItem('cpm_site_reports_history') || '[]');
+    existing.unshift(payload);
+    localStorage.setItem('cpm_site_reports_history', JSON.stringify(existing.slice(0, 30)));
+  } catch (err) {
+    console.warn('Storage save:', err);
+  }
+
+  // 3. Post ไปยัง Google Apps Script (Web App)
+  let result = null;
+  if (gasService.isConfigured()) {
+    result = await gasService.sendReport(payload);
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    renderShiftUI();
+  }
+
+  if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+  if (result && result.success) {
+    showToast(`✅ บันทึกรายงาน ${shiftLabel} (รหัส ${reportId}) ลง Google Sheets & ส่ง LINE สำเร็จ!`, 'success');
+  } else if (!gasService.isConfigured()) {
+    showToast(`💾 บันทึกรายงาน ${shiftLabel} ในเครื่องเรียบร้อย (ยังไม่ได้ตั้งค่า Google Apps Script)`, 'info');
+  } else {
+    showToast(`⚠️ ส่งข้อมูลแล้ว: ${result?.message || 'โปรดตรวจสอบสิทธิ์ชีต'}`, 'info');
+  }
+}
+
+// ==========================================
+// Modals Configuration
+// ==========================================
+function setupModals() {
+  // Modal 1: LINE Profile Config
+  const modalLine = document.getElementById('modal-line-config');
+  const btnOpenLine = document.getElementById('btn-open-line-modal');
+  const btnCloseLine = document.getElementById('btn-close-line-modal');
+  const btnCancelLine = document.getElementById('btn-cancel-line-modal');
+  const btnSaveLine = document.getElementById('btn-save-line-config');
+  const btnGenUid = document.getElementById('btn-generate-test-uid');
+
+  if (btnOpenLine && modalLine) {
+    btnOpenLine.addEventListener('click', () => {
+      document.getElementById('input-line-uid').value = state.lineUser.uid;
+      document.getElementById('input-line-name').value = state.lineUser.name;
+      document.getElementById('input-liff-id').value = state.lineUser.liffId;
+      document.getElementById('modal-line-avatar').src = state.lineUser.avatar;
+      document.getElementById('modal-line-name').innerText = state.lineUser.name;
+      document.getElementById('modal-line-uid-preview').innerText = state.lineUser.uid;
+      modalLine.classList.add('active');
+    });
+  }
+
+  const closeLineModal = () => modalLine?.classList.remove('active');
+  if (btnCloseLine) btnCloseLine.addEventListener('click', closeLineModal);
+  if (btnCancelLine) btnCancelLine.addEventListener('click', closeLineModal);
+
+  if (btnGenUid) {
+    btnGenUid.addEventListener('click', () => {
+      const chars = '0123456789abcdef';
+      let rand = 'U';
+      for (let i = 0; i < 32; i++) {
+        rand += chars[Math.floor(Math.random() * chars.length)];
+      }
+      document.getElementById('input-line-uid').value = rand;
+      document.getElementById('modal-line-uid-preview').innerText = rand;
+    });
+  }
+
+  if (btnSaveLine) {
+    btnSaveLine.addEventListener('click', () => {
+      const uid = document.getElementById('input-line-uid').value.trim();
+      const name = document.getElementById('input-line-name').value.trim();
+      const liffId = document.getElementById('input-liff-id').value.trim();
+
+      if (uid) state.lineUser.uid = uid;
+      if (name) state.lineUser.name = name;
+      state.lineUser.liffId = liffId;
+
+      localStorage.setItem('site_line_uid', state.lineUser.uid);
+      localStorage.setItem('site_line_name', state.lineUser.name);
+      localStorage.setItem('site_liff_id', state.lineUser.liffId);
+
+      renderLineProfile();
+      closeLineModal();
+      showToast('บันทึกข้อมูลบัญชี LINE สำเร็จ', 'success');
+    });
+  }
+
+  // Modal 2: GAS Config
+  const modalGas = document.getElementById('modal-gas-config');
+  const btnOpenGas = document.getElementById('btn-open-gas-modal');
+  const btnCloseGas = document.getElementById('btn-close-gas-modal');
+  const btnCancelGas = document.getElementById('btn-cancel-gas-modal');
+  const btnSaveGas = document.getElementById('btn-save-gas-config');
+  const btnTestGas = document.getElementById('btn-test-gas-connection');
+  const gasTestResult = document.getElementById('gas-test-result');
+
+  if (btnOpenGas && modalGas) {
+    btnOpenGas.addEventListener('click', () => {
+      document.getElementById('input-gas-url').value = gasService.getUrl();
+      if (gasTestResult) gasTestResult.style.display = 'none';
+      modalGas.classList.add('active');
+    });
+  }
+
+  const closeGasModal = () => modalGas?.classList.remove('active');
+  if (btnCloseGas) btnCloseGas.addEventListener('click', closeGasModal);
+  if (btnCancelGas) btnCancelGas.addEventListener('click', closeGasModal);
+
+  if (btnTestGas) {
+    btnTestGas.addEventListener('click', async () => {
+      const url = document.getElementById('input-gas-url').value.trim();
+      if (!url) {
+        showToast('กรุณาระบุ URL ก่อนทดสอบ', 'error');
+        return;
+      }
+      btnTestGas.disabled = true;
+      btnTestGas.innerText = '⏳ กำลังทดสอบ Ping...';
+      if (gasTestResult) gasTestResult.style.display = 'none';
+
+      const res = await gasService.testConnection(url);
+      btnTestGas.disabled = false;
+      btnTestGas.innerText = '⚡ ทดสอบการเชื่อมต่อ (Ping)';
+
+      if (gasTestResult) {
+        gasTestResult.style.display = 'block';
+        if (res.success) {
+          gasTestResult.style.color = '#10b981';
+          gasTestResult.innerHTML = `🟢 ${res.message} (ชีต: ${res.sheetName})`;
+        } else {
+          gasTestResult.style.color = '#f87171';
+          gasTestResult.innerHTML = `🔴 ${res.message}`;
+        }
+      }
+    });
+  }
+
+  if (btnSaveGas) {
+    btnSaveGas.addEventListener('click', () => {
+      const url = document.getElementById('input-gas-url').value.trim();
+      gasService.setUrl(url);
+      renderGasStatus();
+      closeGasModal();
+      showToast(url ? 'บันทึก URL ของ Google Apps Script เรียบร้อย' : 'ลบการตั้งค่า GAS แล้ว', 'success');
+    });
+  }
+}
+
+// ==========================================
+// Utilities
+// ==========================================
+function getCurrentTimeString() {
+  const now = new Date();
+  return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} น.`;
+}
+
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${msg}</span>`;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-10px)';
+    toast.style.transition = 'all 0.25s';
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
