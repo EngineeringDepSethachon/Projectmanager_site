@@ -12,9 +12,9 @@ const SHEET_NAME_REPORTS = "Daily_Reports";
 const SHEET_NAME_TASKS = "Tasks_Detail";
 const DRIVE_FOLDER_NAME = "Construction_Site_Photos";
 
-// LINE Bot Messaging API Channel Access Token
-// แนะนำใส่ใน Script Properties ชื่อ: LINE_CHANNEL_ACCESS_TOKEN
-const DEFAULT_LINE_ACCESS_TOKEN = ""; 
+// LINE Bot Messaging API Channel Access Token & Target User/Group ID
+const DEFAULT_LINE_ACCESS_TOKEN = "nPrsEU/qv2jmfqQPj8Wq5G8CGza70HNmrf1am2FsbEqRRaHgbx2aLgzpaSAdfI+FPZQNMW0GwG9xUmKxR87Wy5iN+ddrncF7/CAQO9vEshKqh7WKmc08jQzpLVQtrvz2TkUu/l//ka26GkuKeLUPtQdB04t89/1O/w1cDnyilFU="; 
+const DEFAULT_TARGET_ID = "U224cf73ea4b2484a0eb0055155e05bf4";
 
 /**
  * Handle GET requests (Health Check Ping & Query Reports)
@@ -242,7 +242,7 @@ function sendLineShiftFlexNotification(data) {
     return { sent: false, reason: "ไม่มี LINE_CHANNEL_ACCESS_TOKEN ในการตั้งค่า" };
   }
 
-  const targetId = scriptProps.getProperty('LINE_TARGET_ID') || scriptProps.getProperty('LINE_TARGET_GROUP_ID') || data.lineUid;
+  const targetId = scriptProps.getProperty('LINE_TARGET_ID') || scriptProps.getProperty('LINE_TARGET_GROUP_ID') || (data.lineUid && data.lineUid.startsWith("U") ? data.lineUid : DEFAULT_TARGET_ID);
   if (!targetId || targetId === "NOT_PROVIDED" || (!targetId.startsWith("U") && !targetId.startsWith("C") && !targetId.startsWith("R"))) {
     return { sent: false, reason: "LINE Target ID ไม่ถูกต้องสำหรับการ Push: " + targetId };
   }

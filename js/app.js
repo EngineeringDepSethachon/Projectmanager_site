@@ -13,7 +13,7 @@ import { gasService } from './gas_service.js';
 const state = {
   activeShift: 'morning', // 'morning' | 'evening'
   lineUser: {
-    uid: localStorage.getItem('site_line_uid') || 'U98a7b6c5d4e3f210987654321fedcba',
+    uid: localStorage.getItem('site_line_uid') || 'U224cf73ea4b2484a0eb0055155e05bf4',
     name: localStorage.getItem('site_line_name') || 'ช่างสมหมาย แก้วตา (โฟร์แมน)',
     avatar: localStorage.getItem('site_line_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
     liffId: localStorage.getItem('site_liff_id') || '',
