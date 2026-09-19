@@ -496,10 +496,10 @@ function renderShiftUI() {
   if (submitBtn && submitText) {
     if (isMorning) {
       submitBtn.className = 'btn-submit-report morning';
-      submitText.innerText = '🌅 ส่งรายงานเปิดงานตอนเช้า (LINE UID + Google Sheets)';
+      submitText.innerText = 'ส่งรายงานเปิดงานตอนเช้า';
     } else {
       submitBtn.className = 'btn-submit-report evening';
-      submitText.innerText = '🌆 ส่งรายงานสรุปจบงานประจำวัน (LINE UID + Google Sheets)';
+      submitText.innerText = 'ส่งรายงานสรุปจบงานประจำวัน';
     }
   }
 
