@@ -15,6 +15,7 @@ const DRIVE_FOLDER_NAME = "Construction_Site_Photos";
 // LINE Bot Messaging API Channel Access Token & Target User/Group ID
 const DEFAULT_LINE_ACCESS_TOKEN = "nPrsEU/qv2jmfqQPj8Wq5G8CGza70HNmrf1am2FsbEqRRaHgbx2aLgzpaSAdfI+FPZQNMW0GwG9xUmKxR87Wy5iN+ddrncF7/CAQO9vEshKqh7WKmc08jQzpLVQtrvz2TkUu/l//ka26GkuKeLUPtQdB04t89/1O/w1cDnyilFU="; 
 const DEFAULT_TARGET_ID = "U224cf73ea4b2484a0eb0055155e05bf4";
+const DEFAULT_FRONTEND_WEB_URL = "https://engineeringdepsethachon.github.io/Projectmanager_site";
 
 /**
  * Handle GET requests (Health Check Ping & Query Reports)
@@ -501,8 +502,8 @@ function handleLineWebhook(payload) {
   const events = payload.events || [];
   const scriptProps = PropertiesService.getScriptProperties();
   const token = scriptProps.getProperty('LINE_CHANNEL_ACCESS_TOKEN') || DEFAULT_LINE_ACCESS_TOKEN;
-  // URL หน้าเว็บที่จะให้ช่างเปิด (ตั้งค่าใน Script Properties ชื่อ FRONTEND_WEB_URL หรือใช้ค่าเริ่มต้น)
-  const webAppFrontendUrl = scriptProps.getProperty('FRONTEND_WEB_URL') || "http://localhost:8081";
+  // URL หน้าเว็บที่จะให้ช่างเปิด (ตั้งค่าใน Script Properties ชื่อ FRONTEND_WEB_URL หรือใช้ค่าเริ่มต้นจาก GitHub Pages)
+  const webAppFrontendUrl = scriptProps.getProperty('FRONTEND_WEB_URL') || DEFAULT_FRONTEND_WEB_URL;
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i];
