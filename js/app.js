@@ -7,6 +7,16 @@
 
 import { gasService } from './gas_service.js';
 
+// ล้างค่า dummy เก่าออกจาก LocalStorage เพื่อให้ผู้ใช้ใหม่เริ่มต้นเป็น '-' เสมอ
+try {
+  if (localStorage.getItem('site_sub_name') === 'หจก. นครพิงค์โครงสร้าง') {
+    localStorage.setItem('site_sub_name', '-');
+  }
+  if (localStorage.getItem('site_line_role') === 'โฟร์แมนหน้างาน' || localStorage.getItem('site_line_role') === 'โฟร์แมน') {
+    localStorage.setItem('site_line_role', '-');
+  }
+} catch (e) {}
+
 // ==========================================
 // App State
 // ==========================================
@@ -15,7 +25,7 @@ const state = {
   lineUser: {
     uid: localStorage.getItem('site_line_uid') || '-',
     name: localStorage.getItem('site_line_name') || '-',
-    role: localStorage.getItem('site_line_role') || '-',
+    role: (localStorage.getItem('site_line_role') && localStorage.getItem('site_line_role') !== 'โฟร์แมนหน้างาน' && localStorage.getItem('site_line_role') !== 'โฟร์แมน') ? localStorage.getItem('site_line_role') : '-',
     level: localStorage.getItem('site_line_level') || '-',
     avatar: localStorage.getItem('site_line_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
     liffId: localStorage.getItem('site_liff_id') || '',
@@ -24,7 +34,7 @@ const state = {
   reportDate: new Date().toISOString().slice(0, 10),
   subcontractor: {
     id: localStorage.getItem('site_sub_id') || '-',
-    name: localStorage.getItem('site_sub_name') || '-'
+    name: (localStorage.getItem('site_sub_name') && localStorage.getItem('site_sub_name') !== 'หจก. นครพิงค์โครงสร้าง') ? localStorage.getItem('site_sub_name') : '-'
   },
   weather: {
     type: 'sunny',
@@ -117,8 +127,12 @@ function parseUrlParamsUser() {
         localStorage.setItem('site_line_name', state.lineUser.name);
       }
       if (role) {
-        state.lineUser.role = decodeURIComponent(role);
+        const decodedRole = decodeURIComponent(role);
+        state.lineUser.role = (decodedRole !== 'โฟร์แมนหน้างาน' && decodedRole !== 'โฟร์แมน') ? decodedRole : '-';
         localStorage.setItem('site_line_role', state.lineUser.role);
+      } else if (!state.lineUser.role || state.lineUser.role === 'โฟร์แมนหน้างาน' || state.lineUser.role === 'โฟร์แมน') {
+        state.lineUser.role = '-';
+        localStorage.setItem('site_line_role', '-');
       }
       if (lv) {
         state.lineUser.level = decodeURIComponent(lv);
@@ -130,8 +144,11 @@ function parseUrlParamsUser() {
       }
       if (company) {
         const decodedCompany = decodeURIComponent(company);
-        state.subcontractor.name = decodedCompany;
-        localStorage.setItem('site_sub_name', decodedCompany);
+        state.subcontractor.name = (decodedCompany !== 'หจก. นครพิงค์โครงสร้าง') ? decodedCompany : '-';
+        localStorage.setItem('site_sub_name', state.subcontractor.name);
+      } else if (!state.subcontractor.name || state.subcontractor.name === 'หจก. นครพิงค์โครงสร้าง') {
+        state.subcontractor.name = '-';
+        localStorage.setItem('site_sub_name', '-');
       }
 
       setTimeout(() => {
@@ -165,18 +182,19 @@ async function syncUserProfileFromGAS() {
         state.lineUser.name = user.displayName;
         localStorage.setItem('site_line_name', user.displayName);
       }
-      if (user.role) {
-        state.lineUser.role = user.role;
-        localStorage.setItem('site_line_role', user.role);
-      }
+      const syncRole = user.role || '-';
+      state.lineUser.role = (syncRole !== 'โฟร์แมนหน้างาน' && syncRole !== 'โฟร์แมน') ? syncRole : '-';
+      localStorage.setItem('site_line_role', state.lineUser.role);
+
       if (user.level) {
         state.lineUser.level = user.level;
         localStorage.setItem('site_line_level', user.level);
       }
-      if (user.company) {
-        state.subcontractor.name = user.company;
-        localStorage.setItem('site_sub_name', user.company);
-      }
+
+      const syncComp = user.company || '-';
+      state.subcontractor.name = (syncComp !== 'หจก. นครพิงค์โครงสร้าง') ? syncComp : '-';
+      localStorage.setItem('site_sub_name', state.subcontractor.name);
+
       if (user.avatar) {
         state.lineUser.avatar = user.avatar;
         localStorage.setItem('site_line_avatar', user.avatar);

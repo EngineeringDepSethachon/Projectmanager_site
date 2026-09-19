@@ -67,13 +67,18 @@ function doGet(e) {
       let foundUser = null;
 
       for (let i = 1; i < data.length; i++) {
+        const rawComp = String(data[i][5] || "-").trim();
+        const rawRole = String(data[i][3] || "-").trim();
+        const cleanComp = (rawComp === "หจก. นครพิงค์โครงสร้าง" || !rawComp) ? "-" : rawComp;
+        const cleanRole = (rawRole === "โฟร์แมนหน้างาน" || rawRole === "โฟร์แมน" || !rawRole) ? "-" : rawRole;
+
         const u = {
           uid: String(data[i][0] || "").trim(),
           lineName: String(data[i][1] || ""),
           displayName: String(data[i][2] || "-"),
-          role: String(data[i][3] || "-"),
+          role: cleanRole,
           level: String(data[i][4] || "-"),
-          company: String(data[i][5] || "-"),
+          company: cleanComp,
           avatar: String(data[i][6] || ""),
           status: String(data[i][7] || "-"),
           registeredAt: String(data[i][8] || ""),
@@ -588,10 +593,20 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
     if (String(data[i][0] || "").trim() === String(userId || "").trim()) {
       userRowIndex = i + 1; // 1-indexed for Sheet
       const dispNameVal = String(data[i][2] || "").trim();
-      const roleVal = String(data[i][3] || "").trim();
+      let roleVal = String(data[i][3] || "").trim();
       const levelVal = String(data[i][4] || "").trim();
-      const compVal = String(data[i][5] || "").trim();
+      let compVal = String(data[i][5] || "").trim();
       const statusVal = String(data[i][7] || "").trim();
+
+      // หากคอลัมน์เดิมติดค่าเริ่มต้นตัวอย่างเดิม ให้ล้างเป็น '-'
+      if (compVal === "หจก. นครพิงค์โครงสร้าง") {
+        compVal = "-";
+        sheet.getRange(userRowIndex, 6).setValue("-");
+      }
+      if (roleVal === "โฟร์แมนหน้างาน" || roleVal === "โฟร์แมน") {
+        roleVal = "-";
+        sheet.getRange(userRowIndex, 4).setValue("-");
+      }
 
       existingUser = {
         uid: String(data[i][0]).trim(),
