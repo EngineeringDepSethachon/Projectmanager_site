@@ -70,12 +70,12 @@ function doGet(e) {
         const u = {
           uid: String(data[i][0] || "").trim(),
           lineName: String(data[i][1] || ""),
-          displayName: String(data[i][2] || data[i][1] || ""),
-          role: String(data[i][3] || "โฟร์แมนหน้างาน"),
-          level: String(data[i][4] || "Lv.1"),
-          company: String(data[i][5] || "หจก. นครพิงค์โครงสร้าง"),
+          displayName: String(data[i][2] || "-"),
+          role: String(data[i][3] || "-"),
+          level: String(data[i][4] || "-"),
+          company: String(data[i][5] || "-"),
           avatar: String(data[i][6] || ""),
-          status: String(data[i][7] || "Active"),
+          status: String(data[i][7] || "-"),
           registeredAt: String(data[i][8] || ""),
           lastActive: String(data[i][9] || "")
         };
@@ -156,8 +156,8 @@ function doPost(e) {
 
     // 1. LINE Profile Data
     const lineUid = payload.line_uid || "NOT_PROVIDED";
-    const lineName = payload.line_name || "ช่างหน้างาน";
-    const subName = payload.sub_name || "หจก. นครพิงค์โครงสร้าง";
+    const lineName = payload.line_name || "-";
+    const subName = payload.sub_name || "-";
     const foremanName = payload.foreman_name || lineName;
 
     // 2. สภาพอากาศ & เวลาหยุดงาน (รอบเช้าเป็น 0 ชม. เพราะยังไม่มีการหยุดงาน / รอบจบงานคำนวณตามจริง)
@@ -578,7 +578,7 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   const sheet = getOrCreateUsersSheet(ss);
   const data = sheet.getDataRange().getValues();
   const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
-  const lineName = (lineProfile && lineProfile.displayName) || "ช่างหน้างาน";
+  const lineName = (lineProfile && lineProfile.displayName) || "-";
   const avatarUrl = (lineProfile && lineProfile.pictureUrl) || "";
 
   let userRowIndex = -1;
@@ -587,15 +587,21 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0] || "").trim() === String(userId || "").trim()) {
       userRowIndex = i + 1; // 1-indexed for Sheet
+      const dispNameVal = String(data[i][2] || "").trim();
+      const roleVal = String(data[i][3] || "").trim();
+      const levelVal = String(data[i][4] || "").trim();
+      const compVal = String(data[i][5] || "").trim();
+      const statusVal = String(data[i][7] || "").trim();
+
       existingUser = {
         uid: String(data[i][0]).trim(),
         lineName: String(data[i][1] || lineName),
-        displayName: String(data[i][2] || data[i][1] || lineName),
-        role: String(data[i][3] || "โฟร์แมนหน้างาน"),
-        level: String(data[i][4] || "Lv.1"),
-        company: String(data[i][5] || "หจก. นครพิงค์โครงสร้าง"),
+        displayName: dispNameVal || "-",
+        role: roleVal || "-",
+        level: levelVal || "-",
+        company: compVal || "-",
         avatar: String(data[i][6] || avatarUrl),
-        status: String(data[i][7] || "Active")
+        status: statusVal || "-"
       };
       break;
     }
@@ -608,16 +614,16 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
     sheet.getRange(userRowIndex, 10).setValue(timestamp);
     return existingUser;
   } else {
-    // ผู้ใช้ใหม่: สร้างแถวใหม่ในชีตทันที เพื่อให้แอดมินเข้ามาแก้ไขชื่อและตำแหน่งได้
+    // ผู้ใช้ใหม่: ลงทะเบียนข้อมูลเป็น "-" ทั้งหมด เพื่อให้แอดมินเข้ามาแก้ไขในชีต
     const newRow = [
       userId,
       lineName,
-      lineName, // ค่าเริ่มต้นให้เท่ากับชื่อใน LINE ก่อน
-      "โฟร์แมนหน้างาน",
-      "Lv.1",
-      "หจก. นครพิงค์โครงสร้าง",
+      "-", // Display Name เริ่มต้นเป็น -
+      "-", // Role เริ่มต้นเป็น -
+      "-", // Level เริ่มต้นเป็น -
+      "-", // Company เริ่มต้นเป็น -
       avatarUrl,
-      "Active",
+      "-", // Status เริ่มต้นเป็น -
       timestamp,
       timestamp
     ];
@@ -625,12 +631,12 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
     return {
       uid: userId,
       lineName: lineName,
-      displayName: lineName,
-      role: "โฟร์แมนหน้างาน",
-      level: "Lv.1",
-      company: "หจก. นครพิงค์โครงสร้าง",
+      displayName: "-",
+      role: "-",
+      level: "-",
+      company: "-",
       avatar: avatarUrl,
-      status: "Active"
+      status: "-"
     };
   }
 }
@@ -887,7 +893,7 @@ function replyLineWebAppCard(replyToken, token, data) {
                 layout: "horizontal",
                 contents: [
                   { type: "text", text: "💼 ตำแหน่ง:", size: "xxs", color: "#94a3b8", flex: 3 },
-                  { type: "text", text: (data.role || "โฟร์แมน") + " (" + (data.level || "Lv.1") + ")", size: "xxs", color: "#38bdf8", weight: "bold", flex: 6 }
+                  { type: "text", text: (data.role && data.role !== "-" ? data.role : "-") + (data.level && data.level !== "-" ? " (" + data.level + ")" : ""), size: "xxs", color: "#38bdf8", weight: "bold", flex: 6 }
                 ]
               },
               {
@@ -895,7 +901,7 @@ function replyLineWebAppCard(replyToken, token, data) {
                 layout: "horizontal",
                 contents: [
                   { type: "text", text: "🏢 บริษัท/สังกัด:", size: "xxs", color: "#94a3b8", flex: 3 },
-                  { type: "text", text: data.company || "หจก. นครพิงค์โครงสร้าง", size: "xxs", color: "#fbbf24", flex: 6, wrap: true }
+                  { type: "text", text: data.company || "-", size: "xxs", color: "#fbbf24", flex: 6, wrap: true }
                 ]
               },
               {
@@ -910,7 +916,7 @@ function replyLineWebAppCard(replyToken, token, data) {
           },
           {
             type: "text",
-            text: "💡 แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อแก้ไขชื่อ, ตำแหน่ง หรือสังกัดที่จะให้แสดงในเว็บได้ตลอดเวลา",
+            text: "💡 ผู้ใช้ใหม่จะถูกลงทะเบียนเป็น (-) ทั้งหมด แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อระบุชื่อ, ตำแหน่ง หรือบริษัทได้ตลอดเวลา",
             size: "xxs",
             color: "#cbd5e1",
             wrap: true

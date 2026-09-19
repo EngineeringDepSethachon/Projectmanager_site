@@ -13,18 +13,18 @@ import { gasService } from './gas_service.js';
 const state = {
   activeShift: 'morning', // 'morning' | 'evening'
   lineUser: {
-    uid: localStorage.getItem('site_line_uid') || 'U224cf73ea4b2484a0eb0055155e05bf4',
-    name: localStorage.getItem('site_line_name') || 'ช่างสมหมาย แก้วตา (โฟร์แมน)',
-    role: localStorage.getItem('site_line_role') || 'โฟร์แมนหน้างาน',
-    level: localStorage.getItem('site_line_level') || 'Lv.1',
+    uid: localStorage.getItem('site_line_uid') || '-',
+    name: localStorage.getItem('site_line_name') || '-',
+    role: localStorage.getItem('site_line_role') || '-',
+    level: localStorage.getItem('site_line_level') || '-',
     avatar: localStorage.getItem('site_line_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
     liffId: localStorage.getItem('site_liff_id') || '',
     isLiff: false
   },
   reportDate: '2026-09-18',
   subcontractor: {
-    id: localStorage.getItem('site_sub_id') || 'SUB-01',
-    name: localStorage.getItem('site_sub_name') || 'หจก. นครพิงค์โครงสร้าง (งานโครงสร้างฐานราก)'
+    id: localStorage.getItem('site_sub_id') || '-',
+    name: localStorage.getItem('site_sub_name') || '-'
   },
   weather: {
     type: 'sunny',
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initDateDisplay();
   loadSavedMorningPlan();
   await initLiff();
-  await loadSubcontractorsList();
+  await syncUserProfileFromGAS();
   renderLineProfile();
   renderGasStatus();
   renderShiftUI();
@@ -122,27 +122,12 @@ function parseUrlParamsUser() {
         const decodedCompany = decodeURIComponent(company);
         state.subcontractor.name = decodedCompany;
         localStorage.setItem('site_sub_name', decodedCompany);
-
-        // อัปเดต dropdown ผู้รับเหมา
-        const subSelect = document.getElementById('subcontractor-select');
-        if (subSelect) {
-          let found = false;
-          for (let opt of subSelect.options) {
-            if (opt.text.includes(decodedCompany) || decodedCompany.includes(opt.text)) {
-              opt.selected = true;
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            const newOpt = new Option(decodedCompany, 'SUB-CUSTOM', true, true);
-            subSelect.add(newOpt);
-          }
-        }
       }
 
       setTimeout(() => {
-        showToast(`🔗 ผูกบัญชี LINE: ${state.lineUser.name} (${state.lineUser.role || 'โฟร์แมน'})`, 'success');
+        const dispName = state.lineUser.name !== '-' ? state.lineUser.name : 'ผู้ใช้ใหม่';
+        const dispRole = (state.lineUser.role && state.lineUser.role !== '-') ? ` (${state.lineUser.role})` : '';
+        showToast(`🔗 เข้าสู่ระบบ: ${dispName}${dispRole}`, 'success');
       }, 500);
 
       // คลีน URL ใน Address Bar ให้สะอาด ไม่ติด Query String
@@ -153,6 +138,43 @@ function parseUrlParamsUser() {
     }
   } catch (err) {
     console.warn('Parse URL parameters error:', err);
+  }
+}
+
+// ==========================================
+// Sync Latest User Profile & Subcontractor from Site_Users Sheet
+// ==========================================
+async function syncUserProfileFromGAS() {
+  const uid = state.lineUser.uid;
+  if (!uid || uid === '-' || !gasService.isConfigured()) return;
+
+  try {
+    const user = await gasService.fetchUserProfile(uid);
+    if (user) {
+      if (user.displayName) {
+        state.lineUser.name = user.displayName;
+        localStorage.setItem('site_line_name', user.displayName);
+      }
+      if (user.role) {
+        state.lineUser.role = user.role;
+        localStorage.setItem('site_line_role', user.role);
+      }
+      if (user.level) {
+        state.lineUser.level = user.level;
+        localStorage.setItem('site_line_level', user.level);
+      }
+      if (user.company) {
+        state.subcontractor.name = user.company;
+        localStorage.setItem('site_sub_name', user.company);
+      }
+      if (user.avatar) {
+        state.lineUser.avatar = user.avatar;
+        localStorage.setItem('site_line_avatar', user.avatar);
+      }
+      renderLineProfile();
+    }
+  } catch (err) {
+    console.warn('syncUserProfileFromGAS error:', err);
   }
 }
 
@@ -277,19 +299,21 @@ function renderLineProfile() {
   const roleEl = document.getElementById('line-role-text');
   const companyEl = document.getElementById('line-company-text');
 
-  if (avatarEl) avatarEl.src = state.lineUser.avatar;
-  if (nameEl) nameEl.innerText = state.lineUser.name;
-  if (uidEl) uidEl.innerText = state.lineUser.uid;
+  if (avatarEl && state.lineUser.avatar) avatarEl.src = state.lineUser.avatar;
+  if (nameEl) nameEl.innerText = state.lineUser.name || '-';
+  if (uidEl) uidEl.innerText = state.lineUser.uid || '-';
   if (badgeEl) {
-    badgeEl.innerText = state.lineUser.isLiff ? '🟢 LINE LIFF' : (state.lineUser.level ? `🟢 ${state.lineUser.level}` : '🟢 LINE UID');
+    const isLiff = state.lineUser.isLiff;
+    const lv = state.lineUser.level;
+    badgeEl.innerText = isLiff ? '🟢 LINE LIFF' : (lv && lv !== '-' ? `🟢 ${lv}` : '🟢 LINE UID');
   }
   if (roleEl) {
-    const roleName = state.lineUser.role || 'โฟร์แมนหน้างาน';
-    const lvName = state.lineUser.level ? ` (${state.lineUser.level})` : '';
-    roleEl.innerText = roleName + lvName;
+    const roleName = state.lineUser.role || '-';
+    const lvName = (state.lineUser.level && state.lineUser.level !== '-') ? ` (${state.lineUser.level})` : '';
+    roleEl.innerText = roleName !== '-' ? `${roleName}${lvName}` : '-';
   }
   if (companyEl) {
-    companyEl.innerText = state.subcontractor.name || 'หจก. นครพิงค์โครงสร้าง';
+    companyEl.innerText = state.subcontractor.name || '-';
   }
 }
 

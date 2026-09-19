@@ -150,5 +150,27 @@ export const gasService = {
       console.warn('fetchSubcontractors error:', err);
       return null;
     }
+  },
+
+  /**
+   * ดึงข้อมูลโปรไฟล์ผู้ใช้จากชีต Site_Users ใน Google Sheets ด้วย UID
+   */
+  async fetchUserProfile(uid) {
+    const url = this.getUrl();
+    if (!this.isConfigured() || !uid) return null;
+
+    try {
+      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_user&uid=' + encodeURIComponent(uid) + '&_t=' + Date.now();
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.status === 'success' && data.user) {
+        return data.user;
+      }
+      return null;
+    } catch (err) {
+      console.warn('fetchUserProfile error:', err);
+      return null;
+    }
   }
 };
