@@ -37,9 +37,6 @@
       
       <div class="header-subinfo">
         <div class="project-pill">🏢 โครงการ: อาคารสำนักงาน 8 ชั้น</div>
-        <button type="button" class="gas-config-trigger" id="btn-open-gas-modal" title="ตั้งค่าเชื่อมต่อ Google Apps Script (GAS)">
-          <span>⚙️</span>
-        </button>
       </div>
 
       <!-- Horizontal Calendar Date Strip (Inspired by reference design) -->
@@ -334,39 +331,7 @@
 
 
 
-  <!-- Modal 2: Google Apps Script URL Configuration -->
-  <div class="modal-backdrop" id="modal-gas-config">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-title">
-          <span>📊</span>
-          <h3>ตั้งค่าเชื่อมต่อ Google Apps Script (GAS)</h3>
-        </div>
-        <button type="button" class="modal-close-btn" id="btn-close-gas-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="info-alert">
-          <p>เมื่อนำไฟล์ <code>gas/Code.gs</code> ไป Deploy เป็น Web App ใน Google Sheets แล้ว ให้นำ URL ที่ได้มาวางที่นี่</p>
-        </div>
 
-        <div class="form-group">
-          <label class="form-label" for="input-gas-url">GAS Web App URL:</label>
-          <input type="url" id="input-gas-url" class="form-input" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
-        </div>
-
-        <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
-          <button type="button" class="btn-outline-sm" id="btn-test-gas-connection" style="flex: 1;">
-            ⚡ ทดสอบการเชื่อมต่อ (Ping)
-          </button>
-        </div>
-        <div id="gas-test-result" style="margin-top: 0.5rem; font-size: 0.78rem; display: none;"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn-cancel" id="btn-cancel-gas-modal">ยกเลิก</button>
-        <button type="button" class="btn-primary" id="btn-save-gas-config">บันทึก URL</button>
-      </div>
-    </div>
-  </div>
 
   <!-- JavaScript Application Modules -->
   <script type="module" src="js/gas_service.js"></script>

@@ -183,25 +183,6 @@ body {
   text-overflow: ellipsis;
 }
 
-.gas-config-trigger {
-  background: #ffffff;
-  border: 1.5px solid var(--border-dark);
-  border-radius: var(--radius-full);
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: var(--shadow-neo-sm);
-  transition: transform 0.15s;
-  flex-shrink: 0;
-}
-
-.gas-config-trigger:active {
-  transform: translate(1px, 1px);
-}
-
 /* Horizontal Calendar Date Strip (Inspired by reference design) */
 .date-strip-wrapper {
   margin-top: 0.1rem;
@@ -230,7 +211,8 @@ body {
   padding: 0.4rem 0.3rem;
   border-radius: var(--radius-md);
   border: 1.5px solid transparent;
-  cursor: pointer;
+  cursor: default;
+  pointer-events: none;
   user-select: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -21,7 +21,7 @@ const state = {
     liffId: localStorage.getItem('site_liff_id') || '',
     isLiff: false
   },
-  reportDate: '2026-09-18',
+  reportDate: new Date().toISOString().slice(0, 10),
   subcontractor: {
     id: localStorage.getItem('site_sub_id') || '-',
     name: localStorage.getItem('site_sub_name') || '-'
@@ -319,6 +319,7 @@ function renderHorizontalDateStrip() {
   monday.setDate(today.getDate() + mondayDiff);
 
   const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayStr = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
 
   let html = '';
   for (let i = 0; i < 7; i++) {
@@ -327,10 +328,10 @@ function renderHorizontalDateStrip() {
     const dayNum = d.getDate();
     const dayName = daysEn[d.getDay()];
     const dateStr = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}`;
-    const isSelected = dateStr === state.reportDate;
+    const isToday = dateStr === todayStr;
 
     html += `
-      <div class="date-item ${isSelected ? 'active' : ''}" data-date="${dateStr}" onclick="window.selectDateStrip('${dateStr}')">
+      <div class="date-item ${isToday ? 'active' : ''}" data-date="${dateStr}" title="${isToday ? 'วันนี้' : ''}">
         <span class="day-name">${dayName}</span>
         <span class="day-number">${dayNum}</span>
       </div>
@@ -339,20 +340,6 @@ function renderHorizontalDateStrip() {
 
   container.innerHTML = html;
 }
-
-window.selectDateStrip = function(dateStr) {
-  state.reportDate = dateStr;
-  document.querySelectorAll('.date-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.date === dateStr);
-  });
-  const dateEl = document.getElementById('display-report-date');
-  if (dateEl) {
-    const parts = dateStr.split('-');
-    const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    const mIdx = parseInt(parts[1], 10) - 1;
-    dateEl.innerText = `${parseInt(parts[2], 10)} ${thMonths[mIdx] || ''} ${parts[0]}`;
-  }
-};
 
 function renderLineProfile() {
   const avatarEl = document.getElementById('line-avatar');
@@ -1174,64 +1161,7 @@ function setupModals() {
     });
   }
 
-  // Modal 2: GAS Config
-  const modalGas = document.getElementById('modal-gas-config');
-  const btnOpenGas = document.getElementById('btn-open-gas-modal');
-  const btnCloseGas = document.getElementById('btn-close-gas-modal');
-  const btnCancelGas = document.getElementById('btn-cancel-gas-modal');
-  const btnSaveGas = document.getElementById('btn-save-gas-config');
-  const btnTestGas = document.getElementById('btn-test-gas-connection');
-  const gasTestResult = document.getElementById('gas-test-result');
 
-  if (btnOpenGas && modalGas) {
-    btnOpenGas.addEventListener('click', () => {
-      document.getElementById('input-gas-url').value = gasService.getUrl();
-      if (gasTestResult) gasTestResult.style.display = 'none';
-      modalGas.classList.add('active');
-    });
-  }
-
-  const closeGasModal = () => modalGas?.classList.remove('active');
-  if (btnCloseGas) btnCloseGas.addEventListener('click', closeGasModal);
-  if (btnCancelGas) btnCancelGas.addEventListener('click', closeGasModal);
-
-  if (btnTestGas) {
-    btnTestGas.addEventListener('click', async () => {
-      const url = document.getElementById('input-gas-url').value.trim();
-      if (!url) {
-        showToast('กรุณาระบุ URL ก่อนทดสอบ', 'error');
-        return;
-      }
-      btnTestGas.disabled = true;
-      btnTestGas.innerText = '⏳ กำลังทดสอบ Ping...';
-      if (gasTestResult) gasTestResult.style.display = 'none';
-
-      const res = await gasService.testConnection(url);
-      btnTestGas.disabled = false;
-      btnTestGas.innerText = '⚡ ทดสอบการเชื่อมต่อ (Ping)';
-
-      if (gasTestResult) {
-        gasTestResult.style.display = 'block';
-        if (res.success) {
-          gasTestResult.style.color = '#10b981';
-          gasTestResult.innerHTML = `🟢 ${res.message} (ชีต: ${res.sheetName})`;
-        } else {
-          gasTestResult.style.color = '#f87171';
-          gasTestResult.innerHTML = `🔴 ${res.message}`;
-        }
-      }
-    });
-  }
-
-  if (btnSaveGas) {
-    btnSaveGas.addEventListener('click', () => {
-      const url = document.getElementById('input-gas-url').value.trim();
-      gasService.setUrl(url);
-      renderGasStatus();
-      closeGasModal();
-      showToast(url ? 'บันทึก URL ของ Google Apps Script เรียบร้อย' : 'ลบการตั้งค่า GAS แล้ว', 'success');
-    });
-  }
 }
 
 // ==========================================
