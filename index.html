@@ -9,7 +9,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- LINE LIFF SDK (v2) -->
   <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -28,19 +28,30 @@
     <!-- Top Bar -->
     <header class="app-header">
       <div class="header-top">
-        <div class="brand-title">
-          <span class="brand-icon">👷‍♂️</span>
-          <h1>รายงานหน้างานประจำวัน</h1>
+        <div class="brand-greeting">
+          <span class="greeting-sub" id="greeting-sub">👋 สวัสดีครับ,</span>
+          <h1 id="greeting-title">รายงานหน้างานวันนี้</h1>
         </div>
         <div class="header-badge" id="shift-badge-top">🌅 รอบเช้า</div>
       </div>
       
       <div class="header-subinfo">
-        <div class="date-badge">
-          <span>📅 วันที่:</span>
-          <strong id="display-report-date">18 ก.ย. 2026</strong>
+        <div class="project-pill">🏢 โครงการ: อาคารสำนักงาน 8 ชั้น</div>
+        <button type="button" class="gas-config-trigger" id="btn-open-gas-modal" title="ตั้งค่าเชื่อมต่อ Google Apps Script (GAS)">
+          <span>⚙️</span>
+        </button>
+      </div>
+
+      <!-- Horizontal Calendar Date Strip (Inspired by reference design) -->
+      <div class="date-strip-wrapper">
+        <div class="date-strip" id="horizontal-date-strip">
+          <!-- Dynamically injected by JS -->
         </div>
-        <div class="project-tag">โครงการ: อาคารสำนักงาน 8 ชั้น</div>
+      </div>
+
+      <!-- Hidden standard date display for backwards compatibility with js -->
+      <div style="display: none;">
+        <strong id="display-report-date">18 ก.ย. 2026</strong>
       </div>
 
       <!-- SHIFT MODE SWITCHER (แท็บสลับรอบเช้า vs รอบจบงาน) -->

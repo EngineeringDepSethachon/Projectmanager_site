@@ -294,12 +294,65 @@ async function initLiff() {
 // Render Functions
 // ==========================================
 function initDateDisplay() {
+  const today = new Date();
+  const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const formattedToday = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+  state.reportDate = formattedToday;
+
   const dateEl = document.getElementById('display-report-date');
   if (dateEl) {
-    const today = new Date();
-    dateEl.innerText = `${today.getDate()} ก.ย. 2026`;
+    dateEl.innerText = `${today.getDate()} ${thMonths[today.getMonth()]} ${today.getFullYear()}`;
   }
+
+  renderHorizontalDateStrip();
 }
+
+function renderHorizontalDateStrip() {
+  const container = document.getElementById('horizontal-date-strip');
+  if (!container) return;
+
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0: Sun, 1: Mon...
+  // Calculate Monday of current week
+  const mondayDiff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + mondayDiff);
+
+  const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  let html = '';
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const dayNum = d.getDate();
+    const dayName = daysEn[d.getDay()];
+    const dateStr = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}`;
+    const isSelected = dateStr === state.reportDate;
+
+    html += `
+      <div class="date-item ${isSelected ? 'active' : ''}" data-date="${dateStr}" onclick="window.selectDateStrip('${dateStr}')">
+        <span class="day-name">${dayName}</span>
+        <span class="day-number">${dayNum}</span>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+window.selectDateStrip = function(dateStr) {
+  state.reportDate = dateStr;
+  document.querySelectorAll('.date-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.date === dateStr);
+  });
+  const dateEl = document.getElementById('display-report-date');
+  if (dateEl) {
+    const parts = dateStr.split('-');
+    const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const mIdx = parseInt(parts[1], 10) - 1;
+    dateEl.innerText = `${parseInt(parts[2], 10)} ${thMonths[mIdx] || ''} ${parts[0]}`;
+  }
+};
 
 function renderLineProfile() {
   const avatarEl = document.getElementById('line-avatar');
@@ -308,6 +361,7 @@ function renderLineProfile() {
   const badgeEl = document.getElementById('line-mode-badge');
   const roleEl = document.getElementById('line-role-text');
   const companyEl = document.getElementById('line-company-text');
+  const greetingSub = document.getElementById('greeting-sub');
 
   if (avatarEl && state.lineUser.avatar) avatarEl.src = state.lineUser.avatar;
   if (nameEl) nameEl.innerText = state.lineUser.name || '-';
@@ -324,6 +378,11 @@ function renderLineProfile() {
   }
   if (companyEl) {
     companyEl.innerText = state.subcontractor.name || '-';
+  }
+  if (greetingSub) {
+    const rawName = (state.lineUser.name && state.lineUser.name !== '-') ? state.lineUser.name : 'โฟร์แมน';
+    const shortName = rawName.split(' ')[0];
+    greetingSub.innerText = `👋 สวัสดีครับ, ${shortName}`;
   }
 }
 
@@ -354,22 +413,25 @@ function renderShiftUI() {
   const morningBanner = document.getElementById('morning-plan-banner');
 
   if (tabMorning && tabEvening) {
+    const greetingTitle = document.getElementById('greeting-title');
     if (isMorning) {
       tabMorning.classList.add('active');
       tabEvening.classList.remove('active');
       if (topBadge) {
         topBadge.className = 'header-badge';
-        topBadge.innerText = '🌅 รอบเช้า (เปิดงาน)';
+        topBadge.innerText = '🌅 รอบเช้า';
       }
       if (morningBanner) morningBanner.style.display = 'none';
+      if (greetingTitle) greetingTitle.innerText = 'รายงานเปิดงานเช้า 🌅';
     } else {
       tabMorning.classList.remove('active');
       tabEvening.classList.add('active');
       if (topBadge) {
         topBadge.className = 'header-badge evening';
-        topBadge.innerText = '🌆 รอบเย็น (จบงาน)';
+        topBadge.innerText = '🌆 รอบเย็น';
       }
       if (morningBanner) morningBanner.style.display = 'flex';
+      if (greetingTitle) greetingTitle.innerText = 'รายงานสรุปจบงาน 🌆';
     }
   }
 
