@@ -121,7 +121,8 @@ function doPost(e) {
 
     // กะการทำงาน: morning (เปิดงานเช้า) หรือ evening (รายงานจบงาน)
     const shiftType = payload.shift_type || "morning";
-    const shiftLabel = payload.shift_label || (shiftType === "morning" ? "เปิดงานตอนเช้า" : "รายงานจบงาน");
+    const isMorning = shiftType === "morning";
+    const shiftLabel = payload.shift_label || (isMorning ? "เปิดงานตอนเช้า" : "รายงานจบงาน");
 
     const reportId = payload.id || ((shiftType === "morning" ? "MORN-" : "EVEN-") + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd-HHmmss"));
     const reportDate = payload.report_date || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd");
@@ -133,9 +134,9 @@ function doPost(e) {
     const subName = payload.sub_name || "หจก. นครพิงค์โครงสร้าง";
     const foremanName = payload.foreman_name || lineName;
 
-    // 2. สภาพอากาศ & เวลาหยุดงาน
+    // 2. สภาพอากาศ & เวลาหยุดงาน (รอบเช้าเป็น 0 ชม. เพราะยังไม่มีการหยุดงาน / รอบจบงานคำนวณตามจริง)
     const weather = payload.weather || "☀️ แจ่มใส";
-    const rainDelayHours = Number(payload.rain_delay_hours || 0);
+    const rainDelayHours = isMorning ? 0 : Number(payload.rain_delay_hours || 0);
 
     // 3. กำลังพล (+/-)
     const wf = payload.workforce || {};
@@ -363,7 +364,7 @@ function sendLineShiftFlexNotification(data) {
             layout: "horizontal",
             contents: [
               { type: "text", text: isMorning ? "อากาศเช้า:" : "สภาพอากาศ:", size: "xs", color: "#94a3b8", flex: 2 },
-              { type: "text", text: data.weather + (data.rainDelayHours > 0 ? " (หยุด " + data.rainDelayHours + " ชม.)" : ""), size: "xs", color: "#f59e0b", flex: 5 }
+              { type: "text", text: isMorning ? data.weather : (data.weather + (data.rainDelayHours > 0 ? " (หยุดงาน " + data.rainDelayHours + " ชม.)" : "")), size: "xs", color: "#f59e0b", flex: 5 }
             ]
           },
           {

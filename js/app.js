@@ -298,7 +298,32 @@ function renderShiftUI() {
   // 2. Section Titles & Labels
   const weatherTitle = document.getElementById('weather-section-title');
   if (weatherTitle) {
-    weatherTitle.innerText = isMorning ? 'สภาพอากาศตอนเปิดงาน' : 'สภาพอากาศตลอดวัน & สรุปเวลาฝนตก';
+    weatherTitle.innerText = isMorning ? 'สภาพอากาศตอนเปิดงานเช้า' : 'สภาพอากาศตลอดวัน & สรุปเวลาฝนตก';
+  }
+
+  // ซ่อนกล่องเวลาหยุดงานในรอบเช้า (เพราะตอนเช้ายังไม่รู้เวลาหยุดล่วงหน้า) และแสดงในรอบจบงาน
+  const rainHoursBox = document.getElementById('rain-hours-box');
+  if (rainHoursBox) {
+    rainHoursBox.style.display = isMorning ? 'none' : 'flex';
+  }
+
+  // ปรับข้อความปุ่มสภาพอากาศให้สมจริงตามรอบเช้า vs รอบจบงาน
+  const btnSunnyLabel = document.querySelector('.weather-btn[data-type="sunny"] .w-label');
+  const btnCloudyLabel = document.querySelector('.weather-btn[data-type="cloudy"] .w-label');
+  const btnRainLightLabel = document.querySelector('.weather-btn[data-type="rain_light"] .w-label');
+  const btnRainHeavyLabel = document.querySelector('.weather-btn[data-type="rain_heavy"] .w-label');
+
+  if (isMorning) {
+    if (btnSunnyLabel) btnSunnyLabel.innerText = 'ฟ้าโปร่ง แดดดี';
+    if (btnCloudyLabel) btnCloudyLabel.innerText = 'มีเมฆมาก ลมสงบ';
+    if (btnRainLightLabel) btnRainLightLabel.innerText = 'มีฝนตกปรอยๆ เช้า';
+    if (btnRainHeavyLabel) btnRainHeavyLabel.innerText = 'ฝนตกหนักเช้า';
+    state.weather.rainDelayHours = 0;
+  } else {
+    if (btnSunnyLabel) btnSunnyLabel.innerText = 'แดดจัดทั้งวัน ทำงานปกติ';
+    if (btnCloudyLabel) btnCloudyLabel.innerText = 'มีเมฆมาก ไม่มีฝน';
+    if (btnRainLightLabel) btnRainLightLabel.innerText = 'ฝนตกหยุดชั่วคราว';
+    if (btnRainHeavyLabel) btnRainHeavyLabel.innerText = 'ฝนตกหนัก น้ำท่วมขัง';
   }
 
   const workforceTitle = document.getElementById('workforce-section-title');
@@ -529,13 +554,28 @@ function bindEventHandlers() {
   document.querySelectorAll('.weather-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       state.weather.type = btn.dataset.type;
-      state.weather.text = btn.dataset.text;
-      if (btn.dataset.type === 'rain_heavy') {
-        state.weather.rainDelayHours = 3;
-      } else if (btn.dataset.type === 'rain_light') {
-        state.weather.rainDelayHours = 1;
+      const isMorning = state.activeShift === 'morning';
+
+      if (isMorning) {
+        state.weather.rainDelayHours = 0; // รอบเช้ายังไม่มีเวลาหยุดงาน
+        if (btn.dataset.type === 'sunny') state.weather.text = '☀️ ท้องฟ้าแจ่มใส ฟ้าโปร่ง';
+        else if (btn.dataset.type === 'cloudy') state.weather.text = '⛅ มีเมฆมาก ลมสงบ';
+        else if (btn.dataset.type === 'rain_light') state.weather.text = '🌧️ มีฝนตกปรอยๆ ช่วงเช้า';
+        else if (btn.dataset.type === 'rain_heavy') state.weather.text = '⛈️ ฝนตกหนักช่วงเช้า';
       } else {
-        state.weather.rainDelayHours = 0;
+        if (btn.dataset.type === 'rain_heavy') {
+          state.weather.text = '⛈️ ฝนตกหนัก น้ำท่วมขังหลุมงาน';
+          state.weather.rainDelayHours = 3;
+        } else if (btn.dataset.type === 'rain_light') {
+          state.weather.text = '🌧️ ฝนตกชั่วคราว (หยุดงานชั่วขณะ)';
+          state.weather.rainDelayHours = 1;
+        } else if (btn.dataset.type === 'cloudy') {
+          state.weather.text = '⛅ มีเมฆมาก ไม่มีฝนรบกวน';
+          state.weather.rainDelayHours = 0;
+        } else {
+          state.weather.text = '☀️ ท้องฟ้าแจ่มใส แดดจัดทั้งวัน';
+          state.weather.rainDelayHours = 0;
+        }
       }
       renderWeather();
     });
