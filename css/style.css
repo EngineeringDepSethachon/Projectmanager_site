@@ -418,6 +418,38 @@ body {
   border: 1px solid rgba(6, 199, 85, 0.4);
 }
 
+.line-role-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.user-role-badge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.user-company-badge {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .line-uid-row {
   font-size: 0.7rem;
   color: var(--text-muted);

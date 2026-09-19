@@ -15,14 +15,16 @@ const state = {
   lineUser: {
     uid: localStorage.getItem('site_line_uid') || 'U224cf73ea4b2484a0eb0055155e05bf4',
     name: localStorage.getItem('site_line_name') || 'ช่างสมหมาย แก้วตา (โฟร์แมน)',
+    role: localStorage.getItem('site_line_role') || 'โฟร์แมนหน้างาน',
+    level: localStorage.getItem('site_line_level') || 'Lv.1',
     avatar: localStorage.getItem('site_line_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
     liffId: localStorage.getItem('site_liff_id') || '',
     isLiff: false
   },
   reportDate: '2026-09-18',
   subcontractor: {
-    id: 'SUB-01',
-    name: 'หจก. นครพิงค์โครงสร้าง (งานโครงสร้างฐานราก)'
+    id: localStorage.getItem('site_sub_id') || 'SUB-01',
+    name: localStorage.getItem('site_sub_name') || 'หจก. นครพิงค์โครงสร้าง (งานโครงสร้างฐานราก)'
   },
   weather: {
     type: 'sunny',
@@ -107,6 +109,9 @@ function parseUrlParamsUser() {
     const urlParams = new URLSearchParams(window.location.search);
     const uid = urlParams.get('uid');
     const name = urlParams.get('name');
+    const role = urlParams.get('role');
+    const lv = urlParams.get('lv');
+    const company = urlParams.get('company');
     const avatar = urlParams.get('avatar');
 
     if (uid && (uid.startsWith('U') || uid.startsWith('u'))) {
@@ -117,13 +122,43 @@ function parseUrlParamsUser() {
         state.lineUser.name = decodeURIComponent(name);
         localStorage.setItem('site_line_name', state.lineUser.name);
       }
+      if (role) {
+        state.lineUser.role = decodeURIComponent(role);
+        localStorage.setItem('site_line_role', state.lineUser.role);
+      }
+      if (lv) {
+        state.lineUser.level = decodeURIComponent(lv);
+        localStorage.setItem('site_line_level', state.lineUser.level);
+      }
       if (avatar) {
         state.lineUser.avatar = decodeURIComponent(avatar);
         localStorage.setItem('site_line_avatar', state.lineUser.avatar);
       }
+      if (company) {
+        const decodedCompany = decodeURIComponent(company);
+        state.subcontractor.name = decodedCompany;
+        localStorage.setItem('site_sub_name', decodedCompany);
+
+        // อัปเดต dropdown ผู้รับเหมา
+        const subSelect = document.getElementById('subcontractor-select');
+        if (subSelect) {
+          let found = false;
+          for (let opt of subSelect.options) {
+            if (opt.text.includes(decodedCompany) || decodedCompany.includes(opt.text)) {
+              opt.selected = true;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            const newOpt = new Option(decodedCompany, 'SUB-CUSTOM', true, true);
+            subSelect.add(newOpt);
+          }
+        }
+      }
 
       setTimeout(() => {
-        showToast(`🔗 ผูกบัญชี LINE สำเร็จ: ${state.lineUser.name}`, 'success');
+        showToast(`🔗 ผูกบัญชี LINE: ${state.lineUser.name} (${state.lineUser.role || 'โฟร์แมน'})`, 'success');
       }, 500);
 
       // คลีน URL ใน Address Bar ให้สะอาด ไม่ติด Query String
@@ -195,12 +230,22 @@ function renderLineProfile() {
   const nameEl = document.getElementById('line-display-name');
   const uidEl = document.getElementById('line-uid-text');
   const badgeEl = document.getElementById('line-mode-badge');
+  const roleEl = document.getElementById('line-role-text');
+  const companyEl = document.getElementById('line-company-text');
 
   if (avatarEl) avatarEl.src = state.lineUser.avatar;
   if (nameEl) nameEl.innerText = state.lineUser.name;
   if (uidEl) uidEl.innerText = state.lineUser.uid;
   if (badgeEl) {
-    badgeEl.innerText = state.lineUser.isLiff ? '🟢 LINE LIFF' : '🟢 LINE UID';
+    badgeEl.innerText = state.lineUser.isLiff ? '🟢 LINE LIFF' : (state.lineUser.level ? `🟢 ${state.lineUser.level}` : '🟢 LINE UID');
+  }
+  if (roleEl) {
+    const roleName = state.lineUser.role || 'โฟร์แมนหน้างาน';
+    const lvName = state.lineUser.level ? ` (${state.lineUser.level})` : '';
+    roleEl.innerText = roleName + lvName;
+  }
+  if (companyEl) {
+    companyEl.innerText = state.subcontractor.name || 'หจก. นครพิงค์โครงสร้าง';
   }
 }
 

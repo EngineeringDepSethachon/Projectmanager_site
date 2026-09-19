@@ -10,6 +10,7 @@
 
 const SHEET_NAME_REPORTS = "Daily_Reports";
 const SHEET_NAME_TASKS = "Tasks_Detail";
+const SHEET_NAME_USERS = "Site_Users";
 const DRIVE_FOLDER_NAME = "Construction_Site_Photos";
 
 // LINE Bot Messaging API Channel Access Token & Target User/Group ID
@@ -18,7 +19,7 @@ const DEFAULT_TARGET_ID = "U224cf73ea4b2484a0eb0055155e05bf4";
 const DEFAULT_FRONTEND_WEB_URL = "https://engineeringdepsethachon.github.io/Projectmanager_site";
 
 /**
- * Handle GET requests (Health Check Ping & Query Reports)
+ * Handle GET requests (Health Check Ping & Query Reports & Query Users)
  */
 function doGet(e) {
   try {
@@ -54,6 +55,40 @@ function doGet(e) {
         status: "success",
         total: reports.length,
         reports: reports
+      });
+    }
+
+    if (action === "get_user" || action === "get_users") {
+      const sheet = getOrCreateUsersSheet(ss);
+      const data = sheet.getDataRange().getValues();
+      const targetUid = (e.parameter && e.parameter.uid ? String(e.parameter.uid).trim() : "");
+      const users = [];
+      let foundUser = null;
+
+      for (let i = 1; i < data.length; i++) {
+        const u = {
+          uid: String(data[i][0] || "").trim(),
+          lineName: String(data[i][1] || ""),
+          displayName: String(data[i][2] || data[i][1] || ""),
+          role: String(data[i][3] || "โฟร์แมนหน้างาน"),
+          level: String(data[i][4] || "Lv.1"),
+          company: String(data[i][5] || "หจก. นครพิงค์โครงสร้าง"),
+          avatar: String(data[i][6] || ""),
+          status: String(data[i][7] || "Active"),
+          registeredAt: String(data[i][8] || ""),
+          lastActive: String(data[i][9] || "")
+        };
+        users.push(u);
+        if (targetUid && u.uid === targetUid) {
+          foundUser = u;
+        }
+      }
+
+      return jsonResponse({
+        status: "success",
+        total: users.length,
+        users: users,
+        user: foundUser
       });
     }
 
@@ -473,6 +508,107 @@ function getOrCreateTasksSheet(ss) {
 }
 
 /**
+ * สร้างหรือดึงชีต Site_Users สำหรับจัดการบัญชีช่าง/โฟร์แมน พร้อมกำหนดสิทธิ์และบทบาท
+ */
+function getOrCreateUsersSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAME_USERS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_USERS);
+    const headers = [
+      "LINE UID",
+      "ชื่อใน LINE (LINE Name)",
+      "ชื่อที่แสดงในระบบ (Display Name)",
+      "ตำแหน่ง (Role)",
+      "ระดับ (Level/LV)",
+      "บริษัท / ผู้รับเหมา (Company)",
+      "รูปโปรไฟล์ (Avatar URL)",
+      "สถานะ (Status)",
+      "ลงทะเบียนเมื่อ (Registered At)",
+      "เข้าใช้งานล่าสุด (Last Active)"
+    ];
+    sheet.appendRow(headers);
+    sheet.getRange("A1:J1").setBackground("#4338ca").setFontColor("#ffffff").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    try {
+      sheet.setColumnWidth(1, 260); // LINE UID
+      sheet.setColumnWidth(2, 160); // LINE Name
+      sheet.setColumnWidth(3, 180); // Display Name
+      sheet.setColumnWidth(4, 150); // Role
+      sheet.setColumnWidth(5, 100); // Level
+      sheet.setColumnWidth(6, 240); // Company
+      sheet.setColumnWidth(7, 200); // Avatar
+    } catch(e) {}
+  }
+  return sheet;
+}
+
+/**
+ * บันทึกหรือดึงข้อมูลผู้ใช้จากชีต Site_Users
+ * หากเป็นช่างใหม่ จะบันทึกแถวใหม่ทันที
+ * หากมีอยู่แล้ว จะอ่านชื่อ/ตำแหน่งที่แอดมินแก้ไขไว้ และอัปเดตเวลาเข้าใช้งานล่าสุด
+ */
+function recordOrUpdateSiteUser(ss, userId, lineProfile) {
+  const sheet = getOrCreateUsersSheet(ss);
+  const data = sheet.getDataRange().getValues();
+  const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+  const lineName = (lineProfile && lineProfile.displayName) || "ช่างหน้างาน";
+  const avatarUrl = (lineProfile && lineProfile.pictureUrl) || "";
+
+  let userRowIndex = -1;
+  let existingUser = null;
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0] || "").trim() === String(userId || "").trim()) {
+      userRowIndex = i + 1; // 1-indexed for Sheet
+      existingUser = {
+        uid: String(data[i][0]).trim(),
+        lineName: String(data[i][1] || lineName),
+        displayName: String(data[i][2] || data[i][1] || lineName),
+        role: String(data[i][3] || "โฟร์แมนหน้างาน"),
+        level: String(data[i][4] || "Lv.1"),
+        company: String(data[i][5] || "หจก. นครพิงค์โครงสร้าง"),
+        avatar: String(data[i][6] || avatarUrl),
+        status: String(data[i][7] || "Active")
+      };
+      break;
+    }
+  }
+
+  if (userRowIndex > 0 && existingUser) {
+    // ผู้ใช้เดิม: อัปเดตชื่อ LINE, รูป และเวลาล่าสุด (เก็บค่าที่แอดมินแก้ไขไว้ใน Display Name, Role, Level, Company)
+    sheet.getRange(userRowIndex, 2).setValue(lineName);
+    if (avatarUrl) sheet.getRange(userRowIndex, 7).setValue(avatarUrl);
+    sheet.getRange(userRowIndex, 10).setValue(timestamp);
+    return existingUser;
+  } else {
+    // ผู้ใช้ใหม่: สร้างแถวใหม่ในชีตทันที เพื่อให้แอดมินเข้ามาแก้ไขชื่อและตำแหน่งได้
+    const newRow = [
+      userId,
+      lineName,
+      lineName, // ค่าเริ่มต้นให้เท่ากับชื่อใน LINE ก่อน
+      "โฟร์แมนหน้างาน",
+      "Lv.1",
+      "หจก. นครพิงค์โครงสร้าง",
+      avatarUrl,
+      "Active",
+      timestamp,
+      timestamp
+    ];
+    sheet.appendRow(newRow);
+    return {
+      uid: userId,
+      lineName: lineName,
+      displayName: lineName,
+      role: "โฟร์แมนหน้างาน",
+      level: "Lv.1",
+      company: "หจก. นครพิงค์โครงสร้าง",
+      avatar: avatarUrl,
+      status: "Active"
+    };
+  }
+}
+
+/**
  * สร้างหรือค้นหาโฟลเดอร์ใน Google Drive สำหรับเก็บรูปถ่ายหน้างาน
  */
 function getOrCreateDriveFolder(folderName) {
@@ -529,25 +665,34 @@ function handleLineWebhook(payload) {
     if (shouldReply) {
       // 1. ดึงโปรไฟล์ LINE ของช่าง (ชื่อ + รูปภาพ)
       const userProfile = getLineUserProfile(userId, token);
-      const userName = userProfile.displayName || "ช่างหน้างาน";
-      const pictureUrl = userProfile.pictureUrl || "";
 
-      // 2. สร้างลิงก์เข้าสู่ระบบพร้อมแนบ UID และชื่อ
+      // 2. ตรวจสอบ/สร้างชีต Site_Users และบันทึกหรือดึงข้อมูลผู้ใช้ (ชื่อแสดง, ตำแหน่ง, เลเวล, บริษัท)
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const siteUser = recordOrUpdateSiteUser(ss, userId, userProfile);
+
+      // 3. สร้างลิงก์เข้าสู่ระบบพร้อมแนบ UID, ชื่อแสดง, ตำแหน่ง, เลเวล, บริษัท
       let baseUrl = webAppFrontendUrl.trim();
       if (!baseUrl.endsWith('/') && !baseUrl.includes('?') && !baseUrl.includes('#')) {
         baseUrl += '/';
       }
       const separator = baseUrl.indexOf("?") > -1 ? "&" : "?";
       const directWebUrl = baseUrl + separator +
-        "uid=" + encodeURIComponent(userId) +
-        "&name=" + encodeURIComponent(userName) +
-        (pictureUrl ? "&avatar=" + encodeURIComponent(pictureUrl) : "");
+        "uid=" + encodeURIComponent(siteUser.uid) +
+        "&name=" + encodeURIComponent(siteUser.displayName) +
+        "&role=" + encodeURIComponent(siteUser.role) +
+        "&lv=" + encodeURIComponent(siteUser.level) +
+        "&company=" + encodeURIComponent(siteUser.company) +
+        (siteUser.avatar ? "&avatar=" + encodeURIComponent(siteUser.avatar) : "");
 
-      // 3. ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ
+      // 4. ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ พร้อมสรุปข้อมูลตำแหน่ง
       replyLineWebAppCard(replyToken, token, {
-        userId: userId,
-        userName: userName,
-        pictureUrl: pictureUrl,
+        userId: siteUser.uid,
+        userName: siteUser.displayName,
+        lineName: siteUser.lineName,
+        role: siteUser.role,
+        level: siteUser.level,
+        company: siteUser.company,
+        pictureUrl: siteUser.avatar,
         webUrl: directWebUrl,
         userMsg: userMsg
       });
@@ -579,21 +724,21 @@ function getLineUserProfile(userId, token) {
 }
 
 /**
- * ส่ง Reply Message ด้วย Flex Card มีปุ่มกดเข้าเว็บรายงานหน้างาน
+ * ส่ง Reply Message ด้วย Flex Card มีปุ่มกดเข้าเว็บรายงานหน้างาน พร้อมสรุปข้อมูลโปรไฟล์จากชีต
  */
 function replyLineWebAppCard(replyToken, token, data) {
   if (!token || !replyToken) return;
 
   const flexCard = {
     type: "flex",
-    altText: "📱 ลิงก์เข้าสู่ระบบรายงานหน้างาน: " + data.userName,
+    altText: "📱 ข้อมูลบัญชีและลิงก์เข้าสู่ระบบ: " + data.userName,
     contents: {
       type: "bubble",
       size: "mega",
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#0284c7",
+        backgroundColor: "#4338ca",
         paddingAll: "16px",
         contents: [
           {
@@ -605,9 +750,9 @@ function replyLineWebAppCard(replyToken, token, data) {
           },
           {
             type: "text",
-            text: "Projectmanager Site Assistant",
+            text: "บันทึกข้อมูลเข้าชีต Site_Users แล้ว ✅",
             size: "xxs",
-            color: "#bae6fd",
+            color: "#c7d2fe",
             margin: "xs"
           }
         ]
@@ -640,16 +785,16 @@ function replyLineWebAppCard(replyToken, token, data) {
                 contents: [
                   {
                     type: "text",
-                    text: "สวัสดีคุณ " + data.userName,
+                    text: data.userName,
                     weight: "bold",
                     color: "#ffffff",
-                    size: "sm"
+                    size: "md"
                   },
                   {
                     type: "text",
-                    text: "ระบบได้ผูก LINE UID ให้คุณแล้ว",
-                    color: "#38bdf8",
-                    size: "xs",
+                    text: "LINE: " + (data.lineName || data.userName),
+                    color: "#94a3b8",
+                    size: "xxs",
                     margin: "xs"
                   }
                 ]
@@ -660,30 +805,45 @@ function replyLineWebAppCard(replyToken, token, data) {
             type: "separator",
             color: "#334155"
           },
+          // กล่องข้อมูลผู้ใช้ที่ดึงจากชีต
           {
             type: "box",
             layout: "vertical",
             spacing: "xs",
+            backgroundColor: "#0f172a",
+            paddingAll: "12px",
+            cornerRadius: "6px",
             contents: [
               {
-                type: "text",
-                text: "🔑 LINE UID ของคุณ:",
-                size: "xxs",
-                color: "#94a3b8"
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "💼 ตำแหน่ง:", size: "xxs", color: "#94a3b8", flex: 3 },
+                  { type: "text", text: (data.role || "โฟร์แมน") + " (" + (data.level || "Lv.1") + ")", size: "xxs", color: "#38bdf8", weight: "bold", flex: 6 }
+                ]
               },
               {
-                type: "text",
-                text: data.userId,
-                size: "xxs",
-                color: "#f59e0b",
-                wrap: true
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "🏢 บริษัท/สังกัด:", size: "xxs", color: "#94a3b8", flex: 3 },
+                  { type: "text", text: data.company || "หจก. นครพิงค์โครงสร้าง", size: "xxs", color: "#fbbf24", flex: 6, wrap: true }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "🔑 LINE UID:", size: "xxs", color: "#94a3b8", flex: 3 },
+                  { type: "text", text: data.userId, size: "xxs", color: "#86efac", flex: 6, wrap: true }
+                ]
               }
             ]
           },
           {
             type: "text",
-            text: "กดปุ่มด้านล่างเพื่อเปิดหน้าเว็บรายงาน ข้อมูลชื่อและ UID จะถูกส่งต่อและจำไว้ในเครื่องทันที",
-            size: "xs",
+            text: "💡 แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อแก้ไขชื่อ, ตำแหน่ง หรือสังกัดที่จะให้แสดงในเว็บได้ตลอดเวลา",
+            size: "xxs",
             color: "#cbd5e1",
             wrap: true
           }
@@ -698,7 +858,7 @@ function replyLineWebAppCard(replyToken, token, data) {
           {
             type: "button",
             style: "primary",
-            color: "#0284c7",
+            color: "#4338ca",
             height: "sm",
             action: {
               type: "uri",
