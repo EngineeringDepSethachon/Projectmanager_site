@@ -82,6 +82,7 @@ const QUICK_ISSUES = [
 // Initialization
 // ==========================================
 document.addEventListener('DOMContentLoaded', async () => {
+  parseUrlParamsUser();
   initDateDisplay();
   loadSavedMorningPlan();
   await initLiff();
@@ -96,6 +97,45 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderIssues();
   bindEventHandlers();
 });
+
+// ==========================================
+// Parse LINE UID & Name from URL Query Parameters
+// (เมื่อเปิดเว็บผ่านลิงก์จาก LINE Webhook Bot เช่น ?uid=Uxxxxxx&name=...)
+// ==========================================
+function parseUrlParamsUser() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const uid = urlParams.get('uid');
+    const name = urlParams.get('name');
+    const avatar = urlParams.get('avatar');
+
+    if (uid && (uid.startsWith('U') || uid.startsWith('u'))) {
+      state.lineUser.uid = uid;
+      localStorage.setItem('site_line_uid', uid);
+
+      if (name) {
+        state.lineUser.name = decodeURIComponent(name);
+        localStorage.setItem('site_line_name', state.lineUser.name);
+      }
+      if (avatar) {
+        state.lineUser.avatar = decodeURIComponent(avatar);
+        localStorage.setItem('site_line_avatar', state.lineUser.avatar);
+      }
+
+      setTimeout(() => {
+        showToast(`🔗 ผูกบัญชี LINE สำเร็จ: ${state.lineUser.name}`, 'success');
+      }, 500);
+
+      // คลีน URL ใน Address Bar ให้สะอาด ไม่ติด Query String
+      if (window.history && window.history.replaceState) {
+        const cleanUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+  } catch (err) {
+    console.warn('Parse URL parameters error:', err);
+  }
+}
 
 // ==========================================
 // Load Saved Morning Plan

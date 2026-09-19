@@ -74,6 +74,11 @@ function doPost(e) {
       payload = e.parameter;
     }
 
+    // ตรวจสอบว่าเป็นการเรียกจาก LINE Webhook หรือไม่ (มี payload.events)
+    if (payload && payload.events && Array.isArray(payload.events)) {
+      return handleLineWebhook(payload);
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const reportsSheet = getOrCreateReportsSheet(ss);
     const tasksSheet = getOrCreateTasksSheet(ss);
@@ -485,3 +490,243 @@ function jsonResponse(data) {
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+/**
+ * ==============================================================================
+ * LINE Webhook Handler
+ * จัดการเมื่อผู้ใช้กดปุ่มใน Rich Menu หรือทักแชตเข้ามา -> ดึง UID แล้วส่งลิงก์เข้าเว็บกลับไป
+ * ==============================================================================
+ */
+function handleLineWebhook(payload) {
+  const events = payload.events || [];
+  const scriptProps = PropertiesService.getScriptProperties();
+  const token = scriptProps.getProperty('LINE_CHANNEL_ACCESS_TOKEN') || DEFAULT_LINE_ACCESS_TOKEN;
+  // URL หน้าเว็บที่จะให้ช่างเปิด (ตั้งค่าใน Script Properties ชื่อ FRONTEND_WEB_URL หรือใช้ค่าเริ่มต้น)
+  const webAppFrontendUrl = scriptProps.getProperty('FRONTEND_WEB_URL') || "http://localhost:8081";
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    const replyToken = event.replyToken;
+    const source = event.source || {};
+    const userId = source.userId;
+
+    if (!replyToken || !userId) continue;
+
+    let shouldReply = false;
+    let userMsg = "";
+
+    if (event.type === "message" && event.message && event.message.type === "text") {
+      userMsg = (event.message.text || "").trim();
+      shouldReply = true;
+    } else if (event.type === "postback") {
+      userMsg = (event.postback && event.postback.data) || "postback";
+      shouldReply = true;
+    } else if (event.type === "follow") {
+      shouldReply = true;
+    }
+
+    if (shouldReply) {
+      // 1. ดึงโปรไฟล์ LINE ของช่าง (ชื่อ + รูปภาพ)
+      const userProfile = getLineUserProfile(userId, token);
+      const userName = userProfile.displayName || "ช่างหน้างาน";
+      const pictureUrl = userProfile.pictureUrl || "";
+
+      // 2. สร้างลิงก์เข้าสู่ระบบพร้อมแนบ UID และชื่อ
+      let baseUrl = webAppFrontendUrl.trim();
+      if (!baseUrl.endsWith('/') && !baseUrl.includes('?') && !baseUrl.includes('#')) {
+        baseUrl += '/';
+      }
+      const separator = baseUrl.indexOf("?") > -1 ? "&" : "?";
+      const directWebUrl = baseUrl + separator +
+        "uid=" + encodeURIComponent(userId) +
+        "&name=" + encodeURIComponent(userName) +
+        (pictureUrl ? "&avatar=" + encodeURIComponent(pictureUrl) : "");
+
+      // 3. ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ
+      replyLineWebAppCard(replyToken, token, {
+        userId: userId,
+        userName: userName,
+        pictureUrl: pictureUrl,
+        webUrl: directWebUrl,
+        userMsg: userMsg
+      });
+    }
+  }
+
+  return jsonResponse({ status: "success", message: "Webhook processed" });
+}
+
+/**
+ * ดึงข้อมูลโปรไฟล์ผู้ใช้จาก LINE Messaging API
+ */
+function getLineUserProfile(userId, token) {
+  if (!token || !userId) return { displayName: "ช่างหน้างาน", pictureUrl: "" };
+  try {
+    const url = "https://api.line.me/v2/bot/profile/" + encodeURIComponent(userId);
+    const response = UrlFetchApp.fetch(url, {
+      method: "get",
+      headers: { "Authorization": "Bearer " + token },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() === 200) {
+      return JSON.parse(response.getContentText());
+    }
+  } catch (e) {
+    Logger.log("Error fetching LINE user profile: " + e.toString());
+  }
+  return { displayName: "ช่างหน้างาน", pictureUrl: "" };
+}
+
+/**
+ * ส่ง Reply Message ด้วย Flex Card มีปุ่มกดเข้าเว็บรายงานหน้างาน
+ */
+function replyLineWebAppCard(replyToken, token, data) {
+  if (!token || !replyToken) return;
+
+  const flexCard = {
+    type: "flex",
+    altText: "📱 ลิงก์เข้าสู่ระบบรายงานหน้างาน: " + data.userName,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#0284c7",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "🏗️ ระบบรายงานประจำวันหน้างาน",
+            weight: "bold",
+            color: "#ffffff",
+            size: "md"
+          },
+          {
+            type: "text",
+            text: "Projectmanager Site Assistant",
+            size: "xxs",
+            color: "#bae6fd",
+            margin: "xs"
+          }
+        ]
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#1e293b",
+        paddingAll: "18px",
+        spacing: "md",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "md",
+            alignItems: "center",
+            contents: [
+              ...(data.pictureUrl ? [{
+                type: "image",
+                url: data.pictureUrl,
+                size: "xs",
+                aspectRatio: "1:1",
+                aspectMode: "cover",
+                flex: 1
+              }] : []),
+              {
+                type: "box",
+                layout: "vertical",
+                flex: 4,
+                contents: [
+                  {
+                    type: "text",
+                    text: "สวัสดีคุณ " + data.userName,
+                    weight: "bold",
+                    color: "#ffffff",
+                    size: "sm"
+                  },
+                  {
+                    type: "text",
+                    text: "ระบบได้ผูก LINE UID ให้คุณแล้ว",
+                    color: "#38bdf8",
+                    size: "xs",
+                    margin: "xs"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            type: "separator",
+            color: "#334155"
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "xs",
+            contents: [
+              {
+                type: "text",
+                text: "🔑 LINE UID ของคุณ:",
+                size: "xxs",
+                color: "#94a3b8"
+              },
+              {
+                type: "text",
+                text: data.userId,
+                size: "xxs",
+                color: "#f59e0b",
+                wrap: true
+              }
+            ]
+          },
+          {
+            type: "text",
+            text: "กดปุ่มด้านล่างเพื่อเปิดหน้าเว็บรายงาน ข้อมูลชื่อและ UID จะถูกส่งต่อและจำไว้ในเครื่องทันที",
+            size: "xs",
+            color: "#cbd5e1",
+            wrap: true
+          }
+        ]
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#0f172a",
+        paddingAll: "12px",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#0284c7",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "📱 เปิดระบบรายงานหน้างาน",
+              uri: data.webUrl
+            }
+          }
+        ]
+      }
+    }
+  };
+
+  const options = {
+    method: "post",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    payload: JSON.stringify({
+      replyToken: replyToken,
+      messages: [flexCard]
+    }),
+    muteHttpExceptions: true
+  };
+
+  try {
+    UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", options);
+  } catch (err) {
+    Logger.log("Error replying to LINE: " + err.toString());
+  }
+}
+

@@ -95,6 +95,26 @@
 
 ---
 
+### ขั้นตอนที่ 4: เปิดใช้งาน Webhook (เพื่อดึง UID และส่งลิงก์เข้าเว็บอัตโนมัติ)
+
+เมื่อตั้งค่าขั้นตอนนี้ เมื่อช่างหรือโฟร์แมนทักแชตหาบอท (หรือกดปุ่มใน Rich Menu) บอทจะดึง UID และชื่อของช่าง แล้วตอบกลับด้วยปุ่มเข้าเว็บที่ผูก UID อัตโนมัติทันที:
+
+1. ในหน้า **LINE Developers Console** > เข้า Channel บอทของคุณ > ไปที่แท็บ **Messaging API**
+2. เลื่อนมาที่หัวข้อ **Webhook settings**:
+   - กดปุ่ม **Edit** ในช่อง **Webhook URL**
+   - นำ **Web App URL ของ Google Apps Script** (ที่ได้จากขั้นตอนที่ 1) มาวาง
+   - กดปุ่ม **Update**
+   - สลับสวิตช์ **Use webhook** ให้เป็น **ON (สีเขียว)** 👈 *(สำคัญมาก)*
+3. เลื่อนลงมาที่หัวข้อ **LINE Official Account features**:
+   - ที่หัวข้อ **Auto-reply messages** กดคลิก **Edit**
+   - จะเปิดหน้าต่าง LINE OA Manager ให้เลือก **Response mode: Bot** และปิด **Auto-response: Disabled** เพื่อไม่ให้ระบบตอบกลับอัตโนมัติเริ่มต้นของ LINE ส่งข้อความซ้ำซ้อน
+4. *(ทางเลือก)* ใน Google Apps Script หากต้องการเปลี่ยนโดเมนหน้าเว็บที่บอทจะส่งลิงก์ไป:
+   - ไปที่ **Project Settings (รูปฟันเฟือง)** > **Script Properties**
+   - กดเพิ่ม Property: `FRONTEND_WEB_URL`
+   - Value: ใส่ URL เว็บรายงานจริงของคุณ (เช่น `https://your-domain.web.app` หรือค่าเริ่มต้น `http://localhost:8081`)
+
+---
+
 ## 🧪 การเปิดทดสอบ (Test Run)
 
 1. ในเครื่องคอมพิวเตอร์ ดับเบิลคลิกไฟล์ [`run_server.bat`](file:///c:/Users/Admin/Desktop/Projectmanager_site/run_server.bat)
