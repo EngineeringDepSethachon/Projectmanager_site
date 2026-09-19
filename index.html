@@ -96,9 +96,6 @@
               </div>
             </div>
           </div>
-          <button type="button" class="btn-icon-text" id="btn-open-line-modal">
-            <span>✏️ ตั้งค่า LINE</span>
-          </button>
         </div>
       </section>
 
@@ -323,52 +320,7 @@
 
   </div>
 
-  <!-- Modal 1: LINE Profile & LIFF Configuration -->
-  <div class="modal-backdrop" id="modal-line-config">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-title">
-          <span>🟢</span>
-          <h3>ตั้งค่าผูกบัญชี LINE & LIFF</h3>
-        </div>
-        <button type="button" class="modal-close-btn" id="btn-close-line-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="line-preview-profile">
-          <img id="modal-line-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80" alt="Avatar">
-          <div>
-            <h4 id="modal-line-name">ช่างสมหมาย แก้วตา</h4>
-            <code id="modal-line-uid-preview">U224cf73ea4b2484a0eb0055155e05bf4</code>
-          </div>
-        </div>
 
-        <div class="form-group">
-          <label class="form-label" for="input-line-uid">LINE User ID (UID):</label>
-          <input type="text" id="input-line-uid" class="form-input" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
-          <small class="form-hint">UID ประจำตัวผู้ใช้ใน LINE (ถ้าเปิดใน LIFF จะดึงให้อัตโนมัติ)</small>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="input-line-name">ชื่อที่แสดง (Display Name):</label>
-          <input type="text" id="input-line-name" class="form-input" placeholder="ชื่อโฟร์แมน">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="input-liff-id">LINE LIFF ID (เมื่อเปิดใช้งานจริงบน LINE):</label>
-          <input type="text" id="input-liff-id" class="form-input" placeholder="เช่น 200xxxxxxx-xxxxxxxx">
-          <small class="form-hint">สร้างจาก LINE Developers Console > LIFF App</small>
-        </div>
-
-        <button type="button" class="btn-outline-sm" id="btn-generate-test-uid" style="width: 100%; margin-top: 0.25rem;">
-          🎲 สุ่ม LINE UID ทดสอบใหม่
-        </button>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn-cancel" id="btn-cancel-line-modal">ยกเลิก</button>
-        <button type="button" class="btn-primary" id="btn-save-line-config">บันทึกข้อมูล LINE</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Modal 2: Google Apps Script URL Configuration -->
   <div class="modal-backdrop" id="modal-gas-config">
