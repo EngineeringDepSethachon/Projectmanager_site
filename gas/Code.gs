@@ -11,6 +11,7 @@
 const SHEET_NAME_REPORTS = "Daily_Reports";
 const SHEET_NAME_TASKS = "Tasks_Detail";
 const SHEET_NAME_USERS = "Site_Users";
+const SHEET_NAME_SUBCONTRACTORS = "Subcontractors";
 const DRIVE_FOLDER_NAME = "Construction_Site_Photos";
 
 // LINE Bot Messaging API Channel Access Token & Target User/Group ID
@@ -89,6 +90,31 @@ function doGet(e) {
         total: users.length,
         users: users,
         user: foundUser
+      });
+    }
+
+    if (action === "get_subcontractors") {
+      const sheet = getOrCreateSubcontractorsSheet(ss);
+      const data = sheet.getDataRange().getValues();
+      const subs = [];
+
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0] && !row[1]) continue;
+        subs.push({
+          id: String(row[0] || ("SUB-" + i)).trim(),
+          name: String(row[1] || "").trim(),
+          scope: String(row[2] || "").trim(),
+          contact: String(row[3] || "").trim(),
+          phone: String(row[4] || "").trim(),
+          status: String(row[5] || "Active").trim()
+        });
+      }
+
+      return jsonResponse({
+        status: "success",
+        total: subs.length,
+        subcontractors: subs
       });
     }
 
@@ -607,6 +633,47 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
       status: "Active"
     };
   }
+}
+
+/**
+ * สร้างหรือดึงชีต Subcontractors สำหรับจัดการรายชื่อบริษัทและผู้รับเหมา
+ */
+function getOrCreateSubcontractorsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAME_SUBCONTRACTORS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_SUBCONTRACTORS);
+    const headers = [
+      "รหัสผู้รับเหมา (ID)",
+      "ชื่อบริษัท / ผู้รับเหมา (Company Name)",
+      "ประเภทงาน / ขอบเขตงาน (Scope)",
+      "ชื่อผู้ติดต่อ (Contact Person)",
+      "เบอร์โทรศัพท์ (Phone)",
+      "สถานะ (Status)",
+      "วันที่บันทึก (Created At)"
+    ];
+    sheet.appendRow(headers);
+    sheet.getRange("A1:G1").setBackground("#0d9488").setFontColor("#ffffff").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    try {
+      sheet.setColumnWidth(1, 140);
+      sheet.setColumnWidth(2, 280);
+      sheet.setColumnWidth(3, 260);
+      sheet.setColumnWidth(4, 160);
+      sheet.setColumnWidth(5, 140);
+      sheet.setColumnWidth(6, 100);
+      sheet.setColumnWidth(7, 160);
+    } catch(e) {}
+
+    // ข้อมูลเริ่มต้นสำหรับให้แอดมินแก้ไข / ลบ / เพิ่มเติมตามจริง
+    const defaultSubs = [
+      ["SUB-01", "หจก. นครพิงค์โครงสร้าง", "งานโครงสร้างฐานรากและเสาเข็ม", "ช่างสมหมาย", "081-111-2233", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")],
+      ["SUB-02", "บจก. สยามสถาปัตย์", "งานสถาปัตย์ ผนังก่อฉาบ และปูกระเบื้อง", "นายประเสริฐ", "089-222-3344", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")],
+      ["SUB-03", "บจก. เอ็นจิเนียริ่ง ซิสเต็ม", "งานระบบไฟฟ้า สุขาภิบาล และดับเพลิง (MEP)", "นายธนพล", "086-333-4455", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")],
+      ["SUB-04", "หจก. ภูมิทัศน์และถนน", "งานผังบริเวณ ถนน คสล. และงานภายนอก", "นายวิชัย", "084-444-5566", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")]
+    ];
+    defaultSubs.forEach(r => sheet.appendRow(r));
+  }
+  return sheet;
 }
 
 /**

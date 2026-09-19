@@ -128,5 +128,27 @@ export const gasService = {
         };
       }
     }
+  },
+
+  /**
+   * ดึงรายชื่อบริษัทผู้รับเหมาจากชีต Subcontractors ใน Google Sheets
+   */
+  async fetchSubcontractors() {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return null;
+
+    try {
+      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_subcontractors&_t=' + Date.now();
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.subcontractors)) {
+        return data.subcontractors;
+      }
+      return null;
+    } catch (err) {
+      console.warn('fetchSubcontractors error:', err);
+      return null;
+    }
   }
 };

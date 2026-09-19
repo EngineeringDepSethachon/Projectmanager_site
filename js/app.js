@@ -32,35 +32,18 @@ const state = {
     rainDelayHours: 0
   },
   workforce: {
-    foreman: 2,
-    skilled_workers: 8,
-    general_labor: 14,
-    safety_officer: 1
+    foreman: 1,
+    skilled_workers: 0,
+    general_labor: 0,
+    safety_officer: 0
   },
-  // รายการงานช่วงเช้า (งานที่คาดการณ์)
-  morningPlannedTasks: [
-    {
-      id: 'TASK-1',
-      name: 'งานตัดหัวเสาเข็มและเทลีนคอนกรีตฐานราก โซน A',
-      description: 'ตัดหัวเข็มเป้าหมาย 8 ต้น และเตรียมเทลีนฐานราก F1-F4',
-      quantity: 'เป้าหมาย 8 ต้น, 35 ตร.ม.',
-      progress: 25,
-      isPlanned: true
-    }
-  ],
+  // รายการงานช่วงเช้า (งานที่คาดการณ์) - เริ่มต้นเป็นค่าว่าง ไม่ hard code
+  morningPlannedTasks: [],
   // รายการงานช่วงจบงาน (ผลงานจริงเทียบแผน)
   eveningActualTasks: [],
-  photos: [
-    {
-      id: 'PH-1',
-      url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
-      caption: 'การประชุมแถวความปลอดภัย (Safety Talk) ก่อนเริ่มงานรอบเช้า',
-      timestamp: '2026-09-18 08:15',
-      base64: null
-    }
-  ],
-  machinery: ['รถขุดแบคโฮ PC200', 'เครื่องสกัดลมตัดหัวเข็ม'],
-  issues: ['✅ งานราบรื่นตามแผน']
+  photos: [],
+  machinery: [],
+  issues: []
 };
 
 const ALL_MACHINERY = [
@@ -88,6 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initDateDisplay();
   loadSavedMorningPlan();
   await initLiff();
+  await loadSubcontractorsList();
   renderLineProfile();
   renderGasStatus();
   renderShiftUI();
@@ -187,6 +171,66 @@ function loadSavedMorningPlan() {
   } catch (err) {
     console.warn('Load morning plan error:', err);
   }
+}
+
+// ==========================================
+// Subcontractors Dynamic Loader (ดึงจากชีต Subcontractors ใน GAS ไม่ hard code)
+// ==========================================
+async function loadSubcontractorsList() {
+  const subSelect = document.getElementById('subcontractor-select');
+  if (!subSelect) return;
+
+  // 1. ดึงจาก Local Cache ถ้ามีอยู่แล้ว
+  let cached = null;
+  try {
+    const cachedStr = localStorage.getItem('site_cached_subcontractors');
+    if (cachedStr) cached = JSON.parse(cachedStr);
+  } catch(e) {}
+
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    renderSubcontractorOptions(cached);
+  }
+
+  // 2. ดึงสดจาก Google Apps Script (ชีต Subcontractors)
+  try {
+    const liveSubs = await gasService.fetchSubcontractors();
+    if (liveSubs && Array.isArray(liveSubs) && liveSubs.length > 0) {
+      localStorage.setItem('site_cached_subcontractors', JSON.stringify(liveSubs));
+      renderSubcontractorOptions(liveSubs);
+    }
+  } catch (err) {
+    console.warn('Fetch live subcontractors error:', err);
+  }
+}
+
+function renderSubcontractorOptions(subs) {
+  const subSelect = document.getElementById('subcontractor-select');
+  if (!subSelect || !subs || subs.length === 0) return;
+
+  const currentName = state.subcontractor.name || '';
+  subSelect.innerHTML = '';
+
+  let hasSelected = false;
+  subs.forEach((sub, idx) => {
+    const displayName = sub.scope ? `${sub.name} (${sub.scope})` : sub.name;
+    const isMatch = currentName && (currentName.includes(sub.name) || sub.name.includes(currentName));
+    const isChosen = isMatch || (!hasSelected && idx === 0);
+    const opt = new Option(displayName, sub.id, false, isChosen);
+    subSelect.add(opt);
+
+    if (isChosen) {
+      hasSelected = true;
+      state.subcontractor.id = sub.id;
+      state.subcontractor.name = displayName;
+    }
+  });
+
+  if (!hasSelected && currentName) {
+    const customOpt = new Option(currentName, 'SUB-CUSTOM', true, true);
+    subSelect.add(customOpt);
+  }
+
+  renderLineProfile();
 }
 
 // ==========================================
@@ -434,11 +478,9 @@ function renderDynamicTasks() {
             ${isMorning ? '🎯 คาดการณ์' : '⚡ ผลงานจริง'}
           </span>
         </div>
-        ${tasks.length > 1 ? `
-          <button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">
-            🗑️ ลบ
-          </button>
-        ` : ''}
+        <button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">
+          🗑️ ลบ
+        </button>
       </div>
 
       <!-- Task Title -->
@@ -546,7 +588,10 @@ function bindEventHandlers() {
     subSelect.addEventListener('change', (e) => {
       state.subcontractor.id = e.target.value;
       state.subcontractor.name = e.target.options[e.target.selectedIndex].text;
-      showToast(`เปลี่ยนแผนกเป็น ${state.subcontractor.name}`, 'info');
+      localStorage.setItem('site_sub_id', state.subcontractor.id);
+      localStorage.setItem('site_sub_name', state.subcontractor.name);
+      renderLineProfile();
+      showToast(`เลือกสังกัด/แผนก: ${state.subcontractor.name}`, 'info');
     });
   }
 
