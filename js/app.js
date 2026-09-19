@@ -42,19 +42,29 @@ const state = {
   // รายการงานช่วงจบงาน (ผลงานจริงเทียบแผน)
   eveningActualTasks: [],
   photos: [],
+  // เครื่องจักรที่พร้อมใช้งานวันนี้ (รายการที่ติ๊กเลือก)
   machinery: [],
+  // รายการเครื่องจักรที่มีให้เลือก (โฟร์แมนพิมพ์เพิ่มเองได้ บันทึกลง localStorage)
+  availableMachinery: (() => {
+    try {
+      const saved = localStorage.getItem('site_custom_machinery');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch(e) {}
+    return [
+      'รถขุดแบคโฮ PC200',
+      'เครื่องสกัดลมตัดหัวเข็ม',
+      'เครื่องสูบน้ำ 4 นิ้ว',
+      'รถเครน 25 ตัน',
+      'รถโม่คอนกรีต',
+      'เครื่องปั่นไฟ 100kVA',
+      'เครื่องดัดเหล็กไฟฟ้า'
+    ];
+  })(),
   issues: []
 };
-
-const ALL_MACHINERY = [
-  'รถขุดแบคโฮ PC200',
-  'เครื่องสกัดลมตัดหัวเข็ม',
-  'เครื่องสูบน้ำ 4 นิ้ว',
-  'รถเครน 25 ตัน',
-  'รถโม่คอนกรีต',
-  'เครื่องปั่นไฟ 100kVA',
-  'เครื่องดัดเหล็กไฟฟ้า'
-];
 
 const QUICK_ISSUES = [
   '✅ งานราบรื่นตามแผน',
@@ -564,14 +574,26 @@ function renderPhotos() {
 
 function renderMachinery() {
   const grid = document.getElementById('machinery-chips-grid');
+  const counterBadge = document.getElementById('machinery-counter-badge');
+  if (counterBadge) {
+    counterBadge.innerText = `เลือกแล้ว ${state.machinery.length} เครื่อง`;
+  }
   if (!grid) return;
 
-  grid.innerHTML = ALL_MACHINERY.map(item => {
+  if (!state.availableMachinery || state.availableMachinery.length === 0) {
+    grid.innerHTML = '<span style="font-size:0.75rem; color:var(--text-dim); padding:0.4rem 0;">ยังไม่มีรายการเครื่องจักร สามารถพิมพ์ชื่อด้านบนแล้วกดปุ่ม ➕ เพิ่ม ได้ทันที</span>';
+    return;
+  }
+
+  grid.innerHTML = state.availableMachinery.map(item => {
     const isSelected = state.machinery.includes(item);
+    const escaped = escapeHtml(item);
+    const jsItem = escaped.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `
-      <div class="chip-item ${isSelected ? 'active' : ''}" onclick="window.toggleMachinery('${item}')">
+      <div class="chip-item ${isSelected ? 'active' : ''}" onclick="window.toggleMachinery('${jsItem}')">
         <span>${isSelected ? '✓ ' : '+ '}</span>
-        <span>${item}</span>
+        <span>${escaped}</span>
+        <span class="chip-remove-btn" title="ลบออกจากรายการ" onclick="event.stopPropagation(); window.removeMachineryFromList('${jsItem}')">&times;</span>
       </div>
     `;
   }).join('');
@@ -741,6 +763,21 @@ function bindEventHandlers() {
     });
   }
 
+  // Machinery Add Handler (ปุ่ม + และกด Enter)
+  const btnAddMachinery = document.getElementById('btn-add-machinery');
+  const inputNewMachinery = document.getElementById('input-new-machinery');
+  if (btnAddMachinery) {
+    btnAddMachinery.addEventListener('click', window.addCustomMachinery);
+  }
+  if (inputNewMachinery) {
+    inputNewMachinery.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        window.addCustomMachinery();
+      }
+    });
+  }
+
   // Submit Daily Report
   const btnSubmit = document.getElementById('btn-submit-daily-report');
   if (btnSubmit) {
@@ -818,6 +855,43 @@ window.toggleMachinery = function(item) {
     state.machinery.push(item);
   }
   renderMachinery();
+};
+
+window.addCustomMachinery = function() {
+  const input = document.getElementById('input-new-machinery');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) {
+    showToast('กรุณาพิมพ์ชื่อเครื่องจักรก่อนกดเพิ่ม', 'info');
+    return;
+  }
+
+  // ถ้ายังไม่มีในรายการ ให้เพิ่มเข้าไป
+  if (!state.availableMachinery.includes(val)) {
+    state.availableMachinery.push(val);
+    try {
+      localStorage.setItem('site_custom_machinery', JSON.stringify(state.availableMachinery));
+    } catch(e) {}
+  }
+
+  // ติ๊กเลือกให้อัตโนมัติ
+  if (!state.machinery.includes(val)) {
+    state.machinery.push(val);
+  }
+
+  input.value = '';
+  renderMachinery();
+  showToast(`➕ เพิ่มเครื่องจักร: ${val} สำเร็จ`, 'success');
+};
+
+window.removeMachineryFromList = function(item) {
+  state.availableMachinery = state.availableMachinery.filter(m => m !== item);
+  state.machinery = state.machinery.filter(m => m !== item);
+  try {
+    localStorage.setItem('site_custom_machinery', JSON.stringify(state.availableMachinery));
+  } catch(e) {}
+  renderMachinery();
+  showToast(`ลบ ${item} ออกจากรายการแล้ว`, 'info');
 };
 
 window.toggleIssue = function(tag) {

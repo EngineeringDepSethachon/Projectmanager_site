@@ -269,14 +269,23 @@
 
       <!-- 7. Machinery Used -->
       <section class="card">
-        <div class="card-header">
+        <div class="card-header flex-between">
           <div class="card-title">
             <span class="icon">🚜</span>
             <h2 id="machinery-section-title">เครื่องจักรที่พร้อมใช้งานวันนี้</h2>
           </div>
+          <span class="badge-hint" id="machinery-counter-badge">เลือกแล้ว 0 เครื่อง</span>
         </div>
         <div class="card-body">
-          <div class="chips-grid" id="machinery-chips-grid">
+          <!-- Input row: ให้โฟร์แมนพิมพ์เพิ่มเครื่องจักรเองได้ -->
+          <div class="add-item-row">
+            <input type="text" id="input-new-machinery" class="form-input add-item-input" placeholder="พิมพ์ชื่อเครื่องจักร เช่น ทาวเวอร์เครน, รถกระเช้า...">
+            <button type="button" id="btn-add-machinery" class="btn-add-item">
+              <span>➕ เพิ่ม</span>
+            </button>
+          </div>
+
+          <div class="chips-grid" id="machinery-chips-grid" style="margin-top: 0.75rem;">
             <!-- Rendered via JS -->
           </div>
         </div>
