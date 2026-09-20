@@ -350,26 +350,50 @@ function doGet(e) {
 
     if (action === "get_approved_tasks_for_date") {
       const sheet = getOrCreatePlanTasksSheet(ss);
-      const data = sheet.getDataRange().getValues();
+      const weeklySheet = getOrCreateWeeklyPlansSheet(ss);
       const targetDate = (e.parameter && e.parameter.date ? formatDateValue(e.parameter.date) : Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd"));
       const targetCompany = (e.parameter && e.parameter.company ? String(e.parameter.company).trim() : "");
 
+      // Map approved plans covering targetDate
+      const weeklyData = weeklySheet.getDataRange().getValues();
+      const approvedPlanIds = {};
+      for (let w = 1; w < weeklyData.length; w++) {
+        const wRow = weeklyData[w];
+        const wPlanId = String(wRow[0] || "").trim();
+        const wStart = formatDateValue(wRow[6]);
+        const wEnd = formatDateValue(wRow[7]);
+        const wStatus = String(wRow[14] || "").trim();
+        if (wStatus === "Approved") {
+          if (!wStart || !wEnd || (targetDate >= wStart && targetDate <= wEnd)) {
+            approvedPlanIds[wPlanId] = true;
+          }
+        }
+      }
+
       const tasks = [];
+      const data = sheet.getDataRange().getValues();
       for (let i = 1; i < data.length; i++) {
         const row = data[i];
         if (!row[0]) continue;
+        const pId = String(row[1] || "").trim();
         const taskDate = formatDateValue(row[2]);
         const company = String(row[4] || "").trim();
         const pmStatus = String(row[11] || "").trim();
+        const taskStatus = String(row[15] || "").trim();
 
-        if (taskDate !== targetDate) continue;
-        if (pmStatus !== "Approved") continue;
+        // Must be approved directly or via parent plan
+        const isApproved = (pmStatus === "Approved" || approvedPlanIds[pId] === true);
+        if (!isApproved) continue;
         if (targetCompany && targetCompany !== "-" && company !== "-" && company !== targetCompany) continue;
+
+        // Date matches directly OR task is from active approved plan for this week
+        const isDateMatch = (taskDate === targetDate || approvedPlanIds[pId] === true);
+        if (!isDateMatch) continue;
 
         tasks.push({
           taskId: String(row[0] || "").trim(),
-          planId: String(row[1] || "").trim(),
-          date: taskDate,
+          planId: pId,
+          date: taskDate || targetDate,
           day: String(row[3] || "").trim(),
           company: company,
           category: String(row[5] || "").trim(),
@@ -381,7 +405,7 @@ function doGet(e) {
           progress: Number(row[12] || 0),
           actualQuantity: String(row[13] || "").trim(),
           foremanRemarks: String(row[14] || "").trim(),
-          taskStatus: String(row[15] || "Planned").trim()
+          taskStatus: taskStatus || "Planned"
         });
       }
 
@@ -612,8 +636,7 @@ function handleSaveWeeklyPlan(ss, payload) {
   const weekLabel = payload.week_label || ("สัปดาห์ " + (payload.start_date || ""));
   const startDate = payload.start_date || "";
   const endDate = payload.end_date || "";
-  const objective = payload.weekly_objective || payload.objective || "-";
-  const dailyTasks = payload.daily_tasks || [];
+  const dailyTasks = payload.daily_tasks || payload.tasks || [];
   const daysCount = payload.days_count || (new Set(dailyTasks.map(t => t.date)).size) || 0;
   const totalTasks = dailyTasks.length;
 
