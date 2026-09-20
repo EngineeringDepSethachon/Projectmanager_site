@@ -973,8 +973,8 @@ function sendLineWeeklyPlanNotification(data, type) {
           height: "sm",
           action: {
             type: "uri",
-            label: "เปิดระบบจัดการแผนงาน",
-            uri: DEFAULT_FRONTEND_WEB_URL
+            label: "เปิดระบบอนุมัติแผนงาน (PM)",
+            uri: DEFAULT_FRONTEND_WEB_URL + (DEFAULT_FRONTEND_WEB_URL.endsWith('/') ? '' : '/') + "pm-center.html"
           }
         }
       ]
@@ -1795,13 +1795,28 @@ function handleLineWebhook(payload) {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const siteUser = recordOrUpdateSiteUser(ss, userId, userProfile);
 
-      // 3. สร้างลิงก์เข้าสู่ระบบพร้อมแนบ UID, ชื่อแสดง, ตำแหน่ง, เลเวล, บริษัท, รหัสและชื่อโครงการ
-      let baseUrl = webAppFrontendUrl.trim();
-      if (!baseUrl.endsWith('/') && !baseUrl.includes('?') && !baseUrl.includes('#')) {
-        baseUrl += '/';
+      // 3. กำหนดหน้าเว็บปลายทางตาม Level ของผู้ใช้โดยตรง (LV1=foreman.html, LV2=weekly-plan.html, LV3=pm-center.html)
+      const rawLv = String(siteUser.level || "").toLowerCase().trim();
+      const rawRole = String(siteUser.role || "").toLowerCase().trim();
+      let targetPage = "foreman.html";
+
+      if (rawLv === "lv2" || rawLv === "2" || rawRole.includes("ผู้รับเหมา") || rawRole.includes("subcontractor")) {
+        targetPage = "weekly-plan.html";
+      } else if (rawLv === "lv3" || rawLv === "3" || rawRole.includes("pm") || rawRole.includes("ผู้จัดการ") || rawRole.includes("project manager")) {
+        targetPage = "pm-center.html";
+      } else {
+        targetPage = "foreman.html";
       }
-      const separator = baseUrl.indexOf("?") > -1 ? "&" : "?";
-      const directWebUrl = baseUrl + separator +
+
+      let cleanBase = webAppFrontendUrl.trim();
+      if (cleanBase.endsWith('index.html')) {
+        cleanBase = cleanBase.replace('index.html', '');
+      }
+      if (!cleanBase.endsWith('/') && !cleanBase.includes('?')) {
+        cleanBase += '/';
+      }
+      const separator = cleanBase.includes('?') ? '&' : '?';
+      const directWebUrl = cleanBase + targetPage + separator +
         "uid=" + encodeURIComponent(siteUser.uid) +
         "&name=" + encodeURIComponent(siteUser.displayName) +
         "&role=" + encodeURIComponent(siteUser.role) +
@@ -1872,7 +1887,12 @@ function replyLineWebAppCard(replyToken, token, data) {
         contents: [
           {
             type: "text",
-            text: "🏗️ ระบบรายงานประจำวันหน้างาน",
+            text: (function() {
+              var lv = String(data.level || '').toLowerCase();
+              if (lv === 'lv3' || lv === '3') return '👔 ระบบบริหารโครงการ PM';
+              if (lv === 'lv2' || lv === '2') return '📋 ระบบวางแผนงาน (ผู้รับเหมา)';
+              return '📱 ระบบรายงานประจำวัน (โฟร์แมน)';
+            })(),
             weight: "bold",
             color: "#ffffff",
             size: "md"
@@ -1995,11 +2015,21 @@ function replyLineWebAppCard(replyToken, token, data) {
           {
             type: "button",
             style: "primary",
-            color: "#4338ca",
+            color: (function() {
+              var lv = String(data.level || '').toLowerCase();
+              if (lv === 'lv3' || lv === '3') return "#92400e";
+              if (lv === 'lv2' || lv === '2') return "#1e40af";
+              return "#065f46";
+            })(),
             height: "sm",
             action: {
               type: "uri",
-              label: "📱 เปิดระบบรายงานหน้างาน",
+              label: (function() {
+                var lv = String(data.level || '').toLowerCase();
+                if (lv === 'lv3' || lv === '3') return "👔 เปิดศูนย์อนุมัติแผนงาน & Gantt (PM)";
+                if (lv === 'lv2' || lv === '2') return "📋 เปิดระบบวางแผนงานสัปดาห์ (ผู้รับเหมา)";
+                return "📱 เปิดระบบรายงานหน้างาน (โฟร์แมน)";
+              })(),
               uri: data.webUrl
             }
           }

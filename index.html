@@ -3,123 +3,235 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ระบบบริหารโครงการก่อสร้าง | CPM Site Management Portal</title>
+  <title>CPM Site Management — กำลังนำทาง...</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
-  <script>
-    // Smart Router: Auto-redirect based on Level Query Parameter
-    (function() {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const lv = (urlParams.get('lv') || '').toLowerCase();
-        const role = (urlParams.get('role') || '').toLowerCase();
-
-        const query = window.location.search;
-
-        if (lv === '1' || lv === 'lv1' || role.includes('foreman') || role.includes('โฟร์แมน')) {
-          window.location.replace('foreman.html' + query);
-        } else if (lv === '2' || lv === 'lv2' || role.includes('sub') || role.includes('ผู้รับเหมา')) {
-          window.location.replace('weekly-plan.html' + query);
-        } else if (lv === '3' || lv === 'lv3' || role.includes('pm') || role.includes('ผู้จัดการ')) {
-          window.location.replace('pm-center.html' + query);
-        }
-      } catch (e) {}
-    })();
-  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Sarabun', sans-serif;
+      background: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .router-card {
+      background: #1e293b;
+      border: 1.5px solid #334155;
+      border-radius: 16px;
+      padding: 3rem 2.5rem;
+      text-align: center;
+      max-width: 360px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .brand-icon {
+      font-size: 3.5rem;
+      margin-bottom: 1rem;
+    }
+    .brand-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #94a3b8;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 1.75rem;
+    }
+    .spinner-ring {
+      width: 52px;
+      height: 52px;
+      border: 4px solid #334155;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+      margin: 0 auto 1.5rem auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-text {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 0.5rem;
+    }
+    .status-sub {
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .error-box {
+      display: none;
+      background: #1a1212;
+      border: 1.5px solid #dc2626;
+      border-radius: 10px;
+      padding: 1rem;
+      margin-top: 1.5rem;
+    }
+    .error-text {
+      font-size: 0.82rem;
+      color: #fca5a5;
+    }
+  </style>
 </head>
-<body class="portal-body">
-
-  <div class="portal-wrapper">
-    <!-- Portal Header -->
-    <header class="portal-header">
-      <div class="brand-logo" style="font-size: 2.8rem; margin-bottom: 0.5rem;">🏗️</div>
-      <h1 class="portal-title">CPM CONSTRUCTION SITE PORTAL</h1>
-      <p class="portal-subtitle">ระบบบริหารจัดการโครงการก่อสร้าง และรายงานหน้างานแบบปิดวงจร (Closed-Loop System)</p>
-      <div style="margin-top: 0.75rem;">
-        <span class="user-company-badge" style="font-size: 0.85rem; padding: 4px 12px;">เลือกบทบาทของคุณเพื่อเข้าสู่ระบบที่ออกแบบเฉพาะทาง:</span>
-      </div>
-    </header>
-
-    <!-- Role Cards Grid (3 Levels) -->
-    <div class="portal-grid">
-
-      <!-- Card 1: LV1 โฟร์แมนหน้างาน -->
-      <a href="foreman.html" class="portal-card portal-card-lv1">
-        <div class="portal-card-badge">📱 เหมาะสำหรับมือถือ (Mobile View)</div>
-        <div class="portal-card-icon">👷‍♂️</div>
-        <h2 class="portal-card-title">LV1: โฟร์แมนหน้างาน</h2>
-        <div class="portal-card-role">รายงานประจำวัน 2 จังหวะ (เช้า / จบงาน)</div>
-        <p class="portal-card-desc">
-          ตรวจเช็คคนงานเข้างานรอบเช้า 🌅 ดึงงานย่อยที่ PM อนุมัติล่วงหน้ามาเป็นเป้าหมาย และรายงานผลงานจริงสะสม (%) รอบจบงาน 🌆
-        </p>
-        <div class="portal-features-list">
-          <div>✓ โหลดงานที่ PM อนุมัติมาเป็นเป้าหมายอัตโนมัติ</div>
-          <div>✓ บันทึกยอดคนงาน (+/-) สภาพอากาศ ฝนตก</div>
-          <div>✓ ถ่ายรูปแถวคนงาน & ผลงานจริงประทับเวลา</div>
-          <div>✓ ซิงก์ผลงานจริงกลับไปที่แผนสัปดาห์อัตโนมัติ</div>
-        </div>
-        <div class="portal-card-btn lv1-btn">
-          <span>เข้าสู่หน้ารายงานประจำวัน (โฟร์แมน)</span>
-          <span>➔</span>
-        </div>
-      </a>
-
-      <!-- Card 2: LV2 หัวหน้าผู้รับเหมา -->
-      <a href="weekly-plan.html" class="portal-card portal-card-lv2">
-        <div class="portal-card-badge" style="background: #e0e7ff; color: #3730a3; border-color: #6366f1;">💻 เหมาะสำหรับจอคอม (Desktop-Wide)</div>
-        <div class="portal-card-icon">📋</div>
-        <h2 class="portal-card-title">LV2: หัวหน้าผู้รับเหมา</h2>
-        <div class="portal-card-role">วางแผนงานรายสัปดาห์ (Weekly Lookahead)</div>
-        <p class="portal-card-desc">
-          วางแผนงานสัปดาห์ล่วงหน้า แตกงานย่อย 7 วัน (จันทร์-อาทิตย์) ระบุเป้าหมายปริมาณและคนงาน ส่งให้ PM ตรวจสอบอนุมัติ
-        </p>
-        <div class="portal-features-list">
-          <div>✓ สร้างแผนงานสัปดาห์และ Milestone ล่วงหน้า</div>
-          <div>✓ ตาราง Daily Tasks Builder 7 วัน</div>
-          <div>✓ ติดตามสถานะการอนุมัติ & ข้อสั่งการจาก PM</div>
-          <div>✓ ดูความคืบหน้ารวมจากที่โฟร์แมนรายงานจริง</div>
-        </div>
-        <div class="portal-card-btn lv2-btn">
-          <span>เข้าสู่หน้าระบบวางแผนสัปดาห์ (ผู้รับเหมา)</span>
-          <span>➔</span>
-        </div>
-      </a>
-
-      <!-- Card 3: LV3 ผู้จัดการโครงการ PM -->
-      <a href="pm-center.html" class="portal-card portal-card-lv3">
-        <div class="portal-card-badge" style="background: #fef3c7; color: #92400e; border-color: #f59e0b;">🖥️ จอคอมพิวเตอร์ (Executive Dashboard)</div>
-        <div class="portal-card-icon">👔</div>
-        <h2 class="portal-card-title">LV3: ผู้จัดการโครงการ (PM)</h2>
-        <div class="portal-card-role">อนุมัติแผนงาน + ไทม์ไลน์ Gantt + คลังรายงาน</div>
-        <p class="portal-card-desc">
-          ตรวจสอบและอนุมัติแผนงานสัปดาห์ของผู้รับเหมาทุกราย ดูกราฟ Gantt ภาพรวมโครงการ และสืบค้นประวัติรายงานประจำวันย้อนหลัง
-        </p>
-        <div class="portal-features-list">
-          <div>✓ ศูนย์อนุมัติแผนงาน (Approve / Revision)</div>
-          <div>✓ แผนภูมิ Gantt ไทม์ไลน์ภาพรวมโครงการ</div>
-          <div>✓ คลังค้นหารายงานประจำวันย้อนหลังทุกไซต์งาน</div>
-          <div>✓ เรียกดูภาพถ่ายหน้างานความละเอียดสูง</div>
-        </div>
-        <div class="portal-card-btn lv3-btn">
-          <span>เข้าสู่ศูนย์บริหารโครงการ (PM)</span>
-          <span>➔</span>
-        </div>
-      </a>
-
+<body>
+  <div class="router-card">
+    <div class="brand-icon">🏗️</div>
+    <div class="brand-title">CPM Construction Site System</div>
+    <div class="spinner-ring" id="spinner"></div>
+    <div class="status-text" id="status-text">กำลังตรวจสอบสิทธิ์การใช้งาน...</div>
+    <div class="status-sub" id="status-sub">ระบบกำลังนำคุณไปยังหน้าที่ตรงตามระดับสิทธิ์</div>
+    <div class="error-box" id="error-box">
+      <div class="error-text" id="error-text">ไม่พบข้อมูลผู้ใช้ในระบบ กรุณาติดต่อผู้ดูแลระบบ</div>
     </div>
-
-    <!-- System Connection Footer -->
-    <footer class="portal-footer">
-      <div style="font-size: 0.8rem; color: var(--text-muted);">
-        🔗 <strong>Google Apps Script Backend:</strong> เชื่อมต่อ Google Sheets & LINE Bot Flex Notification สมบูรณ์
-      </div>
-      <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
-        💡 เคล็ดลับ: สามารถส่งลิงก์พร้อมพารามิเตอร์ <code>?lv=1</code>, <code>?lv=2</code>, หรือ <code>?lv=3</code> เพื่อให้ระบบนำทางตรงสู่หน้าของแต่ละระดับทันที
-      </div>
-    </footer>
   </div>
 
+  <script>
+    (function() {
+      var GAS_URL = 'https://script.google.com/macros/s/AKfycbzT9MF8xOPiiGZvGbZRZB1T3erYYrOLGxhgfegsnJySMIlRlyNmIWmfNCOI_fdVicKjow/exec';
+
+      function setStatus(text, sub) {
+        var el = document.getElementById('status-text');
+        var subEl = document.getElementById('status-sub');
+        if (el) el.textContent = text;
+        if (subEl && sub !== undefined) subEl.textContent = sub;
+      }
+
+      function showError(msg) {
+        var box = document.getElementById('error-box');
+        var txt = document.getElementById('error-text');
+        var spinner = document.getElementById('spinner');
+        if (spinner) spinner.style.display = 'none';
+        if (box) box.style.display = 'block';
+        if (txt) txt.textContent = msg || 'เกิดข้อผิดพลาด กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ';
+      }
+
+      // Determine target page based on level string
+      function getTargetPage(lv, role) {
+        var lvStr = String(lv || '').toLowerCase().trim();
+        var roleStr = String(role || '').toLowerCase().trim();
+        if (lvStr === '2' || lvStr === 'lv2' || roleStr.indexOf('ผู้รับเหมา') !== -1 || roleStr.indexOf('subcontractor') !== -1 || roleStr.indexOf('sub') !== -1) {
+          return 'weekly-plan.html';
+        }
+        if (lvStr === '3' || lvStr === 'lv3' || roleStr.indexOf('pm') !== -1 || roleStr.indexOf('ผู้จัดการ') !== -1 || roleStr.indexOf('project manager') !== -1) {
+          return 'pm-center.html';
+        }
+        // Default: LV1 foreman
+        return 'foreman.html';
+      }
+
+      function doRedirect(page, query) {
+        // Preserve original query string when redirecting
+        var sep = query && query.length > 1 ? query : '';
+        window.location.replace(page + sep);
+      }
+
+      // Save level to localStorage for future fast-routing
+      function cacheLevelLocally(lv, uid, name, role, company, prj, prjName, avatar) {
+        try {
+          if (lv) localStorage.setItem('site_line_level', String(lv));
+          if (uid) localStorage.setItem('site_line_uid', uid);
+          if (name) localStorage.setItem('site_line_name', name);
+          if (role) localStorage.setItem('site_line_role', role);
+          if (company) localStorage.setItem('site_sub_name', company);
+          if (prj) localStorage.setItem('site_project_id', prj);
+          if (prjName) localStorage.setItem('site_project_name', prjName);
+        } catch(e) {}
+      }
+
+      function main() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var lv = urlParams.get('lv') || '';
+        var role = urlParams.get('role') || '';
+        var uid = urlParams.get('uid') || '';
+        var name = urlParams.get('name') || '';
+        var company = urlParams.get('company') || '';
+        var prj = urlParams.get('prj') || '';
+        var prjName = urlParams.get('prjName') || '';
+        var avatar = urlParams.get('avatar') || '';
+        var query = window.location.search;
+
+        // === CASE 1: Level or Role is directly in URL (fastest path — used by LINE webhook links) ===
+        if (lv || role) {
+          var page = getTargetPage(lv, role);
+          cacheLevelLocally(lv, uid, name, role, company, prj, prjName, avatar);
+          setStatus('กำลังเข้าสู่ระบบ...');
+          doRedirect(page, query);
+          return;
+        }
+
+        // === CASE 2: Only UID given (lookup from GAS to get level) ===
+        if (uid) {
+          setStatus('กำลังตรวจสอบสิทธิ์ผู้ใช้...', 'ดึงข้อมูลระดับสิทธิ์จากระบบ Site_Users');
+          var lookupUrl = GAS_URL + '?action=get_user&uid=' + encodeURIComponent(uid) + '&_t=' + Date.now();
+          fetch(lookupUrl, { method: 'GET' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+              if (data && data.status === 'success' && data.user) {
+                var u = data.user;
+                cacheLevelLocally(u.level, u.uid, u.displayName, u.role, u.company, u.projectId, u.projectName, u.avatar);
+                var newQuery = '?uid=' + encodeURIComponent(u.uid || uid) +
+                  '&name=' + encodeURIComponent(u.displayName || name) +
+                  '&role=' + encodeURIComponent(u.role || '') +
+                  '&lv=' + encodeURIComponent(u.level || '') +
+                  '&company=' + encodeURIComponent(u.company || '') +
+                  '&prj=' + encodeURIComponent(u.projectId || '') +
+                  '&prjName=' + encodeURIComponent(u.projectName || '');
+                var page = getTargetPage(u.level, u.role);
+                setStatus('กำลังนำคุณเข้าสู่ระบบ...');
+                doRedirect(page, newQuery);
+              } else {
+                // UID found in URL but not in Site_Users → default to foreman
+                cacheLevelLocally('1', uid, name, role, company, prj, prjName, avatar);
+                doRedirect('foreman.html', query);
+              }
+            })
+            .catch(function() {
+              // Network error → try cached level
+              var cachedLv = '';
+              try { cachedLv = localStorage.getItem('site_line_level') || ''; } catch(e) {}
+              var page = getTargetPage(cachedLv, '');
+              doRedirect(page, query);
+            });
+          return;
+        }
+
+        // === CASE 3: No URL params — check localStorage cache ===
+        try {
+          var cachedLv = localStorage.getItem('site_line_level') || '';
+          var cachedRole = localStorage.getItem('site_line_role') || '';
+          if (cachedLv || cachedRole) {
+            var page = getTargetPage(cachedLv, cachedRole);
+            var cachedUid = localStorage.getItem('site_line_uid') || '';
+            var cachedName = localStorage.getItem('site_line_name') || '';
+            var cachedCompany = localStorage.getItem('site_sub_name') || '';
+            var cachedPrj = localStorage.getItem('site_project_id') || '';
+            var cachedPrjName = localStorage.getItem('site_project_name') || '';
+            var cachedQuery = '';
+            if (cachedUid) {
+              cachedQuery = '?uid=' + encodeURIComponent(cachedUid) +
+                '&name=' + encodeURIComponent(cachedName) +
+                '&lv=' + encodeURIComponent(cachedLv) +
+                '&company=' + encodeURIComponent(cachedCompany) +
+                '&prj=' + encodeURIComponent(cachedPrj) +
+                '&prjName=' + encodeURIComponent(cachedPrjName);
+            }
+            setStatus('กำลังเข้าสู่ระบบจากข้อมูลที่บันทึกไว้...');
+            doRedirect(page, cachedQuery);
+            return;
+          }
+        } catch(e) {}
+
+        // === CASE 4: Absolute fallback — show info page for admin or testing ===
+        // Only show error/message, no cards to select
+        setStatus('ไม่พบข้อมูลการเข้าสู่ระบบ', 'กรุณาเข้าระบบผ่านลิงก์ที่ส่งมาทาง LINE เท่านั้น');
+        var spinner = document.getElementById('spinner');
+        if (spinner) spinner.style.display = 'none';
+        showError('กรุณาเข้าระบบผ่านลิงก์ที่ระบบส่งให้ทาง LINE เท่านั้น ห้ามเปิดหน้านี้โดยตรง\n\nหากมีปัญหา กรุณาติดต่อผู้ดูแลระบบ (ผู้จัดการโครงการ)');
+      }
+
+      // Run immediately
+      main();
+    })();
+  </script>
 </body>
 </html>
