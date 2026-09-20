@@ -1986,3 +1986,428 @@ body {
   margin-left: 4px;
 }
 
+/* ==========================================================================
+   Top Role Switcher Toolbar (Quick Testing / Navigation across Levels)
+   ========================================================================== */
+.top-role-nav {
+  background: #0f172a;
+  color: #ffffff;
+  border-bottom: 2px solid #000000;
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.role-nav-inner {
+  max-width: 500px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-nav-inner.desktop-wide {
+  max-width: 1300px;
+}
+
+.role-badge-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-heading);
+}
+
+.dot-online {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.role-links-group {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-role-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  text-decoration: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.nav-role-btn:hover {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* ==========================================================================
+   Role-Based Frame Layouts (Mobile vs Desktop)
+   ========================================================================== */
+.mode-foreman-mobile .mobile-frame {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 0.75rem;
+}
+
+.mode-subcontractor-desktop .desktop-frame {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.mode-pm-desktop .desktop-frame {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.desktop-header {
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+}
+
+/* Status Banner states */
+.approved-tasks-banner.approved-active {
+  background: #ecfdf5;
+  border-color: #059669;
+  color: #065f46;
+}
+
+.approved-tasks-banner.unapproved-warning {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+/* ==========================================================================
+   PM Sub Navigation Tabs
+   ========================================================================== */
+.pm-sub-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 1rem;
+  border-top: 1.5px dashed var(--border-subtle);
+  padding-top: 0.75rem;
+}
+
+.pm-nav-tab {
+  flex: 1;
+  background: #ffffff;
+  border: 2px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-heading);
+  cursor: pointer;
+  box-shadow: var(--shadow-neo-sm);
+  transition: all 0.15s;
+}
+
+.pm-nav-tab:hover {
+  background: #f8fafc;
+}
+
+.pm-nav-tab.active {
+  background: var(--accent-mint);
+  border-color: var(--border-dark);
+  box-shadow: none;
+  transform: translate(1.5px, 1.5px);
+}
+
+.pm-view-pane {
+  display: block;
+}
+
+/* ==========================================================================
+   Gantt Chart Styles
+   ========================================================================== */
+.gantt-chart-wrapper {
+  overflow-x: auto;
+  border: 2px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  box-shadow: var(--shadow-neo-sm);
+}
+
+.gantt-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.gantt-table th {
+  background: #f8fafc;
+  border-bottom: 2px solid var(--border-dark);
+  border-right: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text-heading);
+}
+
+.gantt-table td {
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  padding: 8px 12px;
+  vertical-align: middle;
+}
+
+.gantt-track-bg {
+  position: relative;
+  height: 34px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  overflow: hidden;
+}
+
+.gantt-bar-item {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 1px 2px 4px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: transform 0.15s, filter 0.15s;
+}
+
+.gantt-bar-item:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.gantt-bar-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 4px 0 0 4px;
+}
+
+.gantt-bar-text {
+  position: relative;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  z-index: 2;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* ==========================================================================
+   Daily Reports Archive Table
+   ========================================================================== */
+.reports-filter-bar {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
+  background: #f8fafc;
+  padding: 12px;
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
+}
+
+.archive-table-wrapper {
+  overflow-x: auto;
+  border: 2px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.archive-table {
+  width: 100%;
+  min-width: 950px;
+  border-collapse: collapse;
+}
+
+.archive-table th {
+  background: #f1f5f9;
+  border-bottom: 2px solid var(--border-dark);
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.archive-table td {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  vertical-align: middle;
+}
+
+.archive-table tr:hover {
+  background: #f8fafc;
+}
+
+/* ==========================================================================
+   Portal Page Styling (index.html)
+   ========================================================================== */
+.portal-body {
+  background: #fbf9f5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem;
+  width: 100%;
+}
+
+.portal-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.portal-title {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--text-heading);
+  letter-spacing: -0.5px;
+}
+
+.portal-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  max-width: 600px;
+  margin: 0.5rem auto 0 auto;
+}
+
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.portal-card {
+  background: #ffffff;
+  border: 3px solid var(--border-dark);
+  border-radius: var(--radius-md);
+  padding: 1.75rem 1.5rem;
+  box-shadow: 4px 6px 0px #1e1e24;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+
+.portal-card:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 7px 9px 0px #1e1e24;
+}
+
+.portal-card-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1.5px solid #059669;
+  background: #ecfdf5;
+  color: #065f46;
+  margin-bottom: 1rem;
+  align-self: flex-start;
+}
+
+.portal-card-icon {
+  font-size: 3rem;
+  margin-bottom: 0.75rem;
+}
+
+.portal-card-title {
+  font-family: var(--font-heading);
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--text-heading);
+  margin-bottom: 0.25rem;
+}
+
+.portal-card-role {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-coral);
+  margin-bottom: 0.85rem;
+}
+
+.portal-card-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+
+.portal-features-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #334155;
+  margin-bottom: 1.5rem;
+  flex-grow: 1;
+}
+
+.portal-card-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-dark);
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: 2px 3px 0px #1e1e24;
+}
+
+.lv1-btn {
+  background: var(--accent-mint);
+  color: #065f46;
+}
+
+.lv2-btn {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.lv3-btn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.portal-footer {
+  text-align: center;
+  padding: 1.5rem;
+  border-top: 1.5px solid var(--border-subtle);
+}
+
+

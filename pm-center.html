@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ศูนย์บริหารและอนุมัติโครงการ (PM Center LV3) | CPM Site Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="mode-pm-desktop">
+
+  <!-- Top Role Switcher Toolbar for Quick Testing -->
+  <div class="top-role-nav">
+    <div class="role-nav-inner desktop-wide">
+      <div class="role-badge-current">
+        <span class="dot-online"></span>
+        <span>👔 <strong>LV3: ผู้จัดการโครงการ (PM)</strong> (Executive Dashboard)</span>
+      </div>
+      <div class="role-links-group">
+        <a href="index.html" class="nav-role-btn">🚪 ประตูหลัก</a>
+        <a href="foreman.html" class="nav-role-btn">📱 รายงานโฟร์แมน (LV1)</a>
+        <a href="weekly-plan.html" class="nav-role-btn">💻 แผนสัปดาห์ (LV2)</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Container (Executive Dashboard Frame) -->
+  <div class="app-container desktop-frame" style="max-width: 1400px;">
+
+    <!-- Header Section -->
+    <header class="app-header desktop-header">
+      <div class="header-top">
+        <div class="brand-group">
+          <div class="brand-logo">👔</div>
+          <div>
+            <h1 class="brand-title">PROJECT MANAGER EXECUTIVE CENTER</h1>
+            <p class="brand-subtitle">ศูนย์พิจารณาอนุมัติแผนงาน, แผนภูมิ Gantt ไทม์ไลน์, และคลังรายงานประจำวันย้อนหลัง</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div class="project-pill" id="project-pill" title="คลิกเพื่อสลับโครงการ">
+            <span class="icon">🏢</span>
+            <strong id="display-project-name">กำลังโหลดโครงการ...</strong>
+            <span class="caret">▼</span>
+          </div>
+          <button type="button" class="btn-sync-inline" id="btn-sync-pm-all" style="padding: 6px 12px;">🔄 ซิงก์ชีต</button>
+        </div>
+      </div>
+
+      <!-- PM Top Navigation Tabs (3 Main Modules) -->
+      <nav class="pm-sub-nav">
+        <button type="button" class="pm-nav-tab active" data-view="view-pm-approvals" id="tab-nav-approvals">
+          <span class="tab-icon">👔</span>
+          <span class="tab-text">ศูนย์อนุมัติแผนงาน</span>
+          <span class="nav-badge-pill" id="badge-pending-plans" style="display: none;">0</span>
+        </button>
+        <button type="button" class="pm-nav-tab" data-view="view-pm-gantt" id="tab-nav-gantt">
+          <span class="tab-icon">📊</span>
+          <span class="tab-text">แผนภูมิ Gantt ไทม์ไลน์</span>
+        </button>
+        <button type="button" class="pm-nav-tab" data-view="view-pm-reports" id="tab-nav-reports">
+          <span class="tab-icon">📑</span>
+          <span class="tab-text">คลังรายงานประจำวันย้อนหลัง</span>
+          <span class="nav-badge-pill" id="badge-total-reports">0</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+
+      <!-- ============================================== -->
+      <!-- 1. VIEW: ศูนย์อนุมัติแผนงาน (Approval Center) -->
+      <!-- ============================================== -->
+      <div id="view-pm-approvals" class="pm-view-pane active">
+        <section class="card">
+          <div class="card-header flex-between">
+            <div class="card-title">
+              <span class="icon">👔</span>
+              <h2>แผนงานรายสัปดาห์ที่ต้องพิจารณา</h2>
+            </div>
+            <div class="quick-tags-grid" id="pm-approval-filters" style="margin-bottom: 0;">
+              <button type="button" class="tag-chip active" data-filter="all">ทั้งหมด</button>
+              <button type="button" class="tag-chip" data-filter="Pending">🟡 รออนุมัติ</button>
+              <button type="button" class="tag-chip" data-filter="Approved">🟢 อนุมัติแล้ว</button>
+              <button type="button" class="tag-chip" data-filter="Revision">🔴 ส่งกลับแก้ไข</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="pm-plans-container" class="pm-plans-grid">
+              <div style="text-align: center; padding: 2.5rem 0; color: var(--text-muted);">
+                ⏳ กำลังโหลดรายการแผนงานที่ต้องพิจารณา...
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- 2. VIEW: แผนภูมิ Gantt ไทม์ไลน์ (Lookahead Gantt) -->
+      <!-- ============================================== -->
+      <div id="view-pm-gantt" class="pm-view-pane" style="display: none;">
+        <section class="card">
+          <div class="card-header flex-between">
+            <div class="card-title">
+              <span class="icon">📊</span>
+              <h2>แผนภูมิ Gantt ไทม์ไลน์ภาพรวมโครงการ (Lookahead Timeline)</h2>
+            </div>
+            <span class="badge-hint" id="gantt-total-weeks">0 สัปดาห์</span>
+          </div>
+          <div class="card-body">
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+              แสดงไทม์ไลน์ความคืบหน้าของแต่ละสัปดาห์และบริษัทผู้รับเหมา สามารถคลิกที่แท่ง Gantt เพื่อดูงานย่อยในสัปดาห์นั้น
+            </p>
+            <div id="gantt-chart-container" class="gantt-chart-wrapper">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- 3. VIEW: คลังรายงานประจำวันย้อนหลัง (Archive) -->
+      <!-- ============================================== -->
+      <div id="view-pm-reports" class="pm-view-pane" style="display: none;">
+        <section class="card">
+          <div class="card-header flex-between">
+            <div class="card-title">
+              <span class="icon">📑</span>
+              <h2>คลังสืบค้นรายงานประจำวันหน้างานทั้งหมด (Daily Reports Archive)</h2>
+            </div>
+            <span class="badge-hint" id="reports-archive-counter">0 รายงาน</span>
+          </div>
+          <div class="card-body">
+            <!-- Filter Bar -->
+            <div class="reports-filter-bar">
+              <div class="filter-col">
+                <label style="font-size: 0.72rem; color: var(--text-muted); display: block;">เลือกกะการทำงาน:</label>
+                <select id="filter-shift" class="form-select" style="font-size: 0.8rem; padding: 5px 8px;">
+                  <option value="all">ทุกกะ (เช้า + เย็น)</option>
+                  <option value="morning">🌅 รอบเช้า (เปิดงาน)</option>
+                  <option value="evening">🌆 รอบเย็น (สรุปจบงาน)</option>
+                </select>
+              </div>
+              <div class="filter-col">
+                <label style="font-size: 0.72rem; color: var(--text-muted); display: block;">ค้นหาวันที่ / โฟร์แมน / ผู้รับเหมา:</label>
+                <input type="text" id="filter-search" class="form-input" placeholder="พิมพ์คำค้นหา..." style="font-size: 0.8rem; padding: 5px 8px;">
+              </div>
+            </div>
+
+            <!-- Reports Table -->
+            <div id="reports-table-container" class="reports-table-wrapper" style="margin-top: 1rem;">
+              <div style="text-align: center; padding: 2.5rem 0; color: var(--text-muted);">
+                ⏳ กำลังโหลดประวัติรายงานประจำวัน...
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div><!-- End app-container -->
+
+  <!-- Full Report Details Modal -->
+  <div class="modal-backdrop" id="modal-report-details">
+    <div class="modal-card" style="max-width: 750px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">📑</span>
+          <h3 id="modal-report-title">รายละเอียดรายงานประจำวัน</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-report-modal" title="ปิด">×</button>
+      </div>
+      <div class="modal-body" id="modal-report-body" style="max-height: 80vh; overflow-y: auto;">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Project Selector Modal -->
+  <div class="modal-backdrop" id="modal-project-selector">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">🏢</span>
+          <h3>เลือกโครงการก่อสร้าง</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-project-modal" title="ปิด">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="projects-list-container" class="projects-list-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script type="module" src="js/gas_service.js"></script>
+  <script type="module" src="js/app_pm.js"></script>
+</body>
+</html>

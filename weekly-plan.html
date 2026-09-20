@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบวางแผนงานรายสัปดาห์ (หัวหน้าผู้รับเหมา LV2) | CPM Site Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="mode-subcontractor-desktop">
+
+  <!-- Top Role Switcher Toolbar for Quick Testing -->
+  <div class="top-role-nav">
+    <div class="role-nav-inner desktop-wide">
+      <div class="role-badge-current">
+        <span class="dot-online"></span>
+        <span>💻 <strong>LV2: หัวหน้าผู้รับเหมา</strong> (เน้นหน้าจอคอมพิวเตอร์)</span>
+      </div>
+      <div class="role-links-group">
+        <a href="index.html" class="nav-role-btn">🚪 ประตูหลัก</a>
+        <a href="foreman.html" class="nav-role-btn">📱 รายงานโฟร์แมน (LV1)</a>
+        <a href="pm-center.html" class="nav-role-btn">👔 ศูนย์ PM (LV3)</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Container (Desktop-Wide Frame) -->
+  <div class="app-container desktop-frame">
+
+    <!-- Header Section -->
+    <header class="app-header desktop-header">
+      <div class="header-top">
+        <div class="brand-group">
+          <div class="brand-logo">📋</div>
+          <div>
+            <h1 class="brand-title">SUBCONTRACTOR WEEKLY LOOKAHEAD</h1>
+            <p class="brand-subtitle">ระบบวางแผนงานรายสัปดาห์และแตกงานย่อย 7 วัน (ส่ง PM อนุมัติล่วงหน้า)</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div class="project-pill" id="project-pill" title="คลิกเพื่อเลือกโครงการ">
+            <span class="icon">🏢</span>
+            <strong id="display-project-name">กำลังโหลดโครงการ...</strong>
+            <span class="caret">▼</span>
+          </div>
+          <button type="button" class="btn-primary" id="btn-open-new-plan-modal" style="background: var(--accent-mint); color: #065f46; font-weight: 800; padding: 8px 16px; border: 2px solid var(--border-dark); border-radius: var(--radius-xs); cursor: pointer;">
+            ➕ สร้างแผนสัปดาห์ใหม่
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Subcontractor Profile Meta Strip -->
+    <div class="card" style="margin-bottom: 1rem; padding: 12px 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="avatar-wrap" style="width: 44px; height: 44px;">
+            <img id="sub-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80" alt="Avatar" class="line-avatar-img">
+          </div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <strong id="sub-user-name" style="font-size: 0.95rem;">-</strong>
+              <span class="user-role-badge">หัวหน้าผู้รับเหมา (LV2)</span>
+            </div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              🏢 สังกัดบริษัท: <strong id="sub-company-name" style="color: var(--text-heading);">-</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <button type="button" class="btn-sync-inline" id="btn-sync-plans">🔄 ซิงก์ข้อมูลชีต</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Plans Area -->
+    <main class="app-main">
+      <section class="card">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon">📅</span>
+            <h2>แผนงานรายสัปดาห์ทั้งหมดของโครงการ</h2>
+          </div>
+          <div class="quick-tags-grid" id="status-filter-chips" style="margin-bottom: 0;">
+            <button type="button" class="tag-chip active" data-filter="all">ทั้งหมด</button>
+            <button type="button" class="tag-chip" data-filter="Pending">🟡 รอ PM อนุมัติ</button>
+            <button type="button" class="tag-chip" data-filter="Approved">🟢 PM อนุมัติแล้ว</button>
+            <button type="button" class="tag-chip" data-filter="Revision">🔴 สั่งปรับปรุง</button>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div id="weekly-plans-container" class="weekly-plans-grid">
+            <div style="text-align: center; padding: 2.5rem 0; color: var(--text-muted); font-size: 0.85rem;">
+              ⏳ กำลังโหลดรายการแผนงานจาก Google Sheets...
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+  </div><!-- End app-container -->
+
+  <!-- Modal: สร้างแผนงานสัปดาห์และงานย่อยใหม่ -->
+  <div class="modal-backdrop" id="modal-new-weekly-plan">
+    <div class="modal-card" style="max-width: 650px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">📋</span>
+          <h3>สร้างแผนงานรายสัปดาห์ (Weekly Lookahead 7 วัน)</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-plan-modal" title="ปิด">×</button>
+      </div>
+
+      <div class="modal-body" style="max-height: 80vh; overflow-y: auto;">
+        <div style="background: #f1f5f9; padding: 10px 14px; border-radius: var(--radius-xs); margin-bottom: 0.85rem; font-size: 0.82rem; border: 1.5px solid var(--border-subtle);">
+          <div>🏢 <strong>บริษัทผู้รับเหมา:</strong> <span id="modal-plan-company">-</span></div>
+          <div>📍 <strong>โครงการ:</strong> <span id="modal-plan-project">-</span></div>
+          <div style="color: #059669; margin-top: 4px;">💡 แผนงานและงานย่อยที่ยื่น จะถูกส่งไปให้ PM ตรวจสอบและอนุมัติ เพื่อให้โฟร์แมนดึงไปทำงานจริงในวันนั้น</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem;">
+          <div>
+            <label style="font-size: 0.74rem; color: var(--text-muted); display: block; margin-bottom: 2px;">วันเริ่มต้นสัปดาห์:</label>
+            <input type="date" id="input-plan-start-date" class="form-input">
+          </div>
+          <div>
+            <label style="font-size: 0.74rem; color: var(--text-muted); display: block; margin-bottom: 2px;">วันสิ้นสุดสัปดาห์:</label>
+            <input type="date" id="input-plan-end-date" class="form-input">
+          </div>
+        </div>
+
+        <div style="margin-bottom: 0.6rem;">
+          <label style="font-size: 0.74rem; color: var(--text-muted); display: block; margin-bottom: 2px;">ชื่อสัปดาห์ / ป้ายกำกับ:</label>
+          <input type="text" id="input-plan-week-label" class="form-input" placeholder="เช่น สัปดาห์ที่ 39 (งานตัดหัวเข็มและเทลีน)">
+        </div>
+
+        <div style="margin-bottom: 0.85rem;">
+          <label style="font-size: 0.74rem; color: var(--text-muted); display: block; margin-bottom: 2px;">เป้าหมายหลักประจำสัปดาห์ (Milestone Objective):</label>
+          <textarea id="input-plan-objective" class="form-textarea" rows="2" placeholder="ระบุเป้าหมายที่ต้องทำให้เสร็จในสัปดาห์นี้..."></textarea>
+        </div>
+
+        <!-- Daily Tasks Builder -->
+        <div style="border-top: 2px dashed var(--border-subtle); padding-top: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+            <strong style="font-size: 0.85rem; color: var(--text-heading);">⚡ งานย่อยแต่ละวัน (Daily Tasks Builder)</strong>
+            <span id="modal-tasks-counter" class="badge-hint">0 รายการ</span>
+          </div>
+
+          <!-- Add task mini form -->
+          <div style="background: #f8fafc; border: 1.5px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 10px; margin-bottom: 0.75rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">วันที่ทำงาน:</label>
+                <input type="date" id="input-subtask-date" class="form-input">
+              </div>
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">หมวดงาน:</label>
+                <input type="text" id="input-subtask-cat" class="form-input" placeholder="เช่น ฐานราก, เสา, โครงสร้าง">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">ชื่องานย่อย:</label>
+                <input type="text" id="input-subtask-name" class="form-input" placeholder="เช่น สกัดหัวเข็ม F1-F4">
+              </div>
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">โซนพื้นที่:</label>
+                <input type="text" id="input-subtask-area" class="form-input" placeholder="เช่น โซนทิศเหนือ">
+              </div>
+            </div>
+
+            <div style="margin-bottom: 0.5rem;">
+              <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">รายละเอียดขั้นตอนงาน:</label>
+              <input type="text" id="input-subtask-desc" class="form-input" placeholder="เช่น ตัดเหล็กหัวเข็ม เทคอนกรีตหยาบ 10 ซม.">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 0.6rem;">
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">เป้าหมายปริมาณ:</label>
+                <input type="text" id="input-subtask-qty" class="form-input" placeholder="เช่น 8 ต้น">
+              </div>
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">แผนคนงาน (คน):</label>
+                <input type="number" id="input-subtask-workers" class="form-input" min="0" value="5">
+              </div>
+              <div>
+                <label style="font-size: 0.7rem; color: var(--text-muted); display: block;">เครื่องจักร/อุปกรณ์:</label>
+                <input type="text" id="input-subtask-machinery" class="form-input" placeholder="เช่น สกัดลม 2 ตัว">
+              </div>
+            </div>
+
+            <button type="button" class="btn-add-item" id="btn-add-subtask-to-list" style="width: 100%; padding: 8px; font-size: 0.8rem; justify-content: center;">
+              ➕ บันทึกงานย่อยนี้ลงแผน
+            </button>
+          </div>
+
+          <div id="modal-added-tasks-list" style="display: flex; flex-direction: column; gap: 6px;">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 10px 16px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn-cancel" id="btn-cancel-new-plan">ยกเลิก</button>
+        <button type="button" class="btn-save" id="btn-submit-weekly-plan" style="background: var(--accent-mint); color: #065f46; font-weight: 800;">
+          🚀 ยื่นแผนงานสัปดาห์ (ส่งให้ PM อนุมัติ)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Project Selector Modal -->
+  <div class="modal-backdrop" id="modal-project-selector">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">🏢</span>
+          <h3>เลือกโครงการก่อสร้าง</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-project-modal" title="ปิด">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="projects-list-container" class="projects-list-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script type="module" src="js/gas_service.js"></script>
+  <script type="module" src="js/app_weekly.js"></script>
+</body>
+</html>

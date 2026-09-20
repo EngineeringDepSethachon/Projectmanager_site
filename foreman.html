@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>รายงานหน้างานประจำวัน (โฟร์แมน LV1) | CPM Site Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body class="mode-foreman-mobile">
+
+  <!-- Top Role Switcher Toolbar for Quick Testing -->
+  <div class="top-role-nav">
+    <div class="role-nav-inner">
+      <div class="role-badge-current">
+        <span class="dot-online"></span>
+        <span>📱 <strong>LV1: โฟร์แมนหน้างาน</strong> (เน้นจอมือถือ)</span>
+      </div>
+      <div class="role-links-group">
+        <a href="index.html" class="nav-role-btn">🚪 ประตูหลัก</a>
+        <a href="weekly-plan.html" class="nav-role-btn">💻 แผนสัปดาห์ (LV2)</a>
+        <a href="pm-center.html" class="nav-role-btn">👔 ศูนย์ PM (LV3)</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Wrapper (Mobile View Frame) -->
+  <div class="app-container mobile-frame">
+
+    <!-- Header Section -->
+    <header class="app-header">
+      <div class="header-top">
+        <div class="brand-group">
+          <div class="brand-logo">🏗️</div>
+          <div>
+            <h1 class="brand-title">CPM SITE REPORT</h1>
+            <p class="brand-subtitle">รายงานหน้างานประจำวัน (โฟร์แมน)</p>
+          </div>
+        </div>
+        <div class="header-badge" id="shift-badge-top">🌅 รอบเช้า</div>
+      </div>
+
+      <!-- Project & Date Pill Strip -->
+      <div class="meta-strip">
+        <div class="project-pill" id="project-pill" title="แตะเพื่อเลือกโครงการ">
+          <span class="icon">🏢</span>
+          <strong id="display-project-name">กำลังโหลดโครงการ...</strong>
+          <span class="caret">▼</span>
+        </div>
+        <div class="date-pill">
+          <span class="icon">📅</span>
+          <span id="display-report-date">20 ก.ย. 2026</span>
+        </div>
+      </div>
+
+      <!-- Horizontal 7-Day Date Strip -->
+      <div class="date-strip-container" id="horizontal-date-strip">
+        <!-- Rendered via JS -->
+      </div>
+    </header>
+
+    <!-- Main Content Body -->
+    <main class="app-main">
+
+      <!-- 1. LINE Profile & User Card -->
+      <section class="card line-card">
+        <div class="card-inner">
+          <div class="line-user-profile">
+            <div class="avatar-wrap">
+              <img id="line-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80" alt="Avatar" class="line-avatar-img">
+              <span id="line-status-dot" class="status-dot online"></span>
+            </div>
+            <div class="line-info-meta">
+              <div class="line-name-row">
+                <strong id="line-display-name">-</strong>
+                <span id="line-mode-badge" class="line-badge">🟢 โฟร์แมนหน้างาน</span>
+                <button type="button" class="btn-sync-inline" id="btn-sync-profile" title="ซิงก์ข้อมูล">🔄 ซิงก์</button>
+              </div>
+              <div class="line-role-row" id="line-role-row">
+                <span class="user-role-badge" id="line-role-text">โฟร์แมน (LV1)</span>
+                <span class="user-company-badge" id="line-company-text">-</span>
+              </div>
+              <div class="line-uid-row">
+                <span>UID:</span>
+                <code id="line-uid-text">-</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SHIFT MODE SWITCHER (สลับรอบเช้า vs จบงาน) -->
+      <div class="shift-switcher-container">
+        <button type="button" class="shift-tab active" id="tab-morning-shift" data-shift="morning">
+          <span class="shift-emoji">🌅</span>
+          <div class="shift-text">
+            <strong>เปิดงานตอนเช้า</strong>
+            <span>ตรวจสอบแผน & คนงาน</span>
+          </div>
+        </button>
+        <button type="button" class="shift-tab" id="tab-evening-shift" data-shift="evening">
+          <span class="shift-emoji">🌆</span>
+          <div class="shift-text">
+            <strong>รายงานจบงาน</strong>
+            <span>รายงาน % ผลงานจริง</span>
+          </div>
+        </button>
+      </div>
+
+      <!-- BANNER: สถานะแผนงานที่ PM อนุมัติสำหรับวันนี้ -->
+      <div id="plan-source-status-banner" class="approved-tasks-banner">
+        <!-- Rendered via JS based on PM approved tasks -->
+      </div>
+
+      <!-- 2. Dynamic Tasks Section (มาจากแผนที่ PM อนุมัติล่วงหน้า) -->
+      <section class="card" id="tasks-card-section">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon">⚡</span>
+            <h2 id="tasks-section-title">งานตามแผนที่ได้รับอนุมัติวันนี้</h2>
+          </div>
+          <span class="badge-hint morning" id="tasks-badge-hint">เป้าหมายตามแผน</span>
+        </div>
+        <div class="card-body">
+          <div id="dynamic-tasks-container">
+            <!-- Rendered via JS -->
+          </div>
+
+          <!-- Fallback: ปุ่มเพิ่มงานฉุกเฉินนอกแผนกรณีจำเป็น -->
+          <div style="margin-top: 0.75rem; text-align: center;">
+            <button type="button" id="btn-add-unplanned-task" class="btn-secondary" style="font-size: 0.72rem; padding: 4px 10px; border-radius: var(--radius-xs); border: 1.5px dashed var(--border-dark); background: #f8fafc;">
+              ⚠️ มีงานฉุกเฉินนอกแผนที่ต้องทำเพิ่ม? กดที่นี่
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Weather Condition -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="icon">☀️</span>
+            <h2 id="weather-section-title">สภาพอากาศตอนเปิดงาน</h2>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="weather-selector-grid">
+            <button type="button" class="weather-btn active" data-type="sunny" data-text="☀️ ท้องฟ้าแจ่มใส แดดจัดทั้งวัน">
+              <span class="w-emoji">☀️</span>
+              <span class="w-label">แดดจัด ทำงานปกติ</span>
+            </button>
+            <button type="button" class="weather-btn" data-type="cloudy" data-text="⛅ มีเมฆมาก ไม่มีฝน">
+              <span class="w-emoji">⛅</span>
+              <span class="w-label">มีเมฆมาก ลมสงบ</span>
+            </button>
+            <button type="button" class="weather-btn" data-type="rain_light" data-text="🌧️ ฝนตกชั่วคราว (หยุดงานชั่วขณะ)">
+              <span class="w-emoji">🌧️</span>
+              <span class="w-label">ฝนตกเล็กน้อย</span>
+            </button>
+            <button type="button" class="weather-btn" data-type="rain_heavy" data-text="⛈️ ฝนตกหนัก น้ำท่วมขัง">
+              <span class="w-emoji">⛈️</span>
+              <span class="w-label">ฝนตกหนัก น้ำขัง</span>
+            </button>
+          </div>
+
+          <!-- Rain Delay Hours (Evening emphasis) -->
+          <div class="rain-hours-box" id="rain-hours-box" style="display: none; margin-top: 0.75rem;">
+            <span class="rain-label">🌧️ ชั่วโมงหยุดงานจากฝนตก:</span>
+            <div class="stepper-mini">
+              <button type="button" class="btn-step-sm" id="btn-rain-minus">-</button>
+              <strong id="rain-hours-val">0 ชม.</strong>
+              <button type="button" class="btn-step-sm" id="btn-rain-plus">+</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Workforce Counters -->
+      <section class="card">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon">👷</span>
+            <h2 id="workforce-section-title">ยอดกำลังพลเข้างานรอบเช้า</h2>
+          </div>
+          <div class="badge-total">รวม <strong id="total-workers-sum">1</strong> คน</div>
+        </div>
+        <div class="card-body">
+          <div class="steppers-vertical-list">
+            <div class="stepper-card-row">
+              <div class="worker-meta">
+                <span class="role-icon">👔</span>
+                <div>
+                  <strong>โฟร์แมน / คุมงาน</strong>
+                  <span class="desc">Foreman / Site Engineer</span>
+                </div>
+              </div>
+              <div class="stepper-controls">
+                <button type="button" class="btn-step" data-role="foreman" data-delta="-1">-</button>
+                <span class="count-val" id="count-foreman">1</span>
+                <button type="button" class="btn-step" data-role="foreman" data-delta="1">+</button>
+              </div>
+            </div>
+
+            <div class="stepper-card-row">
+              <div class="worker-meta">
+                <span class="role-icon">🔨</span>
+                <div>
+                  <strong>ช่างฝีมือ</strong>
+                  <span class="desc">ช่างปูน, ไม้, เหล็ก, เชื่อม</span>
+                </div>
+              </div>
+              <div class="stepper-controls">
+                <button type="button" class="btn-step" data-role="skilled_workers" data-delta="-1">-</button>
+                <span class="count-val" id="count-skilled_workers">0</span>
+                <button type="button" class="btn-step" data-role="skilled_workers" data-delta="1">+</button>
+              </div>
+            </div>
+
+            <div class="stepper-card-row">
+              <div class="worker-meta">
+                <span class="role-icon">🦺</span>
+                <div>
+                  <strong>แรงงานทั่วไป</strong>
+                  <span class="desc">ขนย้าย, ขุดดิน, ผู้ช่วย</span>
+                </div>
+              </div>
+              <div class="stepper-controls">
+                <button type="button" class="btn-step" data-role="general_labor" data-delta="-1">-</button>
+                <span class="count-val" id="count-general_labor">0</span>
+                <button type="button" class="btn-step" data-role="general_labor" data-delta="1">+</button>
+              </div>
+            </div>
+
+            <div class="stepper-card-row">
+              <div class="worker-meta">
+                <span class="role-icon">🦺</span>
+                <div>
+                  <strong>จป.วิชาชีพ / Safety</strong>
+                  <span class="desc">เจ้าหน้าที่ความปลอดภัย</span>
+                </div>
+              </div>
+              <div class="stepper-controls">
+                <button type="button" class="btn-step" data-role="safety_officer" data-delta="-1">-</button>
+                <span class="count-val" id="count-safety_officer">0</span>
+                <button type="button" class="btn-step" data-role="safety_officer" data-delta="1">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Photos & Visual Proof -->
+      <section class="card">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon">📷</span>
+            <h2 id="photo-section-title">ภาพถ่ายแถวเปิดงาน / Safety Talk</h2>
+          </div>
+          <span class="badge-hint" id="photo-counter">0 รูป</span>
+        </div>
+        <div class="card-body">
+          <input type="file" id="camera-file-input" accept="image/*" capture="environment" style="display: none;">
+          <div class="camera-trigger-box" id="camera-trigger-btn">
+            <div class="cam-icon">📸</div>
+            <strong id="camera-trigger-title">แตะถ่ายรูปแถวคนงาน หรือประชุม Safety</strong>
+            <span id="camera-trigger-desc">ประทับเวลาเปิดงานรอบเช้า และ LINE UID</span>
+          </div>
+          <div class="photos-grid" id="photos-preview-grid" style="margin-top: 0.75rem;"></div>
+        </div>
+      </section>
+
+      <!-- 6. Machinery -->
+      <section class="card">
+        <div class="card-header flex-between">
+          <div class="card-title">
+            <span class="icon">🚜</span>
+            <h2>เครื่องจักรที่พร้อมใช้งานวันนี้</h2>
+          </div>
+          <span class="badge-hint" id="machinery-counter-badge">เลือกแล้ว 0 เครื่อง</span>
+        </div>
+        <div class="card-body">
+          <div class="add-item-row">
+            <input type="text" id="input-new-machinery" class="form-input add-item-input" placeholder="พิมพ์ชื่อเครื่องจักร เช่น แบคโฮ, รถเครน...">
+            <button type="button" id="btn-add-machinery" class="btn-add-item">
+              <span>➕ เพิ่ม</span>
+            </button>
+          </div>
+          <div class="chips-grid" id="machinery-chips-grid" style="margin-top: 0.75rem;"></div>
+        </div>
+      </section>
+
+      <!-- 7. Issues & Notes -->
+      <section class="card" id="issues-card-section">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="icon">⚠️</span>
+            <h2>ข้อสังเกต / ปัญหาอุปสรรคหน้างาน</h2>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="quick-tags-grid" id="issues-tags-grid"></div>
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label for="custom-issue-text" style="font-size: 0.75rem; color: var(--text-muted);">รายละเอียดเพิ่มเติมถึง PM เจ้าของโครงการ:</label>
+            <textarea id="custom-issue-text" class="form-textarea" placeholder="ระบุสิ่งที่ต้องการให้ประสานงาน หรือปัญหาที่พบ..." rows="3"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <div style="height: 80px;"></div>
+    </main>
+
+    <!-- Fixed Bottom Action Bar -->
+    <div class="bottom-action-bar">
+      <button type="button" class="btn-submit-report morning" id="btn-submit-daily-report">
+        <span id="btn-submit-text">ส่งรายงานเปิดงานตอนเช้า</span>
+      </button>
+    </div>
+
+  </div><!-- End app-container -->
+
+  <!-- Project Selector Modal -->
+  <div class="modal-backdrop" id="modal-project-selector">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">🏢</span>
+          <h3>เลือกโครงการก่อสร้าง</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-project-modal" title="ปิด">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="projects-list-container" class="projects-list-container">
+          <div style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
+            ⏳ กำลังโหลดรายชื่อโครงการ...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script type="module" src="js/gas_service.js"></script>
+  <script type="module" src="js/app_foreman.js"></script>
+</body>
+</html>

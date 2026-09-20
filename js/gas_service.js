@@ -361,5 +361,31 @@ export const gasService = {
     } catch (err) {
       return { success: false, message: 'ส่งข้อมูลล้มเหลว: ' + err.message };
     }
+  },
+
+  /**
+   * ดึงประวัติรายงานประจำวันทั้งหมดจากชีต Daily_Reports สำหรับ PM เรียกดูย้อนหลัง
+   */
+  async fetchDailyReports(projectId = '') {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return [];
+
+    try {
+      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_reports&_t=' + Date.now();
+      if (projectId && projectId !== '-') {
+        queryUrl += '&projectId=' + encodeURIComponent(projectId);
+      }
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.reports)) {
+        return data.reports;
+      }
+      return [];
+    } catch (err) {
+      console.warn('fetchDailyReports error:', err);
+      return [];
+    }
   }
 };
+
