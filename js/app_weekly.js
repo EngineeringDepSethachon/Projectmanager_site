@@ -546,9 +546,21 @@ function renderGanttTable() {
   state.mainTasks.forEach((m, mIdx) => {
     const isExpanded = state.expandedTasks.has(m.id);
     const subtasks = m.subtasks || [];
+    // Ensure valid indices within 0..6
+    let sIdx = Number(m.startDayIndex);
+    let eIdx = Number(m.endDayIndex);
+    if (isNaN(sIdx) || sIdx < 0) sIdx = 0;
+    if (isNaN(eIdx) || eIdx > 6) eIdx = 6;
+    if (sIdx > eIdx) eIdx = sIdx;
+    m.startDayIndex = sIdx;
+    m.endDayIndex = eIdx;
+
     const durDays = (m.endDayIndex - m.startDayIndex) + 1;
     const sDate = state.weekInfo.days[m.startDayIndex];
     const eDate = state.weekInfo.days[m.endDayIndex];
+
+    const leftPct = (m.startDayIndex * 100) / 7;
+    const widthPct = (durDays * 100) / 7;
 
     // Compute subtasks average progress
     let taskProgressSum = 0;
@@ -602,16 +614,16 @@ function renderGanttTable() {
             
             <!-- 7 Background Day Columns for Guidelines -->
             ${state.weekInfo.days.map(d => `
-              <div class="gantt-track-day-col ${d.isWeekend ? 'weekend' : ''} ${d.isToday ? 'today' : ''}" data-day-index="${d.dayIndex}"></div>
+              <div class="gantt-track-day-col ${d.isWeekend ? 'weekend' : ''} ${d.isToday ? 'today' : ''}" data-day-index="${d.dayIndex}" title="คลิกเพื่อย้ายงานมาที่วัน${d.dayNameShort}"></div>
             `).join('')}
 
-            <!-- The Draggable / Resizable Gantt Bar -->
+            <!-- The Draggable / Resizable Gantt Bar (Pixel-Perfect % Positioning) -->
             <div 
               class="gantt-bar-element ${m.categoryColor || 'cat-structure'}" 
               id="gantt-bar-${m.id}"
               data-task-id="${m.id}"
-              style="grid-column: ${m.startDayIndex + 1} / ${m.endDayIndex + 2};"
-              title="${escapeHtml(m.name)} (${durDays} วัน, ความคืบหน้า ${taskAvgProgress}%)"
+              style="left: calc(${leftPct}% + 4px); width: calc(${widthPct}% - 8px);"
+              title="${escapeHtml(m.name)}: วัน${sDate.dayNameShort} ${sDate.dateNumber} ถึง วัน${eDate.dayNameShort} ${eDate.dateNumber} (${durDays} วัน)"
             >
               <!-- Left Resize Handle -->
               <div class="gantt-bar-handle handle-left" data-handle="left" data-task-id="${m.id}" title="ลากปรับวันเริ่มต้น">◀</div>
@@ -726,6 +738,7 @@ function initGanttDragAndResize() {
     let initialStart = task.startDayIndex;
     let initialEnd = task.endDayIndex;
     let trackRect = null;
+    let track = null;
 
     const onMouseDown = (e) => {
       // Determine if clicking handle or bar body
@@ -740,7 +753,7 @@ function initGanttDragAndResize() {
       initialStart = task.startDayIndex;
       initialEnd = task.endDayIndex;
 
-      const track = bar.closest('.gantt-timeline-track');
+      track = bar.closest('.gantt-timeline-track');
       if (track) {
         trackRect = track.getBoundingClientRect();
       }
@@ -783,8 +796,12 @@ function initGanttDragAndResize() {
         }
       }
 
-      // Live CSS Grid update
-      bar.style.gridColumn = `${newStart + 1} / ${newEnd + 2}`;
+      // Live Percentage positioning matching the 7 columns perfectly
+      const leftPct = (newStart * 100) / 7;
+      const widthPct = ((newEnd - newStart + 1) * 100) / 7;
+      bar.style.left = `calc(${leftPct}% + 4px)`;
+      bar.style.width = `calc(${widthPct}% - 8px)`;
+
       const durDays = (newEnd - newStart) + 1;
       const countLabel = bar.querySelector('.gantt-bar-days-count');
       if (countLabel) countLabel.innerText = `${durDays} วัน`;
@@ -799,6 +816,26 @@ function initGanttDragAndResize() {
           datePill.innerText = `${sDate.dayNameShort} ${sDate.dateNumber} - ${eDate.dayNameShort} ${eDate.dateNumber} (${durDays} วัน)`;
         }
       }
+
+      // Live highlight corresponding header days
+      document.querySelectorAll('#gantt-days-header .gantt-day-th').forEach((th, idx) => {
+        if (idx >= newStart && idx <= newEnd) {
+          th.classList.add('drag-highlight');
+        } else {
+          th.classList.remove('drag-highlight');
+        }
+      });
+
+      // Live highlight track columns in this row
+      if (track) {
+        track.querySelectorAll('.gantt-track-day-col').forEach((col, idx) => {
+          if (idx >= newStart && idx <= newEnd) {
+            col.classList.add('drag-highlight');
+          } else {
+            col.classList.remove('drag-highlight');
+          }
+        });
+      }
     };
 
     const onMouseUp = (e) => {
@@ -808,23 +845,30 @@ function initGanttDragAndResize() {
       const deltaX = e.clientX - startX;
       const dayDelta = Math.round(deltaX / cellWidth);
 
+      let newStart = initialStart;
+      let newEnd = initialEnd;
+
       if (dragType === 'left') {
-        task.startDayIndex = Math.min(task.endDayIndex, Math.max(0, initialStart + dayDelta));
+        newStart = Math.min(task.endDayIndex, Math.max(0, initialStart + dayDelta));
       } else if (dragType === 'right') {
-        task.endDayIndex = Math.max(task.startDayIndex, Math.min(6, initialEnd + dayDelta));
+        newEnd = Math.max(task.startDayIndex, Math.min(6, initialEnd + dayDelta));
       } else if (dragType === 'body') {
         const duration = initialEnd - initialStart;
-        let newStart = initialStart + dayDelta;
-        let newEnd = newStart + duration;
+        newStart = initialStart + dayDelta;
+        newEnd = newStart + duration;
         if (newStart < 0) { newStart = 0; newEnd = duration; }
         if (newEnd > 6) { newEnd = 6; newStart = 6 - duration; }
-        task.startDayIndex = newStart;
-        task.endDayIndex = newEnd;
       }
+
+      task.startDayIndex = newStart;
+      task.endDayIndex = newEnd;
 
       // Finalize ISO dates
       task.startDate = state.weekInfo.days[task.startDayIndex].iso;
       task.endDate = state.weekInfo.days[task.endDayIndex].iso;
+
+      // Remove all highlight classes
+      document.querySelectorAll('.drag-highlight').forEach(el => el.classList.remove('drag-highlight'));
 
       bar.classList.remove('dragging');
       document.body.style.cursor = '';
@@ -834,12 +878,44 @@ function initGanttDragAndResize() {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
 
-      // Auto-save draft
+      // Auto-save draft and re-render to ensure 100% synchronization
       autoSaveDraft();
+      renderGanttTable();
+      updateKPISummary();
       showToast(`🗓️ ปรับวันที่: ${task.name} (${(task.endDayIndex - task.startDayIndex) + 1} วัน)`, 'info');
     };
 
     bar.addEventListener('mousedown', onMouseDown);
+  });
+
+  // Direct click on empty day columns to move or place task
+  document.querySelectorAll('.gantt-track-day-col').forEach(col => {
+    col.addEventListener('click', (e) => {
+      if (e.target.closest('.gantt-bar-element')) return;
+      const dayIdx = Number(col.dataset.dayIndex);
+      const track = col.closest('.gantt-timeline-track');
+      if (!track || isNaN(dayIdx)) return;
+      const taskId = track.dataset.trackId;
+      const task = state.mainTasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const dur = task.endDayIndex - task.startDayIndex;
+      let newStart = dayIdx;
+      let newEnd = dayIdx + dur;
+      if (newEnd > 6) {
+        newEnd = 6;
+        newStart = Math.max(0, 6 - dur);
+      }
+      task.startDayIndex = newStart;
+      task.endDayIndex = newEnd;
+      task.startDate = state.weekInfo.days[newStart].iso;
+      task.endDate = state.weekInfo.days[newEnd].iso;
+
+      autoSaveDraft();
+      renderGanttTable();
+      updateKPISummary();
+      showToast(`🗓️ เลื่อนงาน "${task.name}" ไปที่วัน${state.weekInfo.days[newStart].dayNameShort}`, 'info');
+    });
   });
 }
 
