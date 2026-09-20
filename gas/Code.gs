@@ -685,14 +685,6 @@ function getOrCreateSubcontractorsSheet(ss) {
       sheet.setColumnWidth(7, 160);
     } catch(e) {}
 
-    // ข้อมูลเริ่มต้นสำหรับให้แอดมินแก้ไข / ลบ / เพิ่มเติมตามจริง
-    const defaultSubs = [
-      ["SUB-01", "หจก. นครพิงค์โครงสร้าง", "งานโครงสร้างฐานรากและเสาเข็ม", "ช่างสมหมาย", "081-111-2233", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")],
-      ["SUB-02", "บจก. สยามสถาปัตย์", "งานสถาปัตย์ ผนังก่อฉาบ และปูกระเบื้อง", "นายประเสริฐ", "089-222-3344", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")],
-      ["SUB-03", "บจก. เอ็นจิเนียริ่ง ซิสเต็ม", "งานระบบไฟฟ้า สุขาภิบาล และดับเพลิง (MEP)", "นายธนพล", "086-333-4455", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")],
-      ["SUB-04", "หจก. ภูมิทัศน์และถนน", "งานผังบริเวณ ถนน คสล. และงานภายนอก", "นายวิชัย", "084-444-5566", "Active", Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")]
-    ];
-    defaultSubs.forEach(r => sheet.appendRow(r));
   }
   return sheet;
 }
