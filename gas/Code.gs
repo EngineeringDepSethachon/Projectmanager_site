@@ -21,6 +21,40 @@ const DEFAULT_TARGET_ID = "U224cf73ea4b2484a0eb0055155e05bf4";
 const DEFAULT_FRONTEND_WEB_URL = "https://engineeringdepsethachon.github.io/Projectmanager_site";
 
 /**
+ * ฟังก์ชันสร้างเมนูบนแถบเครื่องมือ Google Sheets เมื่อเปิดสเปรดชีต
+ */
+function onOpen() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu("🏗️ ระบบรายงานหน้างาน")
+      .addItem("🔄 ตรวจสอบและสร้างโครงสร้างชีตทั้งหมด (Init Sheets)", "initialSystemSheets")
+      .addItem("ℹ️ ข้อมูลการเชื่อมต่อระบบ", "showConnectionInfo")
+      .addToUi();
+  } catch(e) {
+    Logger.log("onOpen error: " + e.toString());
+  }
+}
+
+/**
+ * แสดงข้อมูลการเชื่อมต่อระบบใน Google Sheets
+ */
+function showConnectionInfo() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert(
+      "📊 ข้อมูลการเชื่อมต่อระบบรายงานหน้างาน",
+      "• เว็บแอปรายงานหน้างาน: " + DEFAULT_FRONTEND_WEB_URL + "\n" +
+      "• สถานะระบบ: เชื่อมต่อสมบูรณ์ (พร้อมใช้งาน)\n\n" +
+      "💡 คำแนะนำในการจัดการ:\n" +
+      "1. เพิ่ม/แก้ไขโครงการที่ชีต 'Projects'\n" +
+      "2. เพิ่มรายชื่อผู้รับเหมาและระบุรหัสโครงการที่ชีต 'Subcontractors'\n" +
+      "3. ระบุรหัสโครงการและบริษัทให้ช่าง/โฟร์แมนที่ชีต 'Site_Users'",
+      ui.ButtonSet.OK
+    );
+  } catch(e) {}
+}
+
+/**
  * Handle GET requests (Health Check Ping & Query Reports & Query Users)
  */
 function doGet(e) {
@@ -33,6 +67,16 @@ function doGet(e) {
         status: "success",
         message: "ระบบเชื่อมต่อ Google Apps Script สำเร็จพร้อมใช้งาน",
         sheetName: ss.getName(),
+        timestamp: Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")
+      });
+    }
+
+    if (action === "init_sheets" || action === "setup") {
+      const res = initialSystemSheets(ss);
+      return jsonResponse({
+        status: "success",
+        message: "ตรวจสอบและปรับโครงสร้างชีตทั้งหมดสำเร็จ",
+        sheets: res,
         timestamp: Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")
       });
     }
@@ -135,19 +179,45 @@ function doGet(e) {
     if (action === "get_subcontractors") {
       const sheet = getOrCreateSubcontractorsSheet(ss);
       const data = sheet.getDataRange().getValues();
+      const targetProjectId = (e.parameter && (e.parameter.projectId || e.parameter.prj) ? String(e.parameter.projectId || e.parameter.prj).trim() : "");
+      const projectsMap = getProjectsMap(ss);
       const subs = [];
 
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        if (!row[0] && !row[1]) continue;
-        subs.push({
-          id: String(row[0] || ("SUB-" + i)).trim(),
-          name: String(row[1] || "").trim(),
-          scope: String(row[2] || "").trim(),
-          contact: String(row[3] || "").trim(),
-          phone: String(row[4] || "").trim(),
-          status: String(row[5] || "Active").trim()
-        });
+      if (data.length > 1) {
+        const headers = data[0].map(h => String(h).trim());
+        let projIdIdx = headers.findIndex(h => h.includes("Project") || h.includes("โครงการ"));
+        let projNameIdx = headers.findIndex(h => h.includes("Project Name") || h.includes("ชื่อโครงการ"));
+        let subIdIdx = headers.findIndex(h => h.includes("รหัสผู้รับเหมา") || h.includes("Subcontractor ID") || h === "ID" || h.includes("(ID)"));
+        let nameIdx = headers.findIndex(h => h.includes("ชื่อบริษัท") || (h.includes("ผู้รับเหมา") && !h.includes("รหัส")));
+        let scopeIdx = headers.findIndex(h => h.includes("ขอบเขต") || h.includes("ประเภท"));
+        let contactIdx = headers.findIndex(h => h.includes("ผู้ติดต่อ"));
+        let phoneIdx = headers.findIndex(h => h.includes("โทร"));
+        let statusIdx = headers.findIndex(h => h.includes("สถานะ"));
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          const subName = String(nameIdx > -1 ? row[nameIdx] : row[3] || row[1] || "").trim();
+          if (!subName || subName === "-") continue;
+
+          const pId = String(projIdIdx > -1 ? row[projIdIdx] : "-").trim() || "-";
+          const pName = String(projNameIdx > -1 ? row[projNameIdx] : (projectsMap[pId] || "-")).trim() || "-";
+
+          // หากระบุ targetProjectId ให้กรองเฉพาะโครงการที่ตรงกัน (หรือแถวที่ยังไม่ได้ระบุโครงการ)
+          if (targetProjectId && targetProjectId !== "-" && pId !== "-" && pId !== targetProjectId) {
+            continue;
+          }
+
+          subs.push({
+            projectId: pId,
+            projectName: pName,
+            id: String(subIdIdx > -1 ? row[subIdIdx] : ("SUB-" + i)).trim(),
+            name: subName,
+            scope: String(scopeIdx > -1 ? row[scopeIdx] : "").trim(),
+            contact: String(contactIdx > -1 ? row[contactIdx] : "").trim(),
+            phone: String(phoneIdx > -1 ? row[phoneIdx] : "").trim(),
+            status: String(statusIdx > -1 ? row[statusIdx] : "Active").trim()
+          });
+        }
       }
 
       return jsonResponse({
@@ -524,65 +594,114 @@ function sendLineShiftFlexNotification(data) {
 }
 
 /**
- * สร้างหรือดึงชีต Daily_Reports พร้อมจัดรูปแบบหัวตาราง
+ * ==============================================================================
+ * Master Schemas สำหรับชีตทั้งหมดของระบบ
+ * ใช้เป็น Single Source of Truth สำหรับหัวตาราง, สีหัวตาราง, ความกว้างคอลัมน์ และข้อมูลเริ่มต้น
+ * ==============================================================================
  */
-function getOrCreateReportsSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAME_REPORTS);
-  const defaultHeaders = [
-    "รหัสรายงาน (Report ID)",
-    "วันที่รายงาน (Date)",
-    "รอบกะ (Shift: เช้า/จบงาน)",
-    "เวลาบันทึก (Timestamp)",
-    "LINE UID",
-    "ชื่อ LINE (LINE Name)",
-    "บริษัทผู้รับเหมา",
-    "ชื่อโฟร์แมน",
-    "สภาพอากาศ",
-    "เวลาหยุดงานจากฝน (ชม.)",
-    "โฟร์แมน (คน)",
-    "ช่างฝีมือ (คน)",
-    "แรงงานทั่วไป (คน)",
-    "จป.ความปลอดภัย (คน)",
-    "ยอดคนงานรวม (คน)",
-    "จำนวนงาน (รายการ)",
-    "สรุปรายการงาน / เป้าหมาย",
-    "เครื่องจักรที่ใช้งาน",
-    "จำนวนรูปภาพ",
-    "ลิงก์รูปภาพหน้างาน (Drive)",
-    "ปัญหาและอุปสรรค",
-    "สถานะการอนุมัติ",
-    "รหัสโครงการ (Project ID)",
-    "ชื่อโครงการ (Project Name)"
-  ];
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_REPORTS);
-    sheet.appendRow(defaultHeaders);
-    sheet.getRange("A1:X1").setBackground("#0284c7").setFontColor("#ffffff").setFontWeight("bold");
-    sheet.setFrozenRows(1);
-  } else {
-    const data = sheet.getDataRange().getValues();
-    if (data.length > 0) {
-      const headerRow = data[0].map(h => String(h).trim());
-      const hasProj = headerRow.some(h => h.includes("Project") || h.includes("โครงการ"));
-      if (!hasProj) {
-        const lastCol = sheet.getLastColumn();
-        sheet.getRange(1, lastCol + 1).setValue("รหัสโครงการ (Project ID)");
-        sheet.getRange(1, lastCol + 2).setValue("ชื่อโครงการ (Project Name)");
-        sheet.getRange(1, lastCol + 1, 1, 2).setBackground("#0284c7").setFontColor("#ffffff").setFontWeight("bold");
-      }
-    }
-  }
-  return sheet;
-}
-
-/**
- * สร้างหรือดึงชีต Tasks_Detail สำหรับรายการงานย่อย
- */
-function getOrCreateTasksSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAME_TASKS);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_TASKS);
-    const headers = [
+const SYSTEM_SHEET_SCHEMAS = {
+  [SHEET_NAME_PROJECTS]: {
+    name: SHEET_NAME_PROJECTS,
+    headers: [
+      "รหัสโครงการ (Project ID)",
+      "ชื่อโครงการ (Project Name)",
+      "สถานที่ / ขอบเขตงาน (Location)",
+      "ผู้จัดการโครงการ / PM",
+      "สถานะโครงการ (Status)",
+      "วันที่เริ่มโครงการ",
+      "วันที่สิ้นสุดตามสัญญา",
+      "วันที่สร้างรายการ (Created At)"
+    ],
+    color: "#0f766e", // Teal 700
+    widths: [150, 260, 220, 180, 120, 140, 160, 160],
+    seed: [
+      "PRJ-01",
+      "อาคารสำนักงาน 8 ชั้น",
+      "กรุงเทพมหานคร",
+      "วิศวกรโครงการ",
+      "Active",
+      "2026-01-01",
+      "2026-12-31"
+    ]
+  },
+  [SHEET_NAME_SUBCONTRACTORS]: {
+    name: SHEET_NAME_SUBCONTRACTORS,
+    headers: [
+      "รหัสโครงการ (Project ID)",
+      "ชื่อโครงการ (Project Name)",
+      "รหัสผู้รับเหมา (ID)",
+      "ชื่อบริษัท / ผู้รับเหมา (Company Name)",
+      "ประเภทงาน / ขอบเขตงาน (Scope)",
+      "ชื่อผู้ติดต่อ (Contact Person)",
+      "เบอร์โทรศัพท์ (Phone)",
+      "สถานะ (Status)",
+      "วันที่บันทึก (Created At)"
+    ],
+    color: "#0d9488", // Teal 600
+    widths: [150, 220, 130, 260, 240, 160, 140, 100, 160],
+    seed: [
+      "PRJ-01",
+      "อาคารสำนักงาน 8 ชั้น",
+      "SUB-01",
+      "หจก. นครพิงค์โครงสร้าง",
+      "งานโครงสร้างฐานรากและเสาเข็ม",
+      "ช่างสมหมาย",
+      "081-111-2233",
+      "Active"
+    ]
+  },
+  [SHEET_NAME_USERS]: {
+    name: SHEET_NAME_USERS,
+    headers: [
+      "LINE UID",
+      "ชื่อใน LINE (LINE Name)",
+      "ชื่อที่แสดงในระบบ (Display Name)",
+      "ตำแหน่ง (Role)",
+      "ระดับ (Level/LV)",
+      "บริษัท / ผู้รับเหมา (Company)",
+      "รูปโปรไฟล์ (Avatar URL)",
+      "สถานะ (Status)",
+      "ลงทะเบียนเมื่อ (Registered At)",
+      "เข้าใช้งานล่าสุด (Last Active)",
+      "รหัสโครงการ (Project ID)"
+    ],
+    color: "#4338ca", // Indigo 700
+    widths: [260, 160, 180, 140, 100, 240, 200, 100, 180, 180, 160]
+  },
+  [SHEET_NAME_REPORTS]: {
+    name: SHEET_NAME_REPORTS,
+    headers: [
+      "รหัสรายงาน (Report ID)",
+      "วันที่รายงาน (Date)",
+      "รอบกะ (Shift: เช้า/จบงาน)",
+      "เวลาบันทึก (Timestamp)",
+      "LINE UID",
+      "ชื่อ LINE (LINE Name)",
+      "บริษัทผู้รับเหมา",
+      "ชื่อโฟร์แมน",
+      "สภาพอากาศ",
+      "เวลาหยุดงานจากฝน (ชม.)",
+      "โฟร์แมน (คน)",
+      "ช่างฝีมือ (คน)",
+      "แรงงานทั่วไป (คน)",
+      "จป.ความปลอดภัย (คน)",
+      "ยอดคนงานรวม (คน)",
+      "จำนวนงาน (รายการ)",
+      "สรุปรายการงาน / เป้าหมาย",
+      "เครื่องจักรที่ใช้งาน",
+      "จำนวนรูปภาพ",
+      "ลิงก์รูปภาพหน้างาน (Drive)",
+      "ปัญหาและอุปสรรค",
+      "สถานะการอนุมัติ",
+      "รหัสโครงการ (Project ID)",
+      "ชื่อโครงการ (Project Name)"
+    ],
+    color: "#0284c7", // Sky 600
+    widths: [150, 120, 140, 160, 260, 160, 220, 160, 120, 120, 100, 100, 100, 100, 120, 100, 260, 180, 100, 240, 200, 120, 160, 200]
+  },
+  [SHEET_NAME_TASKS]: {
+    name: SHEET_NAME_TASKS,
+    headers: [
       "รหัสรายงาน (Report ID)",
       "วันที่",
       "รอบกะ (Shift)",
@@ -593,12 +712,116 @@ function getOrCreateTasksSheet(ss) {
       "ความคืบหน้า (%)",
       "ปริมาณงาน",
       "เวลาบันทึก"
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange("A1:J1").setBackground("#059669").setFontColor("#ffffff").setFontWeight("bold");
-    sheet.setFrozenRows(1);
+    ],
+    color: "#059669", // Emerald 600
+    widths: [150, 120, 120, 260, 120, 240, 260, 120, 120, 160]
   }
+};
+
+/**
+ * ปรับขนาดคอลัมน์สูงสุดของชีตให้รองรับจำนวนหัวตารางที่ต้องการ
+ */
+function ensureSheetColumns(sheet, requiredCols) {
+  const currentMax = sheet.getMaxColumns();
+  if (currentMax < requiredCols) {
+    sheet.insertColumnsAfter(currentMax, requiredCols - currentMax);
+  }
+}
+
+/**
+ * ฟังก์ชันสร้าง/ตรวจสอบ/ปรับแต่งโครงสร้างชีต หัวตาราง สีสัน และข้อมูลเริ่มต้น
+ */
+function setupSheetSchema(ss, sheetName, schema) {
+  let sheet = ss.getSheetByName(sheetName);
+  const requiredCols = schema.headers.length;
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  ensureSheetColumns(sheet, requiredCols);
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  if (lastRow === 0) {
+    // ชีตว่างเปล่า: ใส่หัวตารางทันที
+    sheet.getRange(1, 1, 1, requiredCols).setValues([schema.headers]);
+  } else {
+    // ตรวจสอบและอัปเดตหัวตาราง
+    const existingHeaders = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0].map(h => String(h || "").trim());
+
+    // กรณีพิเศษชีต Subcontractors เดิมที่ยังไม่มี Project ID ในสองคอลัมน์แรก
+    if (sheetName === SHEET_NAME_SUBCONTRACTORS && !existingHeaders.some(h => h.includes("Project") || h.includes("โครงการ"))) {
+      sheet.insertColumnsBefore(1, 2);
+      sheet.getRange(1, 1).setValue(schema.headers[0]);
+      sheet.getRange(1, 2).setValue(schema.headers[1]);
+    } else {
+      // ตรวจสอบทุกตำแหน่งหัวตาราง หากว่างให้เติมตามสคีมา
+      for (let c = 0; c < requiredCols; c++) {
+        const cur = sheet.getRange(1, c + 1).getValue();
+        if (!cur || String(cur).trim() === "") {
+          sheet.getRange(1, c + 1).setValue(schema.headers[c]);
+        }
+      }
+    }
+  }
+
+  // จัดรูปแบบแถวหัวตาราง (Row 1): สีพื้นหลัง, ตัวอักษรสีขาวหนา, กึ่งกลาง, ความสูง 36px, ล็อคแถว
+  sheet.setRowHeight(1, 36);
+  const headerRange = sheet.getRange(1, 1, 1, requiredCols);
+  headerRange
+    .setBackground(schema.color)
+    .setFontColor("#ffffff")
+    .setFontWeight("bold")
+    .setFontSize(10)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle")
+    .setWrap(true);
+
+  sheet.setFrozenRows(1);
+
+  // ตั้งค่าความกว้างคอลัมน์ตามสัดส่วนที่เหมาะสม
+  if (schema.widths && schema.widths.length > 0) {
+    for (let w = 0; w < schema.widths.length; w++) {
+      try {
+        sheet.setColumnWidth(w + 1, schema.widths[w]);
+      } catch(e) {}
+    }
+  }
+
+  // ถ้าชีตมีแค่แถวหัวตาราง (ยังไม่มีข้อมูล) ให้ใส่ Seed Data เริ่มต้น
+  if (schema.seed && sheet.getLastRow() <= 1) {
+    const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+    const seedRow = schema.seed.slice();
+    seedRow.push(timestamp);
+    sheet.appendRow(seedRow);
+  }
+
   return sheet;
+}
+
+/**
+ * ฟังก์ชัน Getter ดึงหรือสร้างชีตแต่ละประเภท
+ */
+function getOrCreateProjectsSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_PROJECTS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_PROJECTS]);
+}
+
+function getOrCreateSubcontractorsSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_SUBCONTRACTORS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_SUBCONTRACTORS]);
+}
+
+function getOrCreateUsersSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_USERS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_USERS]);
+}
+
+function getOrCreateReportsSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_REPORTS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_REPORTS]);
+}
+
+function getOrCreateTasksSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_TASKS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_TASKS]);
 }
 
 /**
@@ -619,47 +842,57 @@ function getProjectsMap(ss) {
 }
 
 /**
- * สร้างหรือดึงชีต Projects สำหรับ Masterlist ข้อมูลโครงการ
+ * ฟังก์ชันหลักในการ Initial / ซิงก์โครงสร้างชีตทั้งหมดของระบบ
+ * จะสร้างชีตที่ขาดหายไป จัดหัวตาราง ใส่สี ล็อคแถวแรก ปรับขนาดคอลัมน์ และเติมข้อมูลเริ่มต้น
+ * สามารถกดเรียกได้จากเมนูใน Google Sheets หรือเรียกผ่าน Web App API ?action=init_sheets
  */
-function getOrCreateProjectsSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAME_PROJECTS);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_PROJECTS);
-    const headers = [
-      "รหัสโครงการ (Project ID)",
-      "ชื่อโครงการ (Project Name)",
-      "สถานที่ / ขอบเขตงาน (Location)",
-      "ผู้จัดการโครงการ / PM",
-      "สถานะโครงการ (Status)",
-      "วันที่เริ่มโครงการ",
-      "วันที่สร้างรายการ"
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange("A1:G1").setBackground("#0f766e").setFontColor("#ffffff").setFontWeight("bold");
-    sheet.setFrozenRows(1);
-    try {
-      sheet.setColumnWidth(1, 160);
-      sheet.setColumnWidth(2, 280);
-      sheet.setColumnWidth(3, 240);
-      sheet.setColumnWidth(4, 180);
-      sheet.setColumnWidth(5, 120);
-      sheet.setColumnWidth(6, 140);
-      sheet.setColumnWidth(7, 160);
-    } catch(e) {}
-
-    // เพิ่มโครงการเริ่มต้นของระบบ
-    const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
-    sheet.appendRow([
-      "PRJ-01",
-      "อาคารสำนักงาน 8 ชั้น",
-      "กรุงเทพมหานคร",
-      "วิศวกรโครงการ",
-      "Active",
-      "2026-01-01",
-      timestamp
-    ]);
+function initialSystemSheets(ss) {
+  if (!ss) {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
   }
-  return sheet;
+
+  const results = {};
+  const sheetNames = [
+    SHEET_NAME_PROJECTS,
+    SHEET_NAME_SUBCONTRACTORS,
+    SHEET_NAME_USERS,
+    SHEET_NAME_REPORTS,
+    SHEET_NAME_TASKS
+  ];
+
+  sheetNames.forEach(name => {
+    const sheet = setupSheetSchema(ss, name, SYSTEM_SHEET_SCHEMAS[name]);
+    results[name] = {
+      name: name,
+      rows: sheet.getLastRow(),
+      cols: sheet.getLastColumn(),
+      headers: sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
+    };
+  });
+
+  // ตรวจสอบโฟลเดอร์ Google Drive
+  try {
+    getOrCreateDriveFolder(DRIVE_FOLDER_NAME);
+  } catch(e) {}
+
+  // แสดงผลลัพธ์ผ่าน Dialog หากรันผ่าน Google Sheets UI
+  try {
+    const ui = SpreadsheetApp.getUi();
+    if (ui) {
+      ui.alert(
+        "✅ ซิงก์โครงสร้างและหัวตารางสำเร็จ",
+        "ตรวจสอบและปรับโครงสร้างหัวตารางชีตทั้งหมดเรียบร้อยแล้ว:\n\n" +
+        "1. " + SHEET_NAME_PROJECTS + " (โครงการ) - " + SYSTEM_SHEET_SCHEMAS[SHEET_NAME_PROJECTS].headers.length + " คอลัมน์\n" +
+        "2. " + SHEET_NAME_SUBCONTRACTORS + " (ผู้รับเหมาประจำโครงการ) - " + SYSTEM_SHEET_SCHEMAS[SHEET_NAME_SUBCONTRACTORS].headers.length + " คอลัมน์\n" +
+        "3. " + SHEET_NAME_USERS + " (บัญชีผู้ใช้งาน/โฟร์แมน) - " + SYSTEM_SHEET_SCHEMAS[SHEET_NAME_USERS].headers.length + " คอลัมน์\n" +
+        "4. " + SHEET_NAME_REPORTS + " (รายงานประจำวัน 2 กะ) - " + SYSTEM_SHEET_SCHEMAS[SHEET_NAME_REPORTS].headers.length + " คอลัมน์\n" +
+        "5. " + SHEET_NAME_TASKS + " (รายการงานย่อย) - " + SYSTEM_SHEET_SCHEMAS[SHEET_NAME_TASKS].headers.length + " คอลัมน์",
+        ui.ButtonSet.OK
+      );
+    }
+  } catch(e) {}
+
+  return results;
 }
 
 /**
@@ -684,55 +917,6 @@ function getUserColumnIndexes(headerRow) {
     else if (h.includes("Display Name") || h.includes("ชื่อที่แสดง")) dispNameCol = i;
   }
   return { uidCol, lineNameCol, dispNameCol, roleCol, compCol, projCol, avatarCol };
-}
-
-/**
- * สร้างหรือดึงชีต Site_Users สำหรับจัดการบัญชีช่าง/โฟร์แมน พร้อมกำหนดสิทธิ์และบทบาท
- */
-function getOrCreateUsersSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAME_USERS);
-  const defaultHeaders = [
-    "LINE UID",
-    "ชื่อใน LINE (LINE Name)",
-    "ชื่อที่แสดงในระบบ (Display Name)",
-    "ตำแหน่ง (Role)",
-    "ระดับ (Level/LV)",
-    "บริษัท / ผู้รับเหมา (Company)",
-    "รหัสโครงการ (Project ID)",
-    "รูปโปรไฟล์ (Avatar URL)",
-    "สถานะ (Status)",
-    "ลงทะเบียนเมื่อ (Registered At)",
-    "เข้าใช้งานล่าสุด (Last Active)"
-  ];
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_USERS);
-    sheet.appendRow(defaultHeaders);
-    sheet.getRange("A1:K1").setBackground("#4338ca").setFontColor("#ffffff").setFontWeight("bold");
-    sheet.setFrozenRows(1);
-    try {
-      sheet.setColumnWidth(1, 260); // LINE UID
-      sheet.setColumnWidth(2, 160); // LINE Name
-      sheet.setColumnWidth(3, 180); // Display Name
-      sheet.setColumnWidth(4, 150); // Role
-      sheet.setColumnWidth(5, 100); // Level
-      sheet.setColumnWidth(6, 240); // Company
-      sheet.setColumnWidth(7, 180); // Project ID
-      sheet.setColumnWidth(8, 200); // Avatar
-    } catch(e) {}
-  } else {
-    // ตรวจสอบว่ามีคอลัมน์ Project ID ในชีตเดิมหรือไม่ หากยังไม่มีให้เพิ่มคอลัมน์อัตโนมัติ
-    const data = sheet.getDataRange().getValues();
-    if (data.length > 0) {
-      const headerRow = data[0].map(h => String(h).trim());
-      const hasProj = headerRow.some(h => h.includes("Project") || h.includes("โครงการ"));
-      if (!hasProj) {
-        const lastCol = sheet.getLastColumn();
-        sheet.getRange(1, lastCol + 1).setValue("รหัสโครงการ (Project ID)");
-        sheet.getRange(1, lastCol + 1).setBackground("#4338ca").setFontColor("#ffffff").setFontWeight("bold");
-      }
-    }
-  }
-  return sheet;
 }
 
 /**
@@ -827,48 +1011,18 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   }
 }
 
-/**
- * สร้างหรือดึงชีต Subcontractors สำหรับจัดการรายชื่อบริษัทและผู้รับเหมา
- */
-function getOrCreateSubcontractorsSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAME_SUBCONTRACTORS);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_SUBCONTRACTORS);
-    const headers = [
-      "รหัสผู้รับเหมา (ID)",
-      "ชื่อบริษัท / ผู้รับเหมา (Company Name)",
-      "ประเภทงาน / ขอบเขตงาน (Scope)",
-      "ชื่อผู้ติดต่อ (Contact Person)",
-      "เบอร์โทรศัพท์ (Phone)",
-      "สถานะ (Status)",
-      "วันที่บันทึก (Created At)"
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange("A1:G1").setBackground("#0d9488").setFontColor("#ffffff").setFontWeight("bold");
-    sheet.setFrozenRows(1);
-    try {
-      sheet.setColumnWidth(1, 140);
-      sheet.setColumnWidth(2, 280);
-      sheet.setColumnWidth(3, 260);
-      sheet.setColumnWidth(4, 160);
-      sheet.setColumnWidth(5, 140);
-      sheet.setColumnWidth(6, 100);
-      sheet.setColumnWidth(7, 160);
-    } catch(e) {}
 
-  }
-  return sheet;
-}
 
 /**
  * สร้างหรือค้นหาโฟลเดอร์ใน Google Drive สำหรับเก็บรูปถ่ายหน้างาน
  */
 function getOrCreateDriveFolder(folderName) {
-  const folders = DriveApp.getFoldersByName(folderName);
+  const name = folderName || DRIVE_FOLDER_NAME || "Construction_Site_Photos";
+  const folders = DriveApp.getFoldersByName(name);
   if (folders.hasNext()) {
     return folders.next();
   }
-  return DriveApp.createFolder(folderName);
+  return DriveApp.createFolder(name);
 }
 
 /**
