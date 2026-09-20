@@ -212,5 +212,154 @@ export const gasService = {
       console.warn('triggerInitSheets error:', err);
       return null;
     }
+  },
+
+  /**
+   * ดึงรายการแผนงานสัปดาห์จากชีต Weekly_Plans
+   */
+  async fetchWeeklyPlans(projectId = '', subId = '', company = '') {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return [];
+
+    try {
+      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_weekly_plans&_t=' + Date.now();
+      if (projectId && projectId !== '-') queryUrl += `&projectId=${encodeURIComponent(projectId)}`;
+      if (subId && subId !== '-') queryUrl += `&subId=${encodeURIComponent(subId)}`;
+      if (company && company !== '-') queryUrl += `&company=${encodeURIComponent(company)}`;
+
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.plans)) {
+        return data.plans;
+      }
+      return [];
+    } catch (err) {
+      console.warn('fetchWeeklyPlans error:', err);
+      return [];
+    }
+  },
+
+  /**
+   * ดึงรายการงานย่อยจากชีต Plan_Daily_Tasks
+   */
+  async fetchDailyTasks(planId = '', date = '') {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return [];
+
+    try {
+      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_daily_tasks&_t=' + Date.now();
+      if (planId) queryUrl += `&planId=${encodeURIComponent(planId)}`;
+      if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
+
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.tasks)) {
+        return data.tasks;
+      }
+      return [];
+    } catch (err) {
+      console.warn('fetchDailyTasks error:', err);
+      return [];
+    }
+  },
+
+  /**
+   * ดึงรายการงานย่อยที่ PM อนุมัติแล้วสำหรับวันที่กำหนด เพื่อให้โฟร์แมนดึงไปเปิดงานเช้า
+   */
+  async fetchApprovedTasksForDate(date = '', company = '') {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return [];
+
+    try {
+      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_approved_tasks_for_date&_t=' + Date.now();
+      if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
+      if (company && company !== '-') queryUrl += `&company=${encodeURIComponent(company)}`;
+
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.tasks)) {
+        return data.tasks;
+      }
+      return [];
+    } catch (err) {
+      console.warn('fetchApprovedTasksForDate error:', err);
+      return [];
+    }
+  },
+
+  /**
+   * บันทึกแผนงานสัปดาห์และงานย่อย (สำหรับหัวหน้าผู้รับเหมา)
+   */
+  async saveWeeklyPlan(planPayload) {
+    const url = this.getUrl();
+    if (!this.isConfigured()) {
+      return { success: false, message: 'ไม่ได้ตั้งค่า Google Apps Script Web App' };
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify({
+          action: 'save_weekly_plan',
+          ...planPayload
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json().catch(() => null);
+        return {
+          success: true,
+          message: result?.message || 'บันทึกแผนงานสัปดาห์สำเร็จ',
+          data: result
+        };
+      }
+      return { success: false, message: `HTTP Error: ${response.status}` };
+    } catch (err) {
+      return { success: false, message: 'ส่งข้อมูลล้มเหลว: ' + err.message };
+    }
+  },
+
+  /**
+   * บันทึกผลการพิจารณาอนุมัติของ PM
+   */
+  async approveWeeklyPlanPM(planId, status = 'Approved', pmName = '', pmComment = '') {
+    const url = this.getUrl();
+    if (!this.isConfigured()) {
+      return { success: false, message: 'ไม่ได้ตั้งค่า Google Apps Script Web App' };
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify({
+          action: 'approve_weekly_plan_pm',
+          plan_id: planId,
+          status: status,
+          pm_name: pmName,
+          pm_comment: pmComment
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json().catch(() => null);
+        return {
+          success: true,
+          message: result?.message || 'บันทึกการพิจารณาของ PM เรียบร้อยแล้ว',
+          data: result
+        };
+      }
+      return { success: false, message: `HTTP Error: ${response.status}` };
+    } catch (err) {
+      return { success: false, message: 'ส่งข้อมูลล้มเหลว: ' + err.message };
+    }
   }
 };

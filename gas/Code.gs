@@ -13,6 +13,8 @@ const SHEET_NAME_TASKS = "Tasks_Detail";
 const SHEET_NAME_USERS = "Site_Users";
 const SHEET_NAME_SUBCONTRACTORS = "Subcontractors";
 const SHEET_NAME_PROJECTS = "Projects";
+const SHEET_NAME_WEEKLY_PLANS = "Weekly_Plans";
+const SHEET_NAME_PLAN_TASKS = "Plan_Daily_Tasks";
 const DRIVE_FOLDER_NAME = "Construction_Site_Photos";
 
 // LINE Bot Messaging API Channel Access Token & Target User/Group ID
@@ -249,6 +251,148 @@ function doGet(e) {
       });
     }
 
+    if (action === "get_weekly_plans") {
+      const sheet = getOrCreateWeeklyPlansSheet(ss);
+      const data = sheet.getDataRange().getValues();
+      const targetProjectId = (e.parameter && (e.parameter.projectId || e.parameter.prj) ? String(e.parameter.projectId || e.parameter.prj).trim() : "");
+      const targetSubId = (e.parameter && (e.parameter.subId || e.parameter.sub) ? String(e.parameter.subId || e.parameter.sub).trim() : "");
+      const targetCompany = (e.parameter && e.parameter.company ? String(e.parameter.company).trim() : "");
+
+      const plans = [];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0]) continue;
+        const pId = String(row[1] || "").trim();
+        const sId = String(row[3] || "").trim();
+        const comp = String(row[4] || "").trim();
+
+        if (targetProjectId && targetProjectId !== "-" && pId !== "-" && pId !== targetProjectId) continue;
+        if (targetSubId && targetSubId !== "-" && sId !== "-" && sId !== targetSubId) continue;
+        if (targetCompany && targetCompany !== "-" && comp !== "-" && comp !== targetCompany) continue;
+
+        plans.push({
+          planId: String(row[0] || "").trim(),
+          projectId: pId,
+          projectName: String(row[2] || "").trim(),
+          subId: sId,
+          company: comp,
+          weekLabel: String(row[5] || "").trim(),
+          startDate: formatDateValue(row[6]),
+          endDate: formatDateValue(row[7]),
+          objective: String(row[8] || "").trim(),
+          daysCount: Number(row[9] || 0),
+          totalTasks: Number(row[10] || 0),
+          avgWorkers: Number(row[11] || 0),
+          foremanReview: String(row[12] || "-"),
+          foremanNote: String(row[13] || "-"),
+          pmStatus: String(row[14] || "Pending").trim(),
+          pmName: String(row[15] || "-").trim(),
+          pmComment: String(row[16] || "-").trim(),
+          submittedAt: String(row[17] || "").trim(),
+          approvedAt: String(row[18] || "").trim(),
+          completedTasks: Number(row[19] || 0),
+          progress: Number(row[20] || 0)
+        });
+      }
+
+      return jsonResponse({
+        status: "success",
+        total: plans.length,
+        plans: plans
+      });
+    }
+
+    if (action === "get_daily_tasks") {
+      const sheet = getOrCreatePlanTasksSheet(ss);
+      const data = sheet.getDataRange().getValues();
+      const targetPlanId = (e.parameter && e.parameter.planId ? String(e.parameter.planId).trim() : "");
+      const targetDate = (e.parameter && e.parameter.date ? formatDateValue(e.parameter.date) : "");
+
+      const tasks = [];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0]) continue;
+        const planId = String(row[1] || "").trim();
+        const taskDate = formatDateValue(row[2]);
+
+        if (targetPlanId && planId !== targetPlanId) continue;
+        if (targetDate && taskDate !== targetDate) continue;
+
+        tasks.push({
+          taskId: String(row[0] || "").trim(),
+          planId: planId,
+          date: taskDate,
+          day: String(row[3] || "").trim(),
+          company: String(row[4] || "").trim(),
+          category: String(row[5] || "").trim(),
+          name: String(row[6] || "").trim(),
+          description: String(row[7] || "").trim(),
+          quantity: String(row[8] || "").trim(),
+          plannedWorkers: Number(row[9] || 0),
+          machinery: String(row[10] || "-").trim(),
+          pmStatus: String(row[11] || "Pending").trim(),
+          progress: Number(row[12] || 0),
+          actualQuantity: String(row[13] || "-").trim(),
+          foremanRemarks: String(row[14] || "-").trim(),
+          taskStatus: String(row[15] || "Planned").trim(),
+          reportId: String(row[16] || "-").trim(),
+          foremanName: String(row[17] || "-").trim(),
+          reportedAt: String(row[18] || "-").trim()
+        });
+      }
+
+      return jsonResponse({
+        status: "success",
+        total: tasks.length,
+        tasks: tasks
+      });
+    }
+
+    if (action === "get_approved_tasks_for_date") {
+      const sheet = getOrCreatePlanTasksSheet(ss);
+      const data = sheet.getDataRange().getValues();
+      const targetDate = (e.parameter && e.parameter.date ? formatDateValue(e.parameter.date) : Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd"));
+      const targetCompany = (e.parameter && e.parameter.company ? String(e.parameter.company).trim() : "");
+
+      const tasks = [];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0]) continue;
+        const taskDate = formatDateValue(row[2]);
+        const company = String(row[4] || "").trim();
+        const pmStatus = String(row[11] || "").trim();
+
+        if (taskDate !== targetDate) continue;
+        if (pmStatus !== "Approved") continue;
+        if (targetCompany && targetCompany !== "-" && company !== "-" && company !== targetCompany) continue;
+
+        tasks.push({
+          taskId: String(row[0] || "").trim(),
+          planId: String(row[1] || "").trim(),
+          date: taskDate,
+          day: String(row[3] || "").trim(),
+          company: company,
+          category: String(row[5] || "").trim(),
+          name: String(row[6] || "").trim(),
+          description: String(row[7] || "").trim(),
+          quantity: String(row[8] || "").trim(),
+          plannedWorkers: Number(row[9] || 0),
+          machinery: String(row[10] || "-").trim(),
+          progress: Number(row[12] || 0),
+          actualQuantity: String(row[13] || "").trim(),
+          foremanRemarks: String(row[14] || "").trim(),
+          taskStatus: String(row[15] || "Planned").trim()
+        });
+      }
+
+      return jsonResponse({
+        status: "success",
+        date: targetDate,
+        total: tasks.length,
+        tasks: tasks
+      });
+    }
+
     return jsonResponse({ status: "error", message: "Unknown action parameter" });
   } catch (err) {
     return jsonResponse({ status: "error", message: err.toString() });
@@ -273,6 +417,15 @@ function doPost(e) {
     }
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // ตรวจสอบ Action พิเศษใน POST สำหรับแผนงานสัปดาห์และการอนุมัติของ PM
+    if (payload && payload.action === "save_weekly_plan") {
+      return handleSaveWeeklyPlan(ss, payload);
+    }
+    if (payload && payload.action === "approve_weekly_plan_pm") {
+      return handleApproveWeeklyPlanPM(ss, payload);
+    }
+
     const reportsSheet = getOrCreateReportsSheet(ss);
     const tasksSheet = getOrCreateTasksSheet(ss);
 
@@ -330,6 +483,13 @@ function doPost(e) {
         timestamp
       ]);
     });
+
+    // ซิงก์ผลงานย่อยกลับไปยังชีต Plan_Daily_Tasks ถ้ามีงานที่มาจากแผนงานสัปดาห์
+    try {
+      syncPlanTasksFromDailyReport(ss, taskItems, reportId, foremanName, timestamp);
+    } catch (syncErr) {
+      Logger.log("syncPlanTasksFromDailyReport error: " + syncErr.toString());
+    }
 
     const taskSummary = taskSummaryList.join(" | ") || "ไม่มีรายการงาน";
 
@@ -434,6 +594,398 @@ function doPost(e) {
       message: "เกิดข้อผิดพลาดในการประมวลผล: " + err.toString()
     });
   }
+}
+
+/**
+ * บันทึกแผนงานสัปดาห์ (Weekly_Plans) และงานย่อยรายวัน (Plan_Daily_Tasks)
+ */
+function handleSaveWeeklyPlan(ss, payload) {
+  const weeklySheet = getOrCreateWeeklyPlansSheet(ss);
+  const tasksSheet = getOrCreatePlanTasksSheet(ss);
+
+  const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+  const planId = payload.plan_id || ("WPLAN-" + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd-HHmmss"));
+  const projectId = payload.project_id || "-";
+  const projectName = payload.project_name || "-";
+  const subId = payload.sub_id || "-";
+  const company = payload.company_name || payload.company || "-";
+  const weekLabel = payload.week_label || ("สัปดาห์ " + (payload.start_date || ""));
+  const startDate = payload.start_date || "";
+  const endDate = payload.end_date || "";
+  const objective = payload.weekly_objective || payload.objective || "-";
+  const dailyTasks = payload.daily_tasks || [];
+  const daysCount = payload.days_count || (new Set(dailyTasks.map(t => t.date)).size) || 0;
+  const totalTasks = dailyTasks.length;
+
+  let totalWorkersSum = 0;
+  dailyTasks.forEach(t => {
+    totalWorkersSum += Number(t.planned_workers || 0);
+  });
+  const avgWorkers = daysCount > 0 ? Math.round(totalWorkersSum / daysCount) : 0;
+
+  // บันทึกลงตาราง Master: Weekly_Plans
+  weeklySheet.appendRow([
+    planId,
+    projectId,
+    projectName,
+    subId,
+    company,
+    weekLabel,
+    startDate,
+    endDate,
+    objective,
+    daysCount,
+    totalTasks,
+    avgWorkers,
+    "Checked",
+    payload.foreman_note || "ส่งแผนงานเข้าระบบแล้ว",
+    "Pending", // สถานะการอนุมัติของ PM เริ่มต้นที่ Pending
+    "-",
+    "-",
+    timestamp,
+    "-",
+    0,
+    0
+  ]);
+
+  // บันทึกรายการงานย่อยลงตาราง Details: Plan_Daily_Tasks
+  dailyTasks.forEach((t, idx) => {
+    const taskId = t.task_id || ("WTASK-" + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd") + "-" + (idx + 1));
+    tasksSheet.appendRow([
+      taskId,
+      planId,
+      t.date || startDate,
+      t.day_of_week || t.day || "-",
+      company,
+      t.category || "-",
+      t.task_name || t.name || ("งานที่ " + (idx + 1)),
+      t.description || "-",
+      t.target_qty || t.quantity || "-",
+      Number(t.planned_workers || 0),
+      t.machinery || "-",
+      "Pending", // PM Approval Status
+      0, // Actual %
+      "-", // Actual Qty
+      "-", // Foreman Remarks
+      "Planned", // Status
+      "-", // Daily Report ID
+      "-", // Foreman Name
+      "-"  // Reported At
+    ]);
+  });
+
+  // แจ้งเตือนเข้า LINE กลุ่ม / PM
+  try {
+    sendLineWeeklyPlanNotification({
+      planId: planId,
+      projectName: projectName,
+      company: company,
+      weekLabel: weekLabel,
+      objective: objective,
+      totalTasks: totalTasks,
+      avgWorkers: avgWorkers
+    }, "new_plan");
+  } catch(e) {
+    Logger.log("Line notify error: " + e.toString());
+  }
+
+  return jsonResponse({
+    status: "success",
+    plan_id: planId,
+    message: "บันทึกแผนงานสัปดาห์และงานย่อย " + totalTasks + " รายการสำเร็จ รอ PM อนุมัติ"
+  });
+}
+
+/**
+ * PM อนุมัติหรือส่งกลับแก้ไขแผนงานสัปดาห์
+ */
+function handleApproveWeeklyPlanPM(ss, payload) {
+  const weeklySheet = getOrCreateWeeklyPlansSheet(ss);
+  const tasksSheet = getOrCreatePlanTasksSheet(ss);
+  const planId = String(payload.plan_id || "").trim();
+  const status = String(payload.status || "Approved").trim(); // "Approved" หรือ "Revision"
+  const pmName = String(payload.pm_name || "ผู้จัดการโครงการ (PM)").trim();
+  const pmComment = String(payload.pm_comment || "-").trim();
+  const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+
+  if (!planId) {
+    return jsonResponse({ status: "error", message: "Missing plan_id" });
+  }
+
+  const weeklyData = weeklySheet.getDataRange().getValues();
+  let planFound = false;
+  let companyName = "";
+  let weekLabel = "";
+  let projectName = "";
+
+  for (let i = 1; i < weeklyData.length; i++) {
+    if (String(weeklyData[i][0] || "").trim() === planId) {
+      const rowNum = i + 1;
+      projectName = String(weeklyData[i][2] || "");
+      companyName = String(weeklyData[i][4] || "");
+      weekLabel = String(weeklyData[i][5] || "");
+
+      weeklySheet.getRange(rowNum, 15).setValue(status); // Col O: PM Approval Status
+      weeklySheet.getRange(rowNum, 16).setValue(pmName); // Col P: PM Name
+      weeklySheet.getRange(rowNum, 17).setValue(pmComment); // Col Q: PM Comment
+      weeklySheet.getRange(rowNum, 19).setValue(timestamp); // Col S: Approved At
+      planFound = true;
+      break;
+    }
+  }
+
+  if (!planFound) {
+    return jsonResponse({ status: "error", message: "Plan ID not found: " + planId });
+  }
+
+  // อัปเดตใน Plan_Daily_Tasks (Col L: PM Approval Status)
+  const taskData = tasksSheet.getDataRange().getValues();
+  for (let j = 1; j < taskData.length; j++) {
+    if (String(taskData[j][1] || "").trim() === planId) {
+      tasksSheet.getRange(j + 1, 12).setValue(status);
+    }
+  }
+
+  // ส่งแจ้งเตือน LINE
+  try {
+    sendLineWeeklyPlanNotification({
+      planId: planId,
+      projectName: projectName,
+      company: companyName,
+      weekLabel: weekLabel,
+      status: status,
+      pmName: pmName,
+      pmComment: pmComment
+    }, "pm_decision");
+  } catch(e) {
+    Logger.log("Line notify error: " + e.toString());
+  }
+
+  return jsonResponse({
+    status: "success",
+    plan_id: planId,
+    status: status,
+    message: "บันทึกผลการพิจารณาของ PM เรียบร้อยแล้ว (" + (status === "Approved" ? "อนุมัติแผนงาน" : "ส่งกลับให้แก้ไข") + ")"
+  });
+}
+
+/**
+ * ซิงก์ผลงานย่อยที่โฟร์แมนรายงานใน Daily Report กลับไปยังชีต Plan_Daily_Tasks
+ */
+function syncPlanTasksFromDailyReport(ss, taskItems, reportId, foremanName, timestamp) {
+  if (!taskItems || taskItems.length === 0) return;
+  const planTasksSheet = ss.getSheetByName(SHEET_NAME_PLAN_TASKS);
+  if (!planTasksSheet) return;
+
+  const data = planTasksSheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+
+  const updatedPlanIds = {};
+
+  taskItems.forEach(function(t) {
+    const targetTaskId = String(t.source_task_id || t.plan_task_id || (t.id && t.id.startsWith("WTASK-") ? t.id : "")).trim();
+    if (!targetTaskId) return;
+
+    for (let r = 1; r < data.length; r++) {
+      const rowTaskId = String(data[r][0] || "").trim();
+      if (rowTaskId === targetTaskId) {
+        const rowNum = r + 1;
+        const progress = Number(t.progress || 0);
+        const qty = t.quantity || "-";
+        const remarks = t.description || t.note || "-";
+        const taskStatus = progress >= 100 ? "Completed" : (progress > 0 ? "In_Progress" : "Delayed");
+
+        // Col M (13): Actual Progress (%)
+        planTasksSheet.getRange(rowNum, 13).setValue(progress);
+        // Col N (14): Actual Qty
+        planTasksSheet.getRange(rowNum, 14).setValue(qty);
+        // Col O (15): Foreman Remarks
+        planTasksSheet.getRange(rowNum, 15).setValue(remarks);
+        // Col P (16): Task Status
+        planTasksSheet.getRange(rowNum, 16).setValue(taskStatus);
+        // Col Q (17): Report ID
+        planTasksSheet.getRange(rowNum, 17).setValue(reportId);
+        // Col R (18): Foreman Name
+        planTasksSheet.getRange(rowNum, 18).setValue(foremanName);
+        // Col S (19): Reported At
+        planTasksSheet.getRange(rowNum, 19).setValue(timestamp);
+
+        const planId = String(data[r][1] || "").trim();
+        if (planId) updatedPlanIds[planId] = true;
+        break;
+      }
+    }
+  });
+
+  // คำนวณความคืบหน้ารวมของ Weekly_Plans ที่เกี่ยวข้อง
+  Object.keys(updatedPlanIds).forEach(function(pId) {
+    recalcWeeklyPlanSummary(ss, pId);
+  });
+}
+
+/**
+ * คำนวณสรุปผลงานที่เสร็จและ % ความคืบหน้ารวมของสัปดาห์
+ */
+function recalcWeeklyPlanSummary(ss, planId) {
+  try {
+    const planTasksSheet = ss.getSheetByName(SHEET_NAME_PLAN_TASKS);
+    const weeklySheet = ss.getSheetByName(SHEET_NAME_WEEKLY_PLANS);
+    if (!planTasksSheet || !weeklySheet) return;
+
+    const taskData = planTasksSheet.getDataRange().getValues();
+    let totalTasks = 0;
+    let completedTasks = 0;
+    let sumProgress = 0;
+
+    for (let i = 1; i < taskData.length; i++) {
+      if (String(taskData[i][1] || "").trim() === planId) {
+        totalTasks++;
+        const pct = Number(taskData[i][12] || 0);
+        sumProgress += pct;
+        if (pct >= 100 || String(taskData[i][15] || "") === "Completed") {
+          completedTasks++;
+        }
+      }
+    }
+
+    if (totalTasks === 0) return;
+    const avgProgress = Math.round(sumProgress / totalTasks);
+
+    const weeklyData = weeklySheet.getDataRange().getValues();
+    for (let j = 1; j < weeklyData.length; j++) {
+      if (String(weeklyData[j][0] || "").trim() === planId) {
+        const rowNum = j + 1;
+        // Col T (20): งานที่เสร็จแล้ว (งาน)
+        weeklySheet.getRange(rowNum, 20).setValue(completedTasks);
+        // Col U (21): ความคืบหน้ารวมสัปดาห์ (%)
+        weeklySheet.getRange(rowNum, 21).setValue(avgProgress);
+        break;
+      }
+    }
+  } catch(e) {
+    Logger.log("recalcWeeklyPlanSummary error: " + e.toString());
+  }
+}
+
+/**
+ * ส่ง LINE Flex Message แจ้งเตือนแผนงานสัปดาห์และการอนุมัติของ PM
+ */
+function sendLineWeeklyPlanNotification(data, type) {
+  const isApproved = data.status === "Approved";
+  let title = "";
+  let color = "#4f46e5";
+
+  if (type === "new_plan") {
+    title = "📋 มีแผนงานสัปดาห์ใหม่ รอ PM อนุมัติ";
+    color = "#4f46e5";
+  } else if (isApproved) {
+    title = "✅ PM อนุมัติแผนงานสัปดาห์แล้ว";
+    color = "#059669";
+  } else {
+    title = "⚠️ PM ขอให้ปรับปรุงแผนงานสัปดาห์";
+    color = "#d97706";
+  }
+
+  const contents = [
+    {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        { type: "text", text: title, weight: "bold", size: "md", color: color },
+        { type: "text", text: "โครงการ: " + (data.projectName || "-"), size: "xs", color: "#666666", margin: "xs" },
+        { type: "separator", margin: "md" },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "md",
+          spacing: "sm",
+          contents: [
+            {
+              type: "box",
+              layout: "baseline",
+              contents: [
+                { type: "text", text: "ผู้รับเหมา:", size: "xs", color: "#888888", flex: 2 },
+                { type: "text", text: data.company || "-", size: "xs", color: "#111111", weight: "bold", flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: "box",
+              layout: "baseline",
+              contents: [
+                { type: "text", text: "สัปดาห์:", size: "xs", color: "#888888", flex: 2 },
+                { type: "text", text: data.weekLabel || "-", size: "xs", color: "#111111", flex: 5 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  if (type === "new_plan") {
+    contents[0].contents[3].contents.push({
+      type: "box",
+      layout: "baseline",
+      contents: [
+        { type: "text", text: "เป้าหมาย:", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: data.objective || "-", size: "xs", color: "#111111", flex: 5, wrap: true }
+      ]
+    });
+    contents[0].contents[3].contents.push({
+      type: "box",
+      layout: "baseline",
+      contents: [
+        { type: "text", text: "งานย่อย:", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: (data.totalTasks || 0) + " งาน (คนงานเฉลี่ย " + (data.avgWorkers || 0) + " คน/วัน)", size: "xs", color: "#111111", flex: 5 }
+      ]
+    });
+  } else {
+    contents[0].contents[3].contents.push({
+      type: "box",
+      layout: "baseline",
+      contents: [
+        { type: "text", text: "ผู้อนุมัติ:", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: data.pmName || "-", size: "xs", color: "#111111", weight: "bold", flex: 5 }
+      ]
+    });
+    contents[0].contents[3].contents.push({
+      type: "box",
+      layout: "baseline",
+      contents: [
+        { type: "text", text: "คำสั่งการ:", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: data.pmComment || "-", size: "xs", color: isApproved ? "#059669" : "#dc2626", weight: "bold", flex: 5, wrap: true }
+      ]
+    });
+  }
+
+  const flexBubble = {
+    type: "bubble",
+    size: "mega",
+    body: contents[0],
+    footer: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: color,
+          height: "sm",
+          action: {
+            type: "uri",
+            label: "เปิดระบบจัดการแผนงาน",
+            uri: DEFAULT_FRONTEND_WEB_URL
+          }
+        }
+      ]
+    }
+  };
+
+  sendLineMessage(DEFAULT_TARGET_ID, [{
+    type: "flex",
+    altText: title + ": " + (data.company || ""),
+    contents: flexBubble
+  }]);
 }
 
 /**
@@ -737,6 +1289,104 @@ const SYSTEM_SHEET_SCHEMAS = {
     ],
     color: "#059669", // Emerald 600
     widths: [150, 120, 120, 260, 120, 240, 260, 120, 120, 160]
+  },
+  [SHEET_NAME_WEEKLY_PLANS]: {
+    name: SHEET_NAME_WEEKLY_PLANS,
+    headers: [
+      "รหัสแผนงาน (Plan ID)",
+      "รหัสโครงการ (Project ID)",
+      "ชื่อโครงการ (Project Name)",
+      "รหัสผู้รับเหมา (Sub ID)",
+      "ชื่อบริษัทผู้รับเหมา (Company)",
+      "สัปดาห์ที่ (Week)",
+      "วันที่เริ่ม (Start Date)",
+      "วันที่สิ้นสุด (End Date)",
+      "เป้าหมายหลักประจำสัปดาห์",
+      "จำนวนวันที่มีงาน (วัน)",
+      "จำนวนงานย่อยทั้งหมด (งาน)",
+      "ยอดคนงานเฉลี่ยต่อวัน (คน)",
+      "สถานะการตรวจของโฟร์แมน",
+      "บันทึกจากโฟร์แมนหน้างาน",
+      "สถานะการอนุมัติของ PM",
+      "ชื่อ PM ผู้อนุมัติ",
+      "คำสั่งการ / ข้อเสนอแนะจาก PM",
+      "วันที่ส่งแผน (Submitted At)",
+      "วันที่ PM อนุมัติ (Approved At)",
+      "งานที่เสร็จแล้ว (งาน)",
+      "ความคืบหน้ารวมสัปดาห์ (%)"
+    ],
+    color: "#4338ca", // Indigo 700
+    widths: [170, 130, 200, 130, 240, 180, 120, 120, 260, 120, 130, 130, 140, 220, 150, 180, 240, 170, 170, 120, 140],
+    seed: [
+      "WPLAN-2026-W38-01",
+      "PRJ-01",
+      "อาคารประมง 2 ชั้น",
+      "SUB-01",
+      "หจก. นครพิงค์โครงสร้าง",
+      "สัปดาห์ที่ 38 (21-27 ก.ย. 2026)",
+      "2026-09-21",
+      "2026-09-27",
+      "ตัดหัวเข็มและสกัดเปิดเหล็ก F1-F4 และเตรียมแบบหล่อ",
+      "6",
+      "6",
+      "10",
+      "Checked",
+      "พื้นที่พร้อม เข้าทำงานได้ตามแผน",
+      "Approved",
+      "นายชัยวัฒน์ สระสิริ (PM)",
+      "อนุมัติ ให้เน้นค้ำยันเสาตอม่อให้มั่นคงก่อนเทคอนกรีต",
+      "2026-09-20 20:00:00",
+      "2026-09-21 07:30:00",
+      "0",
+      "0"
+    ]
+  },
+  [SHEET_NAME_PLAN_TASKS]: {
+    name: SHEET_NAME_PLAN_TASKS,
+    headers: [
+      "รหัสงานย่อย (Task ID)",
+      "รหัสแผนสัปดาห์ (Plan ID)",
+      "วันที่ปฏิบัติงาน (Date)",
+      "วันในสัปดาห์ (Day)",
+      "ชื่อบริษัทผู้รับเหมา (Company)",
+      "หมวดงาน (Category)",
+      "ชื่องานและโซนพื้นที่ (Task & Zone)",
+      "รายละเอียดขั้นตอนงาน",
+      "เป้าหมายปริมาณงาน (Plan Qty)",
+      "แผนคนงาน (คน)",
+      "เครื่องจักร / อุปกรณ์",
+      "สถานะการอนุมัติของ PM",
+      "ความคืบหน้าจริง (% Actual)",
+      "ปริมาณงานจริงที่ทำได้ (Actual Qty)",
+      "หมายเหตุจากโฟร์แมน (Foreman Remarks)",
+      "สถานะงานย่อย (Task Status)",
+      "รหัสรายงานประจำวัน (Report ID)",
+      "ชื่อโฟร์แมนผู้รายงาน",
+      "เวลาที่รายงานผล"
+    ],
+    color: "#059669", // Emerald 600
+    widths: [160, 170, 120, 110, 220, 160, 260, 260, 150, 110, 180, 140, 140, 160, 240, 130, 160, 180, 170],
+    seed: [
+      "WTASK-20260921-01",
+      "WPLAN-2026-W38-01",
+      "2026-09-21",
+      "วันจันทร์",
+      "หจก. นครพิงค์โครงสร้าง",
+      "งานโครงสร้างฐานราก",
+      "ตัดหัวเข็มและสกัดเปิดเหล็ก F1-F4 (โซนทิศเหนือ)",
+      "สกัดคอนกรีตหัวเข็ม 8 ต้น เตรียมแบบหล่อเทลีน",
+      "8 ต้น",
+      "10",
+      "สกัดลม 2 ตัว, รถขุดเล็ก 1 คัน",
+      "Approved",
+      "100",
+      "8 ต้น",
+      "สกัดหัวเข็มเสร็จครบทั้ง 8 ต้นตามเป้าหมาย",
+      "Completed",
+      "EVEN-20260921-173000",
+      "นายชัยวัฒน์ สระสิริ (PM)",
+      "2026-09-21 17:30:00"
+    ]
   }
 };
 
@@ -846,6 +1496,14 @@ function getOrCreateTasksSheet(ss) {
   return setupSheetSchema(ss, SHEET_NAME_TASKS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_TASKS]);
 }
 
+function getOrCreateWeeklyPlansSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_WEEKLY_PLANS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_WEEKLY_PLANS]);
+}
+
+function getOrCreatePlanTasksSheet(ss) {
+  return setupSheetSchema(ss, SHEET_NAME_PLAN_TASKS, SYSTEM_SHEET_SCHEMAS[SHEET_NAME_PLAN_TASKS]);
+}
+
 /**
  * ดึง Map ของโครงการ { [projectId]: projectName } จากชีต Projects และชีต Subcontractors
  */
@@ -895,7 +1553,9 @@ function initialSystemSheets(ss) {
     SHEET_NAME_SUBCONTRACTORS,
     SHEET_NAME_USERS,
     SHEET_NAME_REPORTS,
-    SHEET_NAME_TASKS
+    SHEET_NAME_TASKS,
+    SHEET_NAME_WEEKLY_PLANS,
+    SHEET_NAME_PLAN_TASKS
   ];
 
   sheetNames.forEach(name => {
@@ -931,6 +1591,27 @@ function initialSystemSheets(ss) {
   } catch(e) {}
 
   return results;
+}
+
+/**
+ * แปลงค่า Date จาก Google Sheets ให้เป็นสตริง YYYY-MM-DD
+ */
+function formatDateValue(val) {
+  if (!val) return "";
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, "GMT+7", "yyyy-MM-dd");
+  }
+  const s = String(val).trim();
+  if (s.includes("T")) return s.split("T")[0];
+  if (s.includes("GMT") || s.includes("00:00:00")) {
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return Utilities.formatDate(d, "GMT+7", "yyyy-MM-dd");
+      }
+    } catch(e) {}
+  }
+  return s;
 }
 
 /**

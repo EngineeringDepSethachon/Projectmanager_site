@@ -51,24 +51,24 @@
         <strong id="display-report-date">18 ก.ย. 2026</strong>
       </div>
 
-      <!-- SHIFT MODE SWITCHER (แท็บสลับรอบเช้า vs รอบจบงาน) -->
-      <div class="shift-switcher-container">
-        <button type="button" class="shift-tab active" id="tab-morning-shift" data-shift="morning">
-          <span class="shift-emoji">🌅</span>
-          <div class="shift-text">
-            <strong>เปิดงานตอนเช้า</strong>
-            <span>งานที่คาดการณ์วันนี้</span>
-          </div>
-        </button>
-        <button type="button" class="shift-tab" id="tab-evening-shift" data-shift="evening">
-          <span class="shift-emoji">🌆</span>
-          <div class="shift-text">
-            <strong>รายงานจบงาน</strong>
-            <span>ผลงานจริงเทียบแผน</span>
-          </div>
-        </button>
-      </div>
     </header>
+
+    <!-- Main Navigation Tabs: รายงานหน้างาน / แผนงานสัปดาห์ / ศูนย์อนุมัติ PM -->
+    <nav class="main-system-nav" id="main-system-nav">
+      <button type="button" class="nav-tab-btn active" data-view="panel-daily-report" id="btn-nav-daily">
+        <span class="nav-tab-icon">🏗️</span>
+        <span class="nav-tab-label">รายงานหน้างาน</span>
+      </button>
+      <button type="button" class="nav-tab-btn" data-view="panel-weekly-planning" id="btn-nav-weekly">
+        <span class="nav-tab-icon">📋</span>
+        <span class="nav-tab-label">แผนงานสัปดาห์</span>
+      </button>
+      <button type="button" class="nav-tab-btn" data-view="panel-pm-center" id="btn-nav-pm">
+        <span class="nav-tab-icon">👔</span>
+        <span class="nav-tab-label">อนุมัติแผน (PM)</span>
+        <span class="nav-badge-pill" id="pm-pending-badge" style="display: none;">0</span>
+      </button>
+    </nav>
 
     <!-- Main Content Body -->
     <main class="app-main">
@@ -100,19 +100,52 @@
         </div>
       </section>
 
+      <!-- 1. Panel: รายงานประจำวันหน้างาน (สำหรับโฟร์แมน) -->
+      <div id="panel-daily-report" class="app-view-panel active">
 
-
-      <!-- Notification Banner for Evening mode showing morning plan status -->
-      <div class="morning-plan-banner" id="morning-plan-banner" style="display: none;">
-        <span class="banner-icon">💡</span>
-        <div class="banner-content">
-          <strong>ดึงรายการงานที่คาดการณ์จากรอบเช้าแล้ว</strong>
-          <p>คุณสามารถประเมินผลงานจริง (%) และปริมาณงานที่ทำได้จริงเทียบกับเป้าหมาย</p>
+        <!-- SHIFT MODE SWITCHER (แท็บสลับรอบเช้า vs รอบจบงาน) -->
+        <div class="shift-switcher-container">
+          <button type="button" class="shift-tab active" id="tab-morning-shift" data-shift="morning">
+            <span class="shift-emoji">🌅</span>
+            <div class="shift-text">
+              <strong>เปิดงานตอนเช้า</strong>
+              <span>งานที่คาดการณ์วันนี้</span>
+            </div>
+          </button>
+          <button type="button" class="shift-tab" id="tab-evening-shift" data-shift="evening">
+            <span class="shift-emoji">🌆</span>
+            <div class="shift-text">
+              <strong>รายงานจบงาน</strong>
+              <span>ผลงานจริงเทียบแผน</span>
+            </div>
+          </button>
         </div>
-      </div>
 
-      <!-- 3. Weather Condition -->
-      <section class="card">
+        <!-- Banner แจ้งเตือน: มีงานย่อยที่ PM อนุมัติแล้วสำหรับวันนี้ พร้อมปุ่มดึงเข้าตาราง -->
+        <div class="approved-tasks-banner" id="approved-tasks-banner" style="display: none;">
+          <div class="approved-banner-left">
+            <span class="banner-icon">🎯</span>
+            <div class="banner-content">
+              <strong id="approved-banner-title">มีแผนงานย่อยที่ PM อนุมัติแล้วสำหรับวันนี้</strong>
+              <p id="approved-banner-desc">คลิกปุ่มเพื่อดึงงานย่อยเข้าสู่รายงานเปิดงานรอบเช้าอัตโนมัติ</p>
+            </div>
+          </div>
+          <button type="button" class="btn-import-approved" id="btn-import-approved">
+            📥 ดึงงานที่อนุมัติแล้ว
+          </button>
+        </div>
+
+        <!-- Notification Banner for Evening mode showing morning plan status -->
+        <div class="morning-plan-banner" id="morning-plan-banner" style="display: none;">
+          <span class="banner-icon">💡</span>
+          <div class="banner-content">
+            <strong>ดึงรายการงานที่คาดการณ์จากรอบเช้าแล้ว</strong>
+            <p>คุณสามารถประเมินผลงานจริง (%) และปริมาณงานที่ทำได้จริงเทียบกับเป้าหมาย</p>
+          </div>
+        </div>
+
+        <!-- 3. Weather Condition -->
+        <section class="card">
         <div class="card-header">
           <div class="card-title">
             <span class="icon">☀️</span>
@@ -319,6 +352,59 @@
         </div>
       </section>
 
+      </div><!-- End panel-daily-report -->
+
+      <!-- 2. Panel: แผนงานรายสัปดาห์ (สำหรับหัวหน้าผู้รับเหมา) -->
+      <div id="panel-weekly-planning" class="app-view-panel" style="display: none;">
+        <section class="card">
+          <div class="card-header flex-between">
+            <div class="card-title">
+              <span class="icon">📋</span>
+              <h2>แผนงานรายสัปดาห์ (Weekly Lookahead)</h2>
+            </div>
+            <button type="button" class="btn-sync-inline" id="btn-open-new-plan-modal" style="background: var(--accent-mint); color: #065f46; font-weight: 800; border-color: var(--border-dark);">
+              ➕ สร้างแผนสัปดาห์
+            </button>
+          </div>
+          <div class="card-body">
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              หัวหน้าผู้รับเหมาวางแผนงานภาพรวมประจำสัปดาห์และแตกงานย่อยในแต่ละวัน เพื่อส่งให้ PM อนุมัติ
+            </p>
+            <div id="weekly-plans-container" class="weekly-plans-container">
+              <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.85rem;">
+                ⏳ กำลังโหลดรายการแผนงานจาก Google Sheets...
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 3. Panel: ศูนย์อนุมัติแผนงาน (สำหรับ PM) -->
+      <div id="panel-pm-center" class="app-view-panel" style="display: none;">
+        <section class="card">
+          <div class="card-header flex-between">
+            <div class="card-title">
+              <span class="icon">👔</span>
+              <h2>ศูนย์พิจารณาและอนุมัติแผนงาน (PM Center)</h2>
+            </div>
+            <span class="badge-hint" id="pm-total-badge">0 แผน</span>
+          </div>
+          <div class="card-body">
+            <div class="quick-tags-grid" id="pm-filter-chips" style="margin-bottom: 0.75rem;">
+              <button type="button" class="tag-chip active" data-filter="all">ทั้งหมด</button>
+              <button type="button" class="tag-chip" data-filter="Pending">🟡 รออนุมัติ</button>
+              <button type="button" class="tag-chip" data-filter="Approved">🟢 อนุมัติแล้ว</button>
+              <button type="button" class="tag-chip" data-filter="Revision">🔴 ส่งกลับแก้ไข</button>
+            </div>
+            <div id="pm-plans-container" class="pm-plans-container">
+              <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.85rem;">
+                ⏳ กำลังโหลดรายการแผนงานที่ต้องพิจารณา...
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
     </main>
 
     <!-- Bottom Action Bar (Fixed) -->
@@ -349,6 +435,105 @@
             ⏳ กำลังโหลดรายชื่อโครงการจาก Google Sheets...
           </div>
         </div>
+      </div>
+    </div>
+  <!-- Modal: สร้างแผนงานสัปดาห์และงานย่อยใหม่ -->
+  <div class="modal-backdrop" id="modal-new-weekly-plan">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">📋</span>
+          <h3>สร้างแผนงานรายสัปดาห์ & งานย่อย</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-plan-modal" title="ปิด">×</button>
+      </div>
+      <div class="modal-body" style="max-height: 80vh; overflow-y: auto;">
+        <div style="background: var(--bg-card-subtle); padding: 8px 12px; border-radius: var(--radius-xs); margin-bottom: 0.75rem; font-size: 0.78rem;">
+          <div>🏢 <strong>บริษัทผู้รับเหมา:</strong> <span id="modal-plan-company">-</span></div>
+          <div>📍 <strong>โครงการ:</strong> <span id="modal-plan-project">-</span></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <div>
+            <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px;">วันเริ่มต้นสัปดาห์:</label>
+            <input type="date" id="input-plan-start-date" class="form-input" style="font-size: 0.8rem;">
+          </div>
+          <div>
+            <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px;">วันสิ้นสุดสัปดาห์:</label>
+            <input type="date" id="input-plan-end-date" class="form-input" style="font-size: 0.8rem;">
+          </div>
+        </div>
+
+        <div style="margin-bottom: 0.5rem;">
+          <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px;">ชื่อสัปดาห์ / ป้ายกำกับ:</label>
+          <input type="text" id="input-plan-week-label" class="form-input" placeholder="เช่น สัปดาห์ที่ 39 (22-28 ก.ย. 2026)">
+        </div>
+
+        <div style="margin-bottom: 0.85rem;">
+          <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px;">เป้าหมายหลักประจำสัปดาห์ (Weekly Milestone):</label>
+          <textarea id="input-plan-objective" class="form-textarea" rows="2" placeholder="เช่น ตัดหัวเข็มและเทลีนฐานราก F1-F4 และตอม่อ C1 ทั้งหมด"></textarea>
+        </div>
+
+        <!-- Daily Tasks Builder -->
+        <div style="border-top: 2px dashed var(--border-subtle); padding-top: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <strong style="font-size: 0.82rem; color: var(--text-heading);">⚡ งานย่อยแต่ละวัน (Daily Tasks)</strong>
+            <span id="modal-tasks-counter" style="font-size: 0.72rem; color: var(--text-muted);">0 รายการ</span>
+          </div>
+
+          <!-- Add task mini form -->
+          <div style="background: #f8fafc; border: 1.5px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 8px; margin-bottom: 0.65rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.4rem;">
+              <div>
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">วันที่ทำงาน:</label>
+                <input type="date" id="input-subtask-date" class="form-input" style="font-size: 0.75rem; padding: 4px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">หมวดงาน:</label>
+                <input type="text" id="input-subtask-cat" class="form-input" placeholder="เช่น โครงสร้างฐานราก" style="font-size: 0.75rem; padding: 4px 6px;">
+              </div>
+            </div>
+
+            <div style="margin-bottom: 0.4rem;">
+              <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">ชื่องานและโซนพื้นที่:</label>
+              <input type="text" id="input-subtask-name" class="form-input" placeholder="เช่น ตัดหัวเข็ม F1-F4 โซนทิศเหนือ" style="font-size: 0.78rem; padding: 5px 6px;">
+            </div>
+
+            <div style="margin-bottom: 0.4rem;">
+              <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">รายละเอียดขั้นตอนงาน:</label>
+              <input type="text" id="input-subtask-desc" class="form-input" placeholder="เช่น สกัดคอนกรีตส่วนเกิน เทลีนหนา 10 ซม." style="font-size: 0.75rem; padding: 4px 6px;">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 0.4rem;">
+              <div>
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">เป้าหมายปริมาณ:</label>
+                <input type="text" id="input-subtask-qty" class="form-input" placeholder="เช่น 8 ต้น" style="font-size: 0.75rem; padding: 4px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">แผนคนงาน (คน):</label>
+                <input type="number" id="input-subtask-workers" class="form-input" min="0" value="5" style="font-size: 0.75rem; padding: 4px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.68rem; color: var(--text-muted); display: block;">เครื่องจักร/อุปกรณ์:</label>
+                <input type="text" id="input-subtask-machinery" class="form-input" placeholder="สกัดลม 2 ตัว" style="font-size: 0.75rem; padding: 4px 6px;">
+              </div>
+            </div>
+
+            <button type="button" class="btn-add-item" id="btn-add-subtask-to-list" style="width: 100%; padding: 6px; font-size: 0.75rem; justify-content: center;">
+              ➕ บันทึกงานย่อยนี้ลงแผน
+            </button>
+          </div>
+
+          <div id="modal-added-tasks-list" style="display: flex; flex-direction: column; gap: 4px;">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 0.75rem 1rem; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn-cancel" id="btn-cancel-new-plan">ยกเลิก</button>
+        <button type="button" class="btn-save" id="btn-submit-weekly-plan" style="background: var(--accent-mint); color: #065f46; font-weight: 800;">
+          🚀 ยื่นแผนงานสัปดาห์ (ส่งให้ PM อนุมัติ)
+        </button>
       </div>
     </div>
   </div>

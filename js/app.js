@@ -22,6 +22,11 @@ try {
 // ==========================================
 const state = {
   activeShift: 'morning', // 'morning' | 'evening'
+  activeView: 'panel-daily-report', // 'panel-daily-report' | 'panel-weekly-planning' | 'panel-pm-center'
+  weeklyPlans: [],
+  approvedTasksToday: [],
+  newPlanTasks: [],
+  pmFilter: 'all',
   project: {
     id: localStorage.getItem('site_project_id') || '-',
     name: localStorage.getItem('site_project_name') || '-'
@@ -99,6 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initLiff();
   await syncUserProfileFromGAS();
   await loadProjectsList();
+  await loadSubcontractorsList();
   renderProjectInfo();
   renderLineProfile();
   renderGasStatus();
@@ -109,8 +115,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderPhotos();
   renderMachinery();
   renderIssues();
+  setupNavigationTabs();
   bindEventHandlers();
   setupModals();
+  setupWeeklyPlanModal();
+  await checkApprovedTasksToday();
+  loadWeeklyPlans();
 });
 
 // ==========================================
@@ -344,6 +354,9 @@ function renderProjectSelector(projects) {
       const modal = document.getElementById('modal-project-selector');
       if (modal) modal.classList.remove('active');
       showToast(`🏢 สลับโครงการเป็น: ${pname}`, 'success');
+      checkApprovedTasksToday();
+      if (state.activeView === 'panel-weekly-planning') loadWeeklyPlans();
+      if (state.activeView === 'panel-pm-center') loadPMPlans();
     });
   });
 }
@@ -499,6 +512,26 @@ function renderHorizontalDateStrip() {
   }
 
   container.innerHTML = html;
+
+  // Bind click to switch date
+  container.querySelectorAll('.date-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      container.querySelectorAll('.date-item').forEach(d => d.classList.remove('active'));
+      el.classList.add('active');
+      const chosenDate = el.getAttribute('data-date');
+      state.reportDate = chosenDate;
+      const dateEl = document.getElementById('display-report-date');
+      if (dateEl) {
+        const [y, m, d] = chosenDate.split('-');
+        const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        dateEl.innerText = `${parseInt(d, 10)} ${thMonths[parseInt(m, 10)-1]} ${y}`;
+      }
+      loadSavedMorningPlan();
+      renderDynamicTasks();
+      await checkApprovedTasksToday();
+      showToast(`📅 สลับวันที่รายงาน: ${chosenDate}`, 'info');
+    });
+  });
 }
 
 function renderLineProfile() {
@@ -559,6 +592,7 @@ function renderShiftUI() {
 
   if (tabMorning && tabEvening) {
     const greetingTitle = document.getElementById('greeting-title');
+    const approvedBanner = document.getElementById('approved-tasks-banner');
     if (isMorning) {
       tabMorning.classList.add('active');
       tabEvening.classList.remove('active');
@@ -568,6 +602,9 @@ function renderShiftUI() {
       }
       if (morningBanner) morningBanner.style.display = 'none';
       if (greetingTitle) greetingTitle.innerText = 'รายงานเปิดงานเช้า 🌅';
+      if (approvedBanner && state.approvedTasksToday && state.approvedTasksToday.length > 0) {
+        approvedBanner.style.display = 'flex';
+      }
     } else {
       tabMorning.classList.remove('active');
       tabEvening.classList.add('active');
@@ -577,6 +614,7 @@ function renderShiftUI() {
       }
       if (morningBanner) morningBanner.style.display = 'flex';
       if (greetingTitle) greetingTitle.innerText = 'รายงานสรุปจบงาน 🌆';
+      if (approvedBanner) approvedBanner.style.display = 'none';
     }
   }
 
@@ -718,6 +756,7 @@ function renderDynamicTasks() {
           <span class="shift-phase-badge ${isMorning ? 'plan' : 'actual'}">
             ${isMorning ? '🎯 คาดการณ์' : '⚡ ผลงานจริง'}
           </span>
+          ${(t.source_task_id || t.from_plan) ? `<span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">🎯 แผนสัปดาห์${t.company ? ': ' + escapeHtml(t.company) : ''}</span>` : ''}
         </div>
         <button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">
           🗑️ ลบ
@@ -1030,6 +1069,9 @@ function switchShift(shift) {
       state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
         ...t,
         id: 'ACT-' + t.id,
+        source_task_id: t.source_task_id || '',
+        from_plan: !!t.from_plan,
+        company: t.company || '',
         planned_name: t.name,
         planned_quantity: t.quantity,
         progress: t.progress !== undefined ? t.progress : 0,
@@ -1428,6 +1470,667 @@ function setupModals() {
     });
   }
 }
+
+// ==========================================
+// Main Navigation Tabs Setup
+// ==========================================
+function setupNavigationTabs() {
+  const tabs = document.querySelectorAll('.nav-tab-btn');
+  const panels = document.querySelectorAll('.app-view-panel');
+  const bottomBar = document.querySelector('.bottom-action-bar');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const viewId = tab.dataset.view;
+      if (!viewId) return;
+
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      panels.forEach(p => {
+        if (p.id === viewId) {
+          p.style.display = 'block';
+          p.classList.add('active');
+        } else {
+          p.style.display = 'none';
+          p.classList.remove('active');
+        }
+      });
+
+      state.activeView = viewId;
+
+      if (viewId === 'panel-daily-report') {
+        if (bottomBar) bottomBar.style.display = 'block';
+      } else {
+        if (bottomBar) bottomBar.style.display = 'none';
+      }
+
+      if (viewId === 'panel-weekly-planning') {
+        loadWeeklyPlans();
+      } else if (viewId === 'panel-pm-center') {
+        loadPMPlans();
+      }
+    });
+  });
+
+  // PM Center filter chips
+  document.querySelectorAll('#pm-filter-chips .tag-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#pm-filter-chips .tag-chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.pmFilter = btn.dataset.filter;
+      renderPMPlans();
+    });
+  });
+
+  // Approved Tasks Import button
+  const btnImportApproved = document.getElementById('btn-import-approved');
+  if (btnImportApproved) {
+    btnImportApproved.addEventListener('click', importApprovedTasksToMorning);
+  }
+}
+
+// ==========================================
+// Approved Tasks for Today (Foreman Pull)
+// ==========================================
+async function checkApprovedTasksToday() {
+  const banner = document.getElementById('approved-tasks-banner');
+  const titleEl = document.getElementById('approved-banner-title');
+  const descEl = document.getElementById('approved-banner-desc');
+  const importBtn = document.getElementById('btn-import-approved');
+  if (!banner) return;
+
+  if (state.activeShift !== 'morning') {
+    banner.style.display = 'none';
+    return;
+  }
+
+  try {
+    const tasks = await gasService.fetchApprovedTasksForDate(state.reportDate, state.project.id);
+    state.approvedTasksToday = tasks || [];
+
+    if (state.approvedTasksToday.length > 0) {
+      const alreadyImported = state.approvedTasksToday.every(at => 
+        state.morningPlannedTasks.some(m => m.source_task_id === at.taskId)
+      );
+
+      banner.style.display = 'flex';
+      if (titleEl) {
+        titleEl.innerHTML = `🎯 มี <strong>${state.approvedTasksToday.length}</strong> งานย่อยที่ PM อนุมัติแล้วสำหรับวันนี้ (${state.reportDate})`;
+      }
+      if (descEl) {
+        const previewNames = state.approvedTasksToday.map(t => t.taskName).slice(0, 2).join(', ');
+        const more = state.approvedTasksToday.length > 2 ? ` และอีก ${state.approvedTasksToday.length - 2} งาน` : '';
+        descEl.innerText = `${previewNames}${more} — สามารถดึงเข้าสู่รายงานเปิดงานเช้าได้ทันที`;
+      }
+      if (importBtn) {
+        if (alreadyImported) {
+          importBtn.innerText = '✓ ดึงข้อมูลครบแล้ว';
+          importBtn.style.opacity = '0.75';
+        } else {
+          importBtn.innerText = '📥 ดึงงานที่อนุมัติแล้ว';
+          importBtn.style.opacity = '1';
+        }
+      }
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch (err) {
+    console.warn('Check approved tasks error:', err);
+    banner.style.display = 'none';
+  }
+}
+
+function importApprovedTasksToMorning() {
+  if (!state.approvedTasksToday || state.approvedTasksToday.length === 0) {
+    showToast('ไม่มีงานย่อยที่อนุมัติสำหรับวันนี้', 'info');
+    return;
+  }
+
+  let addedCount = 0;
+  state.approvedTasksToday.forEach(at => {
+    const exists = state.morningPlannedTasks.some(m => m.source_task_id === at.taskId);
+    if (!exists) {
+      state.morningPlannedTasks.push({
+        id: 'TASK-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        source_task_id: at.taskId,
+        from_plan: true,
+        company: at.company || state.subcontractor.name,
+        name: at.taskName || at.category || 'งานตามแผน',
+        description: [at.workArea, at.taskDesc].filter(Boolean).join(' - '),
+        quantity: at.targetQty || '',
+        progress: 0,
+        isPlanned: true
+      });
+      addedCount++;
+    }
+  });
+
+  renderDynamicTasks();
+  const importBtn = document.getElementById('btn-import-approved');
+  if (importBtn) {
+    importBtn.innerText = '✓ ดึงข้อมูลครบแล้ว';
+    importBtn.style.opacity = '0.75';
+  }
+
+  if (addedCount > 0) {
+    showToast(`📥 ดึง ${addedCount} งานย่อยที่ PM อนุมัติเข้าสู่รายงานเช้าเรียบร้อยแล้ว`, 'success');
+    try {
+      localStorage.setItem(`site_morning_plan_${state.reportDate}`, JSON.stringify(state.morningPlannedTasks));
+    } catch (e) {}
+  } else {
+    showToast('งานย่อยทั้งหมดถูกดึงเข้ามาในรายงานเช้าแล้ว', 'info');
+  }
+}
+
+// ==========================================
+// Weekly Plans Controller (Lookahead)
+// ==========================================
+async function loadWeeklyPlans() {
+  const container = document.getElementById('weekly-plans-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.85rem;">
+      ⏳ กำลังดึงข้อมูลแผนงานสัปดาห์จาก Google Sheets...
+    </div>
+  `;
+
+  try {
+    const plans = await gasService.fetchWeeklyPlans(state.project.id);
+    state.weeklyPlans = plans || [];
+    renderWeeklyPlans();
+    updatePendingBadge();
+  } catch (err) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 1.5rem 0; color: var(--accent-red); font-size: 0.82rem;">
+        ⚠️ ไม่สามารถดึงแผนงานสัปดาห์ได้: ${err.message}
+      </div>
+    `;
+  }
+}
+
+function updatePendingBadge() {
+  const pendingCount = (state.weeklyPlans || []).filter(p => p.status === 'Pending').length;
+  const badge = document.getElementById('pm-pending-badge');
+  const totalBadge = document.getElementById('pm-total-badge');
+  if (badge) {
+    if (pendingCount > 0) {
+      badge.innerText = pendingCount;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  if (totalBadge) {
+    totalBadge.innerText = `${state.weeklyPlans.length} แผน`;
+  }
+}
+
+function renderWeeklyPlans() {
+  const container = document.getElementById('weekly-plans-container');
+  if (!container) return;
+
+  if (!state.weeklyPlans || state.weeklyPlans.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📋</div>
+        <p style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.25rem;">ยังไม่มีแผนงานรายสัปดาห์สำหรับโครงการนี้</p>
+        <p style="font-size: 0.75rem;">กดปุ่ม "➕ สร้างแผนสัปดาห์" ด้านบนเพื่อเริ่มวางแผนงาน</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = state.weeklyPlans.map(p => {
+    const statusClass = p.status === 'Approved' ? 'approved' : (p.status === 'Revision' ? 'revision' : 'pending');
+    const statusText = p.status === 'Approved' ? '🟢 PM อนุมัติแล้ว' : (p.status === 'Revision' ? '🔴 สั่งปรับปรุงแผน' : '🟡 รอ PM อนุมัติ');
+    const pct = Math.round(Number(p.overallProgress) || 0);
+    const finished = Number(p.completedTasks) || 0;
+    const total = Number(p.totalTasks) || 0;
+
+    return `
+      <div class="weekly-plan-card" data-plan-id="${escapeHtml(p.planId)}">
+        <div class="weekly-plan-header">
+          <div>
+            <div class="weekly-plan-title">${escapeHtml(p.weekLabel || p.planId)}</div>
+            <div class="weekly-plan-meta">
+              <span>🏢 ${escapeHtml(p.company || '-')}</span>
+              <span>📅 ${escapeHtml(p.startDate || '')} ถึง ${escapeHtml(p.endDate || '')}</span>
+            </div>
+          </div>
+          <span class="plan-status-badge ${statusClass}">${statusText}</span>
+        </div>
+
+        ${p.objective ? `
+          <div class="weekly-plan-objective">
+            🎯 <strong>เป้าหมายสัปดาห์:</strong> ${escapeHtml(p.objective)}
+          </div>
+        ` : ''}
+
+        ${p.pmNotes ? `
+          <div class="pm-directive-box ${statusClass}">
+            👔 <strong>ข้อสั่งการจาก PM:</strong> ${escapeHtml(p.pmNotes)}
+            ${p.approvedAt ? `<div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">บันทึกเมื่อ: ${p.approvedAt}</div>` : ''}
+          </div>
+        ` : ''}
+
+        <div class="plan-progress-section">
+          <div class="plan-progress-labels">
+            <span>ความคืบหน้ารวม</span>
+            <strong style="color: ${pct >= 100 ? 'var(--accent-mint)' : 'var(--text-heading)'};">${pct}% (เสร็จ ${finished}/${total} งาน)</strong>
+          </div>
+          <div class="plan-progress-bar">
+            <div class="plan-progress-fill" style="width: ${Math.min(100, Math.max(0, pct))}%;"></div>
+          </div>
+        </div>
+
+        <div style="margin-top: 0.75rem;">
+          <button type="button" class="btn-toggle-subtasks" onclick="window.togglePlanDailyTasks('${p.planId}')">
+            <span>🔍 ดูงานย่อย 7 วัน (${total} รายการ)</span>
+            <span class="subtask-arrow-icon" id="arrow-${p.planId}">▼</span>
+          </button>
+          <div id="subtasks-container-${p.planId}" class="plan-subtasks-drawer" style="display: none;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.togglePlanDailyTasks = async function(planId) {
+  const drawer = document.getElementById(`subtasks-container-${planId}`);
+  const arrow = document.getElementById(`arrow-${planId}`);
+  if (!drawer) return;
+
+  if (drawer.style.display === 'block') {
+    drawer.style.display = 'none';
+    if (arrow) arrow.innerText = '▼';
+    return;
+  }
+
+  drawer.style.display = 'block';
+  if (arrow) arrow.innerText = '▲';
+  drawer.innerHTML = `
+    <div style="text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.75rem;">
+      ⏳ กำลังดึงรายการงานย่อย...
+    </div>
+  `;
+
+  try {
+    const tasks = await gasService.fetchDailyTasks(planId);
+    if (!tasks || tasks.length === 0) {
+      drawer.innerHTML = `
+        <div style="text-align: center; padding: 0.8rem; color: var(--text-muted); font-size: 0.75rem;">
+          ยังไม่มีงานย่อยในแผนงานนี้
+        </div>
+      `;
+      return;
+    }
+
+    drawer.innerHTML = `
+      <div class="subtasks-table-wrapper">
+        <table class="subtasks-table">
+          <thead>
+            <tr>
+              <th>วันที่</th>
+              <th>หมวด/งานย่อย</th>
+              <th>เป้าหมาย</th>
+              <th>คน</th>
+              <th>ผลงานจริง</th>
+              <th>สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tasks.map(t => {
+              const pct = Number(t.actualProgress) || 0;
+              const isDone = t.actualStatus === 'Completed' || pct >= 100;
+              return `
+                <tr class="${isDone ? 'task-row-done' : ''}">
+                  <td>
+                    <strong>${t.taskDate || '-'}</strong>
+                    <div style="font-size: 0.65rem; color: var(--text-muted);">${t.dayOfWeek || ''}</div>
+                  </td>
+                  <td>
+                    <strong>${escapeHtml(t.taskName || '-')}</strong>
+                    ${t.workArea ? `<div style="font-size: 0.68rem; color: var(--text-muted);">📍 ${escapeHtml(t.workArea)}</div>` : ''}
+                    ${t.taskDesc ? `<div style="font-size: 0.68rem; color: var(--text-muted);">${escapeHtml(t.taskDesc)}</div>` : ''}
+                  </td>
+                  <td>
+                    <div>${escapeHtml(t.targetQty || '-')}</div>
+                  </td>
+                  <td>${t.plannedWorkers || '-'}</td>
+                  <td>
+                    ${pct > 0 ? `<strong>${pct}%</strong>` : '-'}
+                    ${t.actualQty ? `<div style="font-size: 0.68rem; color: var(--text-muted);">(${escapeHtml(t.actualQty)})</div>` : ''}
+                    ${t.reportedBy ? `<div style="font-size: 0.62rem; color: #059669;">โดย: ${escapeHtml(t.reportedBy)}</div>` : ''}
+                  </td>
+                  <td>
+                    <span class="subtask-status-pill ${isDone ? 'done' : (pct > 0 ? 'inprogress' : 'pending')}">
+                      ${isDone ? 'เสร็จสิ้น' : (pct > 0 ? 'กำลังทำ' : 'ตามแผน')}
+                    </span>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    drawer.innerHTML = `
+      <div style="padding: 0.5rem; color: var(--accent-red); font-size: 0.72rem;">
+        ⚠️ โหลดงานย่อยไม่สำเร็จ: ${err.message}
+      </div>
+    `;
+  }
+};
+
+// ==========================================
+// PM Approval Center
+// ==========================================
+async function loadPMPlans() {
+  const container = document.getElementById('pm-plans-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.85rem;">
+      ⏳ กำลังดึงข้อมูลแผนงานเพื่อพิจารณาอนุมัติ...
+    </div>
+  `;
+
+  try {
+    const plans = await gasService.fetchWeeklyPlans(state.project.id);
+    state.weeklyPlans = plans || [];
+    renderPMPlans();
+    updatePendingBadge();
+  } catch (err) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 1.5rem 0; color: var(--accent-red); font-size: 0.82rem;">
+        ⚠️ เกิดข้อผิดพลาด: ${err.message}
+      </div>
+    `;
+  }
+}
+
+function renderPMPlans() {
+  const container = document.getElementById('pm-plans-container');
+  if (!container) return;
+
+  const filter = state.pmFilter || 'all';
+  let filtered = state.weeklyPlans || [];
+  if (filter !== 'all') {
+    filtered = filtered.filter(p => p.status === filter);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">👔</div>
+        <p style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.25rem;">ไม่พบแผนงานในหมวดหมู่นี้</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filtered.map(p => {
+    const statusClass = p.status === 'Approved' ? 'approved' : (p.status === 'Revision' ? 'revision' : 'pending');
+    const statusText = p.status === 'Approved' ? '🟢 อนุมัติแล้ว' : (p.status === 'Revision' ? '🔴 สั่งปรับปรุง' : '🟡 รอการพิจารณา');
+    const total = Number(p.totalTasks) || 0;
+
+    return `
+      <div class="pm-review-card" data-plan-id="${escapeHtml(p.planId)}">
+        <div class="pm-card-top">
+          <div>
+            <div class="weekly-plan-title">${escapeHtml(p.weekLabel || p.planId)}</div>
+            <div class="weekly-plan-meta">
+              <span>🏢 ผู้รับเหมา: <strong>${escapeHtml(p.company || '-')}</strong></span>
+              <span>📅 ช่วงเวลา: ${escapeHtml(p.startDate || '')} ถึง ${escapeHtml(p.endDate || '')}</span>
+              <span>👤 ส่งโดย: ${escapeHtml(p.createdBy || '-')}</span>
+            </div>
+          </div>
+          <span class="plan-status-badge ${statusClass}">${statusText}</span>
+        </div>
+
+        ${p.objective ? `
+          <div class="weekly-plan-objective" style="margin-bottom: 0.75rem;">
+            🎯 <strong>เป้าหมายสัปดาห์:</strong> ${escapeHtml(p.objective)}
+          </div>
+        ` : ''}
+
+        <div style="margin-bottom: 0.75rem;">
+          <button type="button" class="btn-toggle-subtasks" onclick="window.togglePlanDailyTasks('${p.planId}')">
+            <span>🔍 ตรวจสอบงานย่อย 7 วัน (${total} รายการ)</span>
+            <span class="subtask-arrow-icon" id="arrow-${p.planId}">▼</span>
+          </button>
+          <div id="subtasks-container-${p.planId}" class="plan-subtasks-drawer" style="display: none;"></div>
+        </div>
+
+        <div class="pm-action-form">
+          <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 4px;">
+            ✍️ ข้อสั่งการ / คอมเมนต์จาก PM ถึงหัวหน้าผู้รับเหมา:
+          </label>
+          <textarea id="pm-notes-${p.planId}" class="form-textarea" rows="2" placeholder="เช่น อนุญาตให้เข้างานตามแผน ให้เน้น Safety บริเวณฐานราก F1...">${p.pmNotes || ''}</textarea>
+
+          <div class="pm-btn-group" style="margin-top: 0.6rem; display: flex; gap: 0.5rem;">
+            <button type="button" class="btn-approve-pm" onclick="window.handlePMDecision('${p.planId}', 'Approved')" style="flex: 1; padding: 8px 12px; background: var(--accent-mint); color: #065f46; font-weight: 800; border: 2px solid #065f46; border-radius: var(--radius-xs); cursor: pointer;">
+              ✅ อนุมัติแผนงาน (Approve)
+            </button>
+            <button type="button" class="btn-revision-pm" onclick="window.handlePMDecision('${p.planId}', 'Revision')" style="flex: 1; padding: 8px 12px; background: #fee2e2; color: #991b1b; font-weight: 800; border: 2px solid #991b1b; border-radius: var(--radius-xs); cursor: pointer;">
+              ⚠️ สั่งปรับปรุงแผน (Revision)
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.handlePMDecision = async function(planId, decision) {
+  const notesEl = document.getElementById(`pm-notes-${planId}`);
+  const notes = notesEl ? notesEl.value.trim() : '';
+
+  if (decision === 'Revision' && !notes) {
+    showToast('โปรดระบุเหตุผลหรือข้อสั่งการที่ต้องแก้ไขในช่องข้อคิดเห็น', 'warning');
+    if (notesEl) notesEl.focus();
+    return;
+  }
+
+  const decisionText = decision === 'Approved' ? 'อนุมัติแผนงาน' : 'สั่งปรับปรุงแผนงาน';
+  const pmName = (state.lineUser && state.lineUser.name !== '-') ? state.lineUser.name : 'PM (ผู้จัดการโครงการ)';
+
+  showToast(`⏳ กำลังบันทึกผลการพิจารณา (${decisionText})...`, 'info');
+
+  try {
+    const res = await gasService.approveWeeklyPlanPM(planId, decision, notes, pmName);
+    if (res && res.success) {
+      showToast(`✅ บันทึกผล: ${decisionText} เรียบร้อยแล้ว!`, 'success');
+      await loadPMPlans();
+      await checkApprovedTasksToday();
+    } else {
+      showToast(`⚠️ บันทึกไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบสิทธิ์ชีต'}`, 'warning');
+    }
+  } catch (err) {
+    showToast(`❌ เกิดข้อผิดพลาด: ${err.message}`, 'error');
+  }
+};
+
+// ==========================================
+// Setup Weekly Plan Modal (Subcontractor)
+// ==========================================
+function setupWeeklyPlanModal() {
+  const modal = document.getElementById('modal-new-weekly-plan');
+  const btnOpen = document.getElementById('btn-open-new-plan-modal');
+  const btnClose = document.getElementById('btn-close-plan-modal');
+  const btnCancel = document.getElementById('btn-cancel-new-plan');
+  const btnAddSubtask = document.getElementById('btn-add-subtask-to-list');
+  const btnSubmit = document.getElementById('btn-submit-weekly-plan');
+
+  if (!modal) return;
+
+  const closeModal = () => modal.classList.remove('active');
+  if (btnClose) btnClose.addEventListener('click', closeModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
+
+  if (btnOpen) {
+    btnOpen.addEventListener('click', () => {
+      document.getElementById('modal-plan-company').innerText = state.subcontractor.name || 'ไม่ระบุ';
+      document.getElementById('modal-plan-project').innerText = state.project.name || 'ไม่ระบุ';
+
+      // Default start date = today or next Monday
+      const today = new Date();
+      const nextMon = new Date(today);
+      const day = today.getDay();
+      const diff = day === 0 ? 1 : 8 - day;
+      nextMon.setDate(today.getDate() + (day === 1 ? 0 : diff));
+      const nextSun = new Date(nextMon);
+      nextSun.setDate(nextMon.getDate() + 6);
+
+      const toIsoDate = d => `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      
+      const startInput = document.getElementById('input-plan-start-date');
+      const endInput = document.getElementById('input-plan-end-date');
+      const subtaskDateInput = document.getElementById('input-subtask-date');
+
+      if (startInput) startInput.value = toIsoDate(nextMon);
+      if (endInput) endInput.value = toIsoDate(nextSun);
+      if (subtaskDateInput) subtaskDateInput.value = toIsoDate(nextMon);
+
+      const weekLabel = document.getElementById('input-plan-week-label');
+      if (weekLabel) {
+        weekLabel.value = `สัปดาห์ (${nextMon.getDate()}/${nextMon.getMonth()+1} - ${nextSun.getDate()}/${nextSun.getMonth()+1})`;
+      }
+
+      state.newPlanTasks = [];
+      renderModalNewPlanTasks();
+      modal.classList.add('active');
+    });
+  }
+
+  if (btnAddSubtask) {
+    btnAddSubtask.addEventListener('click', () => {
+      const date = document.getElementById('input-subtask-date')?.value;
+      const cat = document.getElementById('input-subtask-cat')?.value.trim();
+      const name = document.getElementById('input-subtask-name')?.value.trim();
+      const desc = document.getElementById('input-subtask-desc')?.value.trim();
+      const qty = document.getElementById('input-subtask-qty')?.value.trim();
+      const workers = document.getElementById('input-subtask-workers')?.value;
+      const machinery = document.getElementById('input-subtask-machinery')?.value.trim();
+
+      if (!name) {
+        showToast('กรุณาระบุชื่องาน / กิจกรรม', 'warning');
+        document.getElementById('input-subtask-name')?.focus();
+        return;
+      }
+      if (!date) {
+        showToast('กรุณาระบุวันที่ทำงาน', 'warning');
+        return;
+      }
+
+      state.newPlanTasks.push({
+        id: 'WTASK-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        taskDate: date,
+        category: cat || 'ทั่วไป',
+        taskName: name,
+        taskDesc: desc,
+        workArea: '',
+        targetQty: qty,
+        plannedWorkers: Number(workers) || 0,
+        plannedMachinery: machinery
+      });
+
+      if (document.getElementById('input-subtask-name')) document.getElementById('input-subtask-name').value = '';
+      if (document.getElementById('input-subtask-desc')) document.getElementById('input-subtask-desc').value = '';
+      if (document.getElementById('input-subtask-qty')) document.getElementById('input-subtask-qty').value = '';
+
+      renderModalNewPlanTasks();
+      showToast('เพิ่มงานย่อยลงในแผนแล้ว', 'info');
+    });
+  }
+
+  if (btnSubmit) {
+    btnSubmit.addEventListener('click', async () => {
+      const startDate = document.getElementById('input-plan-start-date')?.value;
+      const endDate = document.getElementById('input-plan-end-date')?.value;
+      const weekLabel = document.getElementById('input-plan-week-label')?.value.trim();
+      const objective = document.getElementById('input-plan-objective')?.value.trim();
+
+      if (!startDate || !endDate) {
+        showToast('กรุณาระบุวันเริ่มต้นและสิ้นสุดสัปดาห์', 'warning');
+        return;
+      }
+      if (state.newPlanTasks.length === 0) {
+        showToast('กรุณาเพิ่มงานย่อยอย่างน้อย 1 รายการก่อนส่งแผนงาน', 'warning');
+        return;
+      }
+
+      btnSubmit.disabled = true;
+      btnSubmit.innerText = '⏳ กำลังส่งแผนงานให้ PM...';
+
+      const planPayload = {
+        planId: 'WPLAN-' + Date.now(),
+        projectId: state.project.id,
+        projectName: state.project.name,
+        company: state.subcontractor.name,
+        startDate,
+        endDate,
+        weekLabel: weekLabel || `แผนสัปดาห์ ${startDate} ถึง ${endDate}`,
+        objective,
+        createdBy: state.lineUser.name,
+        lineUid: state.lineUser.uid,
+        tasks: state.newPlanTasks
+      };
+
+      try {
+        const res = await gasService.saveWeeklyPlan(planPayload);
+        if (res && res.success) {
+          showToast('🚀 ยื่นแผนงานรายสัปดาห์สำเร็จ! รอ PM พิจารณาอนุมัติ', 'success');
+          closeModal();
+          await loadWeeklyPlans();
+        } else {
+          showToast(`⚠️ ส่งไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบ'}`, 'warning');
+        }
+      } catch (err) {
+        showToast(`❌ เกิดข้อผิดพลาด: ${err.message}`, 'error');
+      } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = '🚀 ยื่นแผนงานสัปดาห์ (ส่งให้ PM อนุมัติ)';
+      }
+    });
+  }
+}
+
+function renderModalNewPlanTasks() {
+  const container = document.getElementById('modal-added-tasks-list');
+  const counter = document.getElementById('modal-tasks-counter');
+  if (!container) return;
+
+  if (counter) counter.innerText = `${state.newPlanTasks.length} รายการ`;
+
+  if (state.newPlanTasks.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 0.8rem; color: var(--text-muted); font-size: 0.72rem;">
+        ยังไม่มีงานย่อยที่เพิ่มเข้ามา
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = state.newPlanTasks.map((t, idx) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid var(--border-subtle); padding: 5px 8px; border-radius: 4px; font-size: 0.72rem;">
+      <div>
+        <strong>${t.taskDate}</strong>: <span style="font-weight: 700; color: var(--text-heading);">${escapeHtml(t.taskName)}</span>
+        ${t.targetQty ? `<span style="color: var(--text-muted);"> (${escapeHtml(t.targetQty)})</span>` : ''}
+        ${t.plannedWorkers ? `<span style="color: #059669;"> [${t.plannedWorkers} คน]</span>` : ''}
+      </div>
+      <button type="button" onclick="window.removeNewPlanTask(${idx})" style="background: none; border: none; color: var(--accent-red); cursor: pointer; font-size: 0.8rem; padding: 0 4px;" title="ลบ">&times;</button>
+    </div>
+  `).join('');
+}
+
+window.removeNewPlanTask = function(idx) {
+  state.newPlanTasks.splice(idx, 1);
+  renderModalNewPlanTasks();
+};
 
 // ==========================================
 // Utilities
