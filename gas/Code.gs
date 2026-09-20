@@ -81,6 +81,19 @@ function doGet(e) {
       });
     }
 
+    if (action === "inspect") {
+      const allSheets = ss.getSheets();
+      const dump = {};
+      allSheets.forEach(s => {
+        dump[s.getName()] = s.getDataRange().getValues().slice(0, 10);
+      });
+      return jsonResponse({
+        status: "success",
+        sheets: dump,
+        timestamp: Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss")
+      });
+    }
+
     if (action === "get_reports") {
       const sheet = getOrCreateReportsSheet(ss);
       const data = sheet.getDataRange().getValues();
@@ -107,14 +120,23 @@ function doGet(e) {
     if (action === "get_projects") {
       const sheet = getOrCreateProjectsSheet(ss);
       const data = sheet.getDataRange().getValues();
+      const projectsMap = getProjectsMap(ss);
       const projects = [];
 
       for (let i = 1; i < data.length; i++) {
         const row = data[i];
         if (!row[0] && !row[1]) continue;
+        const pId = String(row[0] || "").trim();
+        let pName = String(row[1] || "").trim();
+        if (pId && projectsMap[pId] && projectsMap[pId] !== pName) {
+          pName = projectsMap[pId];
+          try {
+            sheet.getRange(i + 1, 2).setValue(pName);
+          } catch(e) {}
+        }
         projects.push({
-          id: String(row[0] || "").trim(),
-          name: String(row[1] || "").trim(),
+          id: pId,
+          name: pName,
           location: String(row[2] || "").trim(),
           pm: String(row[3] || "").trim(),
           status: String(row[4] || "Active").trim()
@@ -825,7 +847,7 @@ function getOrCreateTasksSheet(ss) {
 }
 
 /**
- * ดึง Map ของโครงการ { [projectId]: projectName } จากชีต Projects
+ * ดึง Map ของโครงการ { [projectId]: projectName } จากชีต Projects และชีต Subcontractors
  */
 function getProjectsMap(ss) {
   const sheet = getOrCreateProjectsSheet(ss);
@@ -838,6 +860,22 @@ function getProjectsMap(ss) {
       map[id] = name || id;
     }
   }
+
+  // หากผู้ใช้ไประบุ/แก้ไขชื่อโครงการในชีต Subcontractors ให้นำมาผูกด้วย
+  try {
+    const subSheet = ss.getSheetByName(SHEET_NAME_SUBCONTRACTORS);
+    if (subSheet) {
+      const subData = subSheet.getDataRange().getValues();
+      for (let j = 1; j < subData.length; j++) {
+        const subProjId = String(subData[j][0] || "").trim();
+        const subProjName = String(subData[j][1] || "").trim();
+        if (subProjId && subProjName && subProjName !== "-" && subProjName !== "อาคารสำนักงาน 8 ชั้น") {
+          map[subProjId] = subProjName;
+        }
+      }
+    }
+  } catch(e) {}
+
   return map;
 }
 
