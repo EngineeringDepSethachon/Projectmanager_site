@@ -579,13 +579,25 @@ function renderMachinery() {
   if (counterBadge) counterBadge.innerText = `เลือกแล้ว ${state.machinery.length} เครื่อง`;
   if (!grid) return;
 
+  const defaultMachinery = [
+    'รถขุดแบคโห PC200',
+    'เครื่องสกัดลมตัดหัวเข็ม',
+    'เครื่องสูบน้ำ 4 นิ้ว',
+    'รถเครน 25 ตัน',
+    'รถโม่คอนกรีต'
+  ];
+
   grid.innerHTML = state.availableMachinery.map(item => {
     const isSelected = state.machinery.includes(item);
+    const isCustom = !defaultMachinery.includes(item);
     const escaped = escapeHtml(item);
     return `
-      <div class="chip-item ${isSelected ? 'active' : ''}" onclick="window.toggleMachinery('${escaped}')">
-        <span>${isSelected ? '✓ ' : '+ '}</span>
-        <span>${escaped}</span>
+      <div class="chip-item ${isSelected ? 'active' : ''}">
+        <span onclick="window.toggleMachinery('${escaped}')" style="display:flex;align-items:center;gap:0.3rem;flex:1;cursor:pointer;">
+          <span>${isSelected ? '✓' : '🛠️'}</span>
+          <span>${escaped}</span>
+        </span>
+        <span class="chip-remove-btn" onclick="window.removeMachinery('${escaped}')" title="ลบออก">×</span>
       </div>
     `;
   }).join('');
@@ -596,6 +608,21 @@ window.toggleMachinery = function(item) {
   if (idx > -1) state.machinery.splice(idx, 1);
   else state.machinery.push(item);
   renderMachinery();
+};
+
+window.removeMachinery = function(item) {
+  // ลบออกจาก availableMachinery
+  const ai = state.availableMachinery.indexOf(item);
+  if (ai > -1) state.availableMachinery.splice(ai, 1);
+  // ลบออกจากรายการที่เลือกไว้ด้วย
+  const mi = state.machinery.indexOf(item);
+  if (mi > -1) state.machinery.splice(mi, 1);
+  // บันทึกลง localStorage
+  try {
+    localStorage.setItem('site_custom_machinery', JSON.stringify(state.availableMachinery));
+  } catch(e) {}
+  renderMachinery();
+  showToast(`ลบเครื่องจักร: ${item}`, 'info');
 };
 
 function renderIssues() {

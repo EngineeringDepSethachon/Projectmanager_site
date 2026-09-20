@@ -525,10 +525,14 @@ body {
   padding: 0.4rem 0.3rem;
   border-radius: var(--radius-md);
   border: 1.5px solid transparent;
-  cursor: default;
-  pointer-events: none;
+  cursor: pointer;
   user-select: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.date-item:hover {
+  background: var(--bg-card-subtle);
+  border-color: var(--border-subtle);
 }
 
 .date-item .day-name {
@@ -1689,18 +1693,23 @@ body {
 }
 
 .chip-remove-btn {
-  font-size: 0.85rem;
+  font-size: 1rem;
+  font-weight: 900;
   line-height: 1;
   color: var(--text-muted);
-  margin-left: 2px;
-  padding: 0 3px;
+  margin-left: 4px;
+  padding: 0 4px;
   border-radius: 50%;
+  cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-tap-highlight-color: rgba(255,92,92,0.15);
 }
 
 .chip-remove-btn:hover {
-  color: var(--accent-coral);
-  background: var(--accent-coral-light);
+  color: #ffffff;
+  background: var(--accent-coral);
 }
 
 /* ==========================================================================
