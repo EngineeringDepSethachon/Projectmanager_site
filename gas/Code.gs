@@ -908,7 +908,7 @@ function replyLineWebAppCard(replyToken, token, data) {
                 layout: "horizontal",
                 contents: [
                   { type: "text", text: "💼 ตำแหน่ง:", size: "xxs", color: "#94a3b8", flex: 3 },
-                  { type: "text", text: (data.role && data.role !== "-" ? data.role : "-") + (data.level && data.level !== "-" ? " (" + data.level + ")" : ""), size: "xxs", color: "#38bdf8", weight: "bold", flex: 6 }
+                  { type: "text", text: (data.role && data.role !== "-" ? data.role : "-"), size: "xxs", color: "#38bdf8", weight: "bold", flex: 6 }
                 ]
               },
               {

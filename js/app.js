@@ -373,13 +373,11 @@ function renderLineProfile() {
   if (uidEl) uidEl.innerText = state.lineUser.uid || '-';
   if (badgeEl) {
     const isLiff = state.lineUser.isLiff;
-    const lv = state.lineUser.level;
-    badgeEl.innerText = isLiff ? '🟢 LINE LIFF' : (lv && lv !== '-' ? `🟢 ${lv}` : '🟢 LINE UID');
+    badgeEl.innerText = isLiff ? '🟢 LINE LIFF' : '🟢 LINE UID';
   }
   if (roleEl) {
     const roleName = state.lineUser.role || '-';
-    const lvName = (state.lineUser.level && state.lineUser.level !== '-') ? ` (${state.lineUser.level})` : '';
-    roleEl.innerText = roleName !== '-' ? `${roleName}${lvName}` : '-';
+    roleEl.innerText = roleName !== '-' ? roleName : '-';
   }
   if (companyEl) {
     companyEl.innerText = state.subcontractor.name || '-';
