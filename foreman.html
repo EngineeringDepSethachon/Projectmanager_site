@@ -117,11 +117,9 @@
           </div>
 
           <!-- Fallback: ปุ่มเพิ่มงานฉุกเฉินนอกแผนกรณีจำเป็น -->
-          <div style="margin-top: 0.75rem; text-align: center;">
-            <button type="button" id="btn-add-unplanned-task" class="btn-secondary" style="font-size: 0.72rem; padding: 4px 10px; border-radius: var(--radius-xs); border: 1.5px dashed var(--border-dark); background: #f8fafc;">
-              ⚠️ มีงานฉุกเฉินนอกแผนที่ต้องทำเพิ่ม? กดที่นี่
-            </button>
-          </div>
+          <button type="button" id="btn-add-unplanned-task">
+            ⚠️ มีงานฉุกเฉินนอกแผนที่ต้องทำเพิ่ม? กดที่นี่
+          </button>
         </div>
       </section>
 
@@ -252,8 +250,10 @@
           <input type="file" id="camera-file-input" accept="image/*" capture="environment" style="display: none;">
           <div class="camera-trigger-box" id="camera-trigger-btn">
             <div class="cam-icon">📸</div>
-            <strong id="camera-trigger-title">แตะถ่ายรูปแถวคนงาน หรือประชุม Safety</strong>
-            <span id="camera-trigger-desc">ประทับเวลาเปิดงานรอบเช้า และ LINE UID</span>
+            <div>
+              <strong id="camera-trigger-title">แตะถ่ายรูปแถวคนงาน หรือประชุม Safety</strong>
+              <span id="camera-trigger-desc">ประทับเวลาเปิดงานรอบเช้า และ LINE UID</span>
+            </div>
           </div>
           <div class="photos-grid" id="photos-preview-grid" style="margin-top: 0.75rem;"></div>
         </div>
