@@ -12,6 +12,7 @@ const SHEET_NAME_REPORTS = "Daily_Reports";
 const SHEET_NAME_TASKS = "Tasks_Detail";
 const SHEET_NAME_USERS = "Site_Users";
 const SHEET_NAME_SUBCONTRACTORS = "Subcontractors";
+const SHEET_NAME_PROJECTS = "Projects";
 const DRIVE_FOLDER_NAME = "Construction_Site_Photos";
 
 // LINE Bot Messaging API Channel Access Token & Target User/Group ID
@@ -59,30 +60,63 @@ function doGet(e) {
       });
     }
 
+    if (action === "get_projects") {
+      const sheet = getOrCreateProjectsSheet(ss);
+      const data = sheet.getDataRange().getValues();
+      const projects = [];
+
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0] && !row[1]) continue;
+        projects.push({
+          id: String(row[0] || "").trim(),
+          name: String(row[1] || "").trim(),
+          location: String(row[2] || "").trim(),
+          pm: String(row[3] || "").trim(),
+          status: String(row[4] || "Active").trim()
+        });
+      }
+
+      return jsonResponse({
+        status: "success",
+        total: projects.length,
+        projects: projects
+      });
+    }
+
     if (action === "get_user" || action === "get_users") {
       const sheet = getOrCreateUsersSheet(ss);
       const data = sheet.getDataRange().getValues();
       const targetUid = (e.parameter && e.parameter.uid ? String(e.parameter.uid).trim() : "");
+      const projectsMap = getProjectsMap(ss);
+      const colIdx = data.length > 0 ? getUserColumnIndexes(data[0]) : {};
       const users = [];
       let foundUser = null;
 
       for (let i = 1; i < data.length; i++) {
-        const rawComp = String(data[i][5] || "-").trim();
-        const rawRole = String(data[i][3] || "-").trim();
+        const row = data[i];
+        const rawComp = String(colIdx.compCol > -1 ? row[colIdx.compCol] : row[5] || "-").trim();
+        const rawRole = String(colIdx.roleCol > -1 ? row[colIdx.roleCol] : row[3] || "-").trim();
+        const rawProj = String(colIdx.projCol > -1 ? row[colIdx.projCol] : "-").trim();
+
         const cleanComp = (rawComp === "หจก. นครพิงค์โครงสร้าง" || !rawComp) ? "-" : rawComp;
         const cleanRole = (rawRole === "โฟร์แมนหน้างาน" || rawRole === "โฟร์แมน" || !rawRole) ? "-" : rawRole;
+        const cleanProjId = (!rawProj || rawProj === "-") ? "-" : rawProj;
+        const cleanProjName = (cleanProjId !== "-" && projectsMap[cleanProjId]) ? projectsMap[cleanProjId] : (cleanProjId !== "-" ? cleanProjId : "-");
 
         const u = {
-          uid: String(data[i][0] || "").trim(),
-          lineName: String(data[i][1] || ""),
-          displayName: String(data[i][2] || "-"),
+          uid: String(row[0] || "").trim(),
+          lineName: String(row[1] || ""),
+          displayName: String(row[2] || "-"),
           role: cleanRole,
-          level: String(data[i][4] || "-"),
+          level: String(row[4] || "-"),
           company: cleanComp,
-          avatar: String(data[i][6] || ""),
-          status: String(data[i][7] || "-"),
-          registeredAt: String(data[i][8] || ""),
-          lastActive: String(data[i][9] || "")
+          projectId: cleanProjId,
+          projectName: cleanProjName,
+          avatar: String(colIdx.avatarCol > -1 ? row[colIdx.avatarCol] : row[6] || ""),
+          status: String(row[7] || "-"),
+          registeredAt: String(row[8] || ""),
+          lastActive: String(row[9] || "")
         };
         users.push(u);
         if (targetUid && u.uid === targetUid) {
@@ -159,11 +193,13 @@ function doPost(e) {
     const reportDate = payload.report_date || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd");
     const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
 
-    // 1. LINE Profile Data
+    // 1. LINE Profile Data & Project Info
     const lineUid = payload.line_uid || "NOT_PROVIDED";
     const lineName = payload.line_name || "-";
     const subName = payload.sub_name || "-";
     const foremanName = payload.foreman_name || lineName;
+    const projectId = payload.project_id || payload.prj || "-";
+    const projectName = payload.project_name || payload.prjName || "-";
 
     // 2. สภาพอากาศ & เวลาหยุดงาน (รอบเช้าเป็น 0 ชม. เพราะยังไม่มีการหยุดงาน / รอบจบงานคำนวณตามจริง)
     const weather = payload.weather || "☀️ แจ่มใส";
@@ -256,7 +292,9 @@ function doPost(e) {
       photoUrls.length,
       photoUrls.join(", "),
       issues,
-      status
+      status,
+      projectId,
+      projectName
     ]);
 
     // 8. ยิง LINE Bot Flex Message แจ้งเตือน (แยกตามเช้า vs จบงาน)
@@ -271,6 +309,8 @@ function doPost(e) {
         lineName: lineName,
         foremanName: foremanName,
         subName: subName,
+        projectId: projectId,
+        projectName: projectName,
         weather: weather,
         rainDelayHours: rainDelayHours,
         totalWorkforce: totalWorkforce,
@@ -368,7 +408,15 @@ function sendLineShiftFlexNotification(data) {
         paddingAll: "16px",
         spacing: "md",
         contents: [
-          // แผนก & ผู้ส่ง
+          // โครงการ & แผนก & ผู้ส่ง
+          ...(data.projectName && data.projectName !== "-" ? [{
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "โครงการ:", size: "xs", color: "#94a3b8", flex: 2 },
+              { type: "text", text: data.projectName, size: "xs", color: "#a78bfa", weight: "bold", flex: 5, wrap: true }
+            ]
+          }] : []),
           {
             type: "box",
             layout: "horizontal",
@@ -480,35 +528,49 @@ function sendLineShiftFlexNotification(data) {
  */
 function getOrCreateReportsSheet(ss) {
   let sheet = ss.getSheetByName(SHEET_NAME_REPORTS);
+  const defaultHeaders = [
+    "รหัสรายงาน (Report ID)",
+    "วันที่รายงาน (Date)",
+    "รอบกะ (Shift: เช้า/จบงาน)",
+    "เวลาบันทึก (Timestamp)",
+    "LINE UID",
+    "ชื่อ LINE (LINE Name)",
+    "บริษัทผู้รับเหมา",
+    "ชื่อโฟร์แมน",
+    "สภาพอากาศ",
+    "เวลาหยุดงานจากฝน (ชม.)",
+    "โฟร์แมน (คน)",
+    "ช่างฝีมือ (คน)",
+    "แรงงานทั่วไป (คน)",
+    "จป.ความปลอดภัย (คน)",
+    "ยอดคนงานรวม (คน)",
+    "จำนวนงาน (รายการ)",
+    "สรุปรายการงาน / เป้าหมาย",
+    "เครื่องจักรที่ใช้งาน",
+    "จำนวนรูปภาพ",
+    "ลิงก์รูปภาพหน้างาน (Drive)",
+    "ปัญหาและอุปสรรค",
+    "สถานะการอนุมัติ",
+    "รหัสโครงการ (Project ID)",
+    "ชื่อโครงการ (Project Name)"
+  ];
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME_REPORTS);
-    const headers = [
-      "รหัสรายงาน (Report ID)",
-      "วันที่รายงาน (Date)",
-      "รอบกะ (Shift: เช้า/จบงาน)",
-      "เวลาบันทึก (Timestamp)",
-      "LINE UID",
-      "ชื่อ LINE (LINE Name)",
-      "บริษัทผู้รับเหมา",
-      "ชื่อโฟร์แมน",
-      "สภาพอากาศ",
-      "เวลาหยุดงานจากฝน (ชม.)",
-      "โฟร์แมน (คน)",
-      "ช่างฝีมือ (คน)",
-      "แรงงานทั่วไป (คน)",
-      "จป.ความปลอดภัย (คน)",
-      "ยอดคนงานรวม (คน)",
-      "จำนวนงาน (รายการ)",
-      "สรุปรายการงาน / เป้าหมาย",
-      "เครื่องจักรที่ใช้งาน",
-      "จำนวนรูปภาพ",
-      "ลิงก์รูปภาพหน้างาน (Drive)",
-      "ปัญหาและอุปสรรค",
-      "สถานะการอนุมัติ"
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange("A1:V1").setBackground("#0284c7").setFontColor("#ffffff").setFontWeight("bold");
+    sheet.appendRow(defaultHeaders);
+    sheet.getRange("A1:X1").setBackground("#0284c7").setFontColor("#ffffff").setFontWeight("bold");
     sheet.setFrozenRows(1);
+  } else {
+    const data = sheet.getDataRange().getValues();
+    if (data.length > 0) {
+      const headerRow = data[0].map(h => String(h).trim());
+      const hasProj = headerRow.some(h => h.includes("Project") || h.includes("โครงการ"));
+      if (!hasProj) {
+        const lastCol = sheet.getLastColumn();
+        sheet.getRange(1, lastCol + 1).setValue("รหัสโครงการ (Project ID)");
+        sheet.getRange(1, lastCol + 2).setValue("ชื่อโครงการ (Project Name)");
+        sheet.getRange(1, lastCol + 1, 1, 2).setBackground("#0284c7").setFontColor("#ffffff").setFontWeight("bold");
+      }
+    }
   }
   return sheet;
 }
@@ -540,26 +602,112 @@ function getOrCreateTasksSheet(ss) {
 }
 
 /**
+ * ดึง Map ของโครงการ { [projectId]: projectName } จากชีต Projects
+ */
+function getProjectsMap(ss) {
+  const sheet = getOrCreateProjectsSheet(ss);
+  const data = sheet.getDataRange().getValues();
+  const map = {};
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || "").trim();
+    const name = String(data[i][1] || "").trim();
+    if (id) {
+      map[id] = name || id;
+    }
+  }
+  return map;
+}
+
+/**
+ * สร้างหรือดึงชีต Projects สำหรับ Masterlist ข้อมูลโครงการ
+ */
+function getOrCreateProjectsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAME_PROJECTS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_PROJECTS);
+    const headers = [
+      "รหัสโครงการ (Project ID)",
+      "ชื่อโครงการ (Project Name)",
+      "สถานที่ / ขอบเขตงาน (Location)",
+      "ผู้จัดการโครงการ / PM",
+      "สถานะโครงการ (Status)",
+      "วันที่เริ่มโครงการ",
+      "วันที่สร้างรายการ"
+    ];
+    sheet.appendRow(headers);
+    sheet.getRange("A1:G1").setBackground("#0f766e").setFontColor("#ffffff").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    try {
+      sheet.setColumnWidth(1, 160);
+      sheet.setColumnWidth(2, 280);
+      sheet.setColumnWidth(3, 240);
+      sheet.setColumnWidth(4, 180);
+      sheet.setColumnWidth(5, 120);
+      sheet.setColumnWidth(6, 140);
+      sheet.setColumnWidth(7, 160);
+    } catch(e) {}
+
+    // เพิ่มโครงการเริ่มต้นของระบบ
+    const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+    sheet.appendRow([
+      "PRJ-01",
+      "อาคารสำนักงาน 8 ชั้น",
+      "กรุงเทพมหานคร",
+      "วิศวกรโครงการ",
+      "Active",
+      "2026-01-01",
+      timestamp
+    ]);
+  }
+  return sheet;
+}
+
+/**
+ * ตรวจสอบและหา Index ของคอลัมน์ต่างๆ ในชีต Site_Users แบบไดนามิก
+ */
+function getUserColumnIndexes(headerRow) {
+  const headers = headerRow.map(h => String(h || "").trim());
+  let projCol = -1;
+  let compCol = 5; // default 0-indexed column 5 (F)
+  let avatarCol = 6;
+  let roleCol = 3;
+  let dispNameCol = 2;
+  let lineNameCol = 1;
+  let uidCol = 0;
+
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i];
+    if (h.includes("Project") || h.includes("โครงการ")) projCol = i;
+    else if (h.includes("Company") || h.includes("ผู้รับเหมา")) compCol = i;
+    else if (h.includes("Avatar") || h.includes("รูปโปรไฟล์")) avatarCol = i;
+    else if (h.includes("Role") || h.includes("ตำแหน่ง")) roleCol = i;
+    else if (h.includes("Display Name") || h.includes("ชื่อที่แสดง")) dispNameCol = i;
+  }
+  return { uidCol, lineNameCol, dispNameCol, roleCol, compCol, projCol, avatarCol };
+}
+
+/**
  * สร้างหรือดึงชีต Site_Users สำหรับจัดการบัญชีช่าง/โฟร์แมน พร้อมกำหนดสิทธิ์และบทบาท
  */
 function getOrCreateUsersSheet(ss) {
   let sheet = ss.getSheetByName(SHEET_NAME_USERS);
+  const defaultHeaders = [
+    "LINE UID",
+    "ชื่อใน LINE (LINE Name)",
+    "ชื่อที่แสดงในระบบ (Display Name)",
+    "ตำแหน่ง (Role)",
+    "ระดับ (Level/LV)",
+    "บริษัท / ผู้รับเหมา (Company)",
+    "รหัสโครงการ (Project ID)",
+    "รูปโปรไฟล์ (Avatar URL)",
+    "สถานะ (Status)",
+    "ลงทะเบียนเมื่อ (Registered At)",
+    "เข้าใช้งานล่าสุด (Last Active)"
+  ];
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME_USERS);
-    const headers = [
-      "LINE UID",
-      "ชื่อใน LINE (LINE Name)",
-      "ชื่อที่แสดงในระบบ (Display Name)",
-      "ตำแหน่ง (Role)",
-      "ระดับ (Level/LV)",
-      "บริษัท / ผู้รับเหมา (Company)",
-      "รูปโปรไฟล์ (Avatar URL)",
-      "สถานะ (Status)",
-      "ลงทะเบียนเมื่อ (Registered At)",
-      "เข้าใช้งานล่าสุด (Last Active)"
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange("A1:J1").setBackground("#4338ca").setFontColor("#ffffff").setFontWeight("bold");
+    sheet.appendRow(defaultHeaders);
+    sheet.getRange("A1:K1").setBackground("#4338ca").setFontColor("#ffffff").setFontWeight("bold");
     sheet.setFrozenRows(1);
     try {
       sheet.setColumnWidth(1, 260); // LINE UID
@@ -568,8 +716,21 @@ function getOrCreateUsersSheet(ss) {
       sheet.setColumnWidth(4, 150); // Role
       sheet.setColumnWidth(5, 100); // Level
       sheet.setColumnWidth(6, 240); // Company
-      sheet.setColumnWidth(7, 200); // Avatar
+      sheet.setColumnWidth(7, 180); // Project ID
+      sheet.setColumnWidth(8, 200); // Avatar
     } catch(e) {}
+  } else {
+    // ตรวจสอบว่ามีคอลัมน์ Project ID ในชีตเดิมหรือไม่ หากยังไม่มีให้เพิ่มคอลัมน์อัตโนมัติ
+    const data = sheet.getDataRange().getValues();
+    if (data.length > 0) {
+      const headerRow = data[0].map(h => String(h).trim());
+      const hasProj = headerRow.some(h => h.includes("Project") || h.includes("โครงการ"));
+      if (!hasProj) {
+        const lastCol = sheet.getLastColumn();
+        sheet.getRange(1, lastCol + 1).setValue("รหัสโครงการ (Project ID)");
+        sheet.getRange(1, lastCol + 1).setBackground("#4338ca").setFontColor("#ffffff").setFontWeight("bold");
+      }
+    }
   }
   return sheet;
 }
@@ -577,7 +738,7 @@ function getOrCreateUsersSheet(ss) {
 /**
  * บันทึกหรือดึงข้อมูลผู้ใช้จากชีต Site_Users
  * หากเป็นช่างใหม่ จะบันทึกแถวใหม่ทันที
- * หากมีอยู่แล้ว จะอ่านชื่อ/ตำแหน่งที่แอดมินแก้ไขไว้ และอัปเดตเวลาเข้าใช้งานล่าสุด
+ * หากมีอยู่แล้ว จะอ่านชื่อ/ตำแหน่ง/โครงการ ที่แอดมินแก้ไขไว้ และอัปเดตเวลาเข้าใช้งานล่าสุด
  */
 function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   const sheet = getOrCreateUsersSheet(ss);
@@ -585,6 +746,8 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
   const lineName = (lineProfile && lineProfile.displayName) || "-";
   const avatarUrl = (lineProfile && lineProfile.pictureUrl) || "";
+  const projectsMap = getProjectsMap(ss);
+  const colIdx = data.length > 0 ? getUserColumnIndexes(data[0]) : {};
 
   let userRowIndex = -1;
   let existingUser = null;
@@ -592,30 +755,37 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0] || "").trim() === String(userId || "").trim()) {
       userRowIndex = i + 1; // 1-indexed for Sheet
-      const dispNameVal = String(data[i][2] || "").trim();
-      let roleVal = String(data[i][3] || "").trim();
-      const levelVal = String(data[i][4] || "").trim();
-      let compVal = String(data[i][5] || "").trim();
-      const statusVal = String(data[i][7] || "").trim();
+      const row = data[i];
+      const dispNameVal = String(row[colIdx.dispNameCol > -1 ? colIdx.dispNameCol : 2] || "").trim();
+      let roleVal = String(row[colIdx.roleCol > -1 ? colIdx.roleCol : 3] || "").trim();
+      const levelVal = String(row[4] || "").trim();
+      let compVal = String(row[colIdx.compCol > -1 ? colIdx.compCol : 5] || "").trim();
+      let projIdVal = String(colIdx.projCol > -1 ? row[colIdx.projCol] : "-").trim();
+      const statusVal = String(row[7] || "").trim();
 
       // หากคอลัมน์เดิมติดค่าเริ่มต้นตัวอย่างเดิม ให้ล้างเป็น '-'
       if (compVal === "หจก. นครพิงค์โครงสร้าง") {
         compVal = "-";
-        sheet.getRange(userRowIndex, 6).setValue("-");
+        if (colIdx.compCol > -1) sheet.getRange(userRowIndex, colIdx.compCol + 1).setValue("-");
       }
       if (roleVal === "โฟร์แมนหน้างาน" || roleVal === "โฟร์แมน") {
         roleVal = "-";
-        sheet.getRange(userRowIndex, 4).setValue("-");
+        if (colIdx.roleCol > -1) sheet.getRange(userRowIndex, colIdx.roleCol + 1).setValue("-");
       }
+      if (!projIdVal) projIdVal = "-";
+
+      const projNameVal = (projIdVal !== "-" && projectsMap[projIdVal]) ? projectsMap[projIdVal] : (projIdVal !== "-" ? projIdVal : "-");
 
       existingUser = {
-        uid: String(data[i][0]).trim(),
-        lineName: String(data[i][1] || lineName),
+        uid: String(row[0]).trim(),
+        lineName: String(row[1] || lineName),
         displayName: dispNameVal || "-",
         role: roleVal || "-",
         level: levelVal || "-",
         company: compVal || "-",
-        avatar: String(data[i][6] || avatarUrl),
+        projectId: projIdVal,
+        projectName: projNameVal,
+        avatar: String(colIdx.avatarCol > -1 ? row[colIdx.avatarCol] : row[6] || avatarUrl),
         status: statusVal || "-"
       };
       break;
@@ -623,25 +793,24 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
   }
 
   if (userRowIndex > 0 && existingUser) {
-    // ผู้ใช้เดิม: อัปเดตชื่อ LINE, รูป และเวลาล่าสุด (เก็บค่าที่แอดมินแก้ไขไว้ใน Display Name, Role, Level, Company)
+    // ผู้ใช้เดิม: อัปเดตชื่อ LINE, รูป และเวลาล่าสุด
     sheet.getRange(userRowIndex, 2).setValue(lineName);
-    if (avatarUrl) sheet.getRange(userRowIndex, 7).setValue(avatarUrl);
+    if (avatarUrl && colIdx.avatarCol > -1) sheet.getRange(userRowIndex, colIdx.avatarCol + 1).setValue(avatarUrl);
     sheet.getRange(userRowIndex, 10).setValue(timestamp);
     return existingUser;
   } else {
     // ผู้ใช้ใหม่: ลงทะเบียนข้อมูลเป็น "-" ทั้งหมด เพื่อให้แอดมินเข้ามาแก้ไขในชีต
-    const newRow = [
-      userId,
-      lineName,
-      "-", // Display Name เริ่มต้นเป็น -
-      "-", // Role เริ่มต้นเป็น -
-      "-", // Level เริ่มต้นเป็น -
-      "-", // Company เริ่มต้นเป็น -
-      avatarUrl,
-      "-", // Status เริ่มต้นเป็น -
-      timestamp,
-      timestamp
-    ];
+    const newRow = [];
+    const headers = data[0].map(h => String(h || "").trim());
+    headers.forEach(h => {
+      if (h.includes("UID")) newRow.push(userId);
+      else if (h.includes("LINE Name")) newRow.push(lineName);
+      else if (h.includes("Avatar") || h.includes("รูปโปรไฟล์")) newRow.push(avatarUrl);
+      else if (h.includes("ลงทะเบียน")) newRow.push(timestamp);
+      else if (h.includes("ล่าสุด")) newRow.push(timestamp);
+      else newRow.push("-"); // Display Name, Role, Level, Company, Project ID, Status เริ่มต้นเป็น - ทั้งหมด
+    });
+
     sheet.appendRow(newRow);
     return {
       uid: userId,
@@ -650,6 +819,8 @@ function recordOrUpdateSiteUser(ss, userId, lineProfile) {
       role: "-",
       level: "-",
       company: "-",
+      projectId: "-",
+      projectName: "-",
       avatar: avatarUrl,
       status: "-"
     };
@@ -751,7 +922,7 @@ function handleLineWebhook(payload) {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const siteUser = recordOrUpdateSiteUser(ss, userId, userProfile);
 
-      // 3. สร้างลิงก์เข้าสู่ระบบพร้อมแนบ UID, ชื่อแสดง, ตำแหน่ง, เลเวล, บริษัท
+      // 3. สร้างลิงก์เข้าสู่ระบบพร้อมแนบ UID, ชื่อแสดง, ตำแหน่ง, เลเวล, บริษัท, รหัสและชื่อโครงการ
       let baseUrl = webAppFrontendUrl.trim();
       if (!baseUrl.endsWith('/') && !baseUrl.includes('?') && !baseUrl.includes('#')) {
         baseUrl += '/';
@@ -763,9 +934,11 @@ function handleLineWebhook(payload) {
         "&role=" + encodeURIComponent(siteUser.role) +
         "&lv=" + encodeURIComponent(siteUser.level) +
         "&company=" + encodeURIComponent(siteUser.company) +
+        "&prj=" + encodeURIComponent(siteUser.projectId || "-") +
+        "&prjName=" + encodeURIComponent(siteUser.projectName || "-") +
         (siteUser.avatar ? "&avatar=" + encodeURIComponent(siteUser.avatar) : "");
 
-      // 4. ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ พร้อมสรุปข้อมูลตำแหน่ง
+      // 4. ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ พร้อมสรุปข้อมูลตำแหน่งและโครงการ
       replyLineWebAppCard(replyToken, token, {
         userId: siteUser.uid,
         userName: siteUser.displayName,
@@ -773,6 +946,8 @@ function handleLineWebhook(payload) {
         role: siteUser.role,
         level: siteUser.level,
         company: siteUser.company,
+        projectId: siteUser.projectId || "-",
+        projectName: siteUser.projectName || "-",
         pictureUrl: siteUser.avatar,
         webUrl: directWebUrl,
         userMsg: userMsg
@@ -915,6 +1090,14 @@ function replyLineWebAppCard(replyToken, token, data) {
                 type: "box",
                 layout: "horizontal",
                 contents: [
+                  { type: "text", text: "🏗️ โครงการ:", size: "xxs", color: "#94a3b8", flex: 3 },
+                  { type: "text", text: (data.projectName && data.projectName !== "-" ? data.projectName : (data.projectId && data.projectId !== "-" ? data.projectId : "-")), size: "xxs", color: "#a78bfa", weight: "bold", flex: 6, wrap: true }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                contents: [
                   { type: "text", text: "🔑 LINE UID:", size: "xxs", color: "#94a3b8", flex: 3 },
                   { type: "text", text: data.userId, size: "xxs", color: "#86efac", flex: 6, wrap: true }
                 ]
@@ -923,7 +1106,7 @@ function replyLineWebAppCard(replyToken, token, data) {
           },
           {
             type: "text",
-            text: "💡 ผู้ใช้ใหม่จะถูกลงทะเบียนเป็น (-) ทั้งหมด แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อระบุชื่อ, ตำแหน่ง หรือบริษัทได้ตลอดเวลา",
+            text: "💡 ผู้ใช้ใหม่จะถูกลงทะเบียนเป็น (-) ทั้งหมด แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อระบุชื่อ, ตำแหน่ง, บริษัท หรือโครงการได้ตลอดเวลา",
             size: "xxs",
             color: "#cbd5e1",
             wrap: true

@@ -172,5 +172,27 @@ export const gasService = {
       console.warn('fetchUserProfile error:', err);
       return null;
     }
+  },
+
+  /**
+   * ดึงรายการโครงการจากชีต Projects ใน Google Sheets
+   */
+  async fetchProjects() {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return null;
+
+    try {
+      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_projects&_t=' + Date.now();
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.projects)) {
+        return data.projects;
+      }
+      return null;
+    } catch (err) {
+      console.warn('fetchProjects error:', err);
+      return null;
+    }
   }
 };

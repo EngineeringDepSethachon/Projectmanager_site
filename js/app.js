@@ -15,6 +15,9 @@ try {
   if (localStorage.getItem('site_line_role') === 'โฟร์แมนหน้างาน' || localStorage.getItem('site_line_role') === 'โฟร์แมน') {
     localStorage.setItem('site_line_role', '-');
   }
+  if (localStorage.getItem('site_project_name') === 'อาคารสำนักงาน 8 ชั้น') {
+    localStorage.setItem('site_project_name', '-');
+  }
 } catch (e) {}
 
 // ==========================================
@@ -22,6 +25,10 @@ try {
 // ==========================================
 const state = {
   activeShift: 'morning', // 'morning' | 'evening'
+  project: {
+    id: localStorage.getItem('site_project_id') || '-',
+    name: (localStorage.getItem('site_project_name') && localStorage.getItem('site_project_name') !== 'อาคารสำนักงาน 8 ชั้น') ? localStorage.getItem('site_project_name') : '-'
+  },
   lineUser: {
     uid: localStorage.getItem('site_line_uid') || '-',
     name: localStorage.getItem('site_line_name') || '-',
@@ -90,8 +97,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   parseUrlParamsUser();
   initDateDisplay();
   loadSavedMorningPlan();
+  renderProjectInfo();
   await initLiff();
   await syncUserProfileFromGAS();
+  renderProjectInfo();
   renderLineProfile();
   renderGasStatus();
   renderShiftUI();
@@ -117,6 +126,8 @@ function parseUrlParamsUser() {
     const lv = urlParams.get('lv');
     const company = urlParams.get('company');
     const avatar = urlParams.get('avatar');
+    const prj = urlParams.get('prj') || urlParams.get('projectId');
+    const prjName = urlParams.get('prjName') || urlParams.get('projectName');
 
     if (uid && (uid.startsWith('U') || uid.startsWith('u'))) {
       state.lineUser.uid = uid;
@@ -150,6 +161,16 @@ function parseUrlParamsUser() {
         state.subcontractor.name = '-';
         localStorage.setItem('site_sub_name', '-');
       }
+      if (prj) {
+        state.project.id = decodeURIComponent(prj);
+        localStorage.setItem('site_project_id', state.project.id);
+      }
+      if (prjName) {
+        const decodedPrjName = decodeURIComponent(prjName);
+        state.project.name = (decodedPrjName !== 'อาคารสำนักงาน 8 ชั้น') ? decodedPrjName : '-';
+        localStorage.setItem('site_project_name', state.project.name);
+      }
+      renderProjectInfo();
 
       setTimeout(() => {
         const dispName = state.lineUser.name !== '-' ? state.lineUser.name : 'ผู้ใช้ใหม่';
@@ -199,10 +220,36 @@ async function syncUserProfileFromGAS() {
         state.lineUser.avatar = user.avatar;
         localStorage.setItem('site_line_avatar', user.avatar);
       }
+
+      if (user.projectId) {
+        state.project.id = user.projectId;
+        localStorage.setItem('site_project_id', user.projectId);
+      }
+
+      if (user.projectName) {
+        const syncPrjName = user.projectName || '-';
+        state.project.name = (syncPrjName !== 'อาคารสำนักงาน 8 ชั้น') ? syncPrjName : '-';
+        localStorage.setItem('site_project_name', state.project.name);
+      }
+
+      renderProjectInfo();
       renderLineProfile();
     }
   } catch (err) {
     console.warn('syncUserProfileFromGAS error:', err);
+  }
+}
+
+// ==========================================
+// Render Project Info (แสดงชื่อโครงการแบบไดนามิก)
+// ==========================================
+function renderProjectInfo() {
+  const prjElem = document.getElementById('display-project-name');
+  if (prjElem) {
+    const disp = (state.project.name && state.project.name !== '-')
+      ? state.project.name
+      : ((state.project.id && state.project.id !== '-') ? state.project.id : '-');
+    prjElem.textContent = disp;
   }
 }
 
@@ -1058,6 +1105,8 @@ async function submitReport() {
     shift_label: shiftLabel,
     report_date: state.reportDate,
     timestamp: now.toISOString().replace('T', ' ').slice(0, 19),
+    project_id: state.project.id,
+    project_name: state.project.name,
     line_uid: state.lineUser.uid,
     line_name: state.lineUser.name,
     line_avatar: state.lineUser.avatar,
