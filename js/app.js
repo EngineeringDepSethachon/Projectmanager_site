@@ -748,14 +748,36 @@ function renderDynamicTasks() {
         </div>
         <div>
           <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
-            ${isMorning ? 'ความคืบหน้าที่คาดหมาย:' : 'ความคืบหน้าสะสมจริง:'}
+            ${isMorning ? 'ความคืบหน้าที่คาดหมาย (%):' : 'ความคืบหน้าสะสมจริง (%):'}
           </label>
-          <div class="progress-pills-row">
-            ${[25, 50, 75, 100].map(pct => `
-              <button type="button" class="pill-pct ${isMorning ? 'morning' : ''} ${t.progress === pct ? 'active' : ''}" onclick="window.updateTaskProgress('${t.id}', ${pct})">
-                ${pct}%
-              </button>
-            `).join('')}
+          <div class="progress-control-block">
+            <div class="progress-input-wrapper">
+              <input 
+                type="number" 
+                class="form-input progress-num-input" 
+                min="0" 
+                max="100" 
+                inputmode="numeric"
+                value="${t.progress !== undefined && t.progress !== null ? t.progress : 0}" 
+                placeholder="0" 
+                onfocus="this.select()"
+                oninput="window.updateTaskField('${t.id}', 'progress', this.value, this)"
+                onblur="if(this.value===''){this.value=0; window.updateTaskField('${t.id}', 'progress', 0, this);}"
+              >
+              <span class="progress-unit-badge">%</span>
+            </div>
+            <div class="progress-pills-row">
+              ${[25, 50, 75, 100].map(pct => `
+                <button 
+                  type="button" 
+                  data-pct="${pct}" 
+                  class="pill-pct ${isMorning ? 'morning' : ''} ${Number(t.progress) === pct ? 'active' : ''}" 
+                  onclick="window.updateTaskProgress('${t.id}', ${pct})"
+                >
+                  ${pct}%
+                </button>
+              `).join('')}
+            </div>
           </div>
         </div>
       </div>
@@ -918,10 +940,10 @@ function bindEventHandlers() {
 
       targetList.push({
         id: newId,
-        name: isMorning ? 'งานที่คาดการณ์เพิ่มเติม' : 'งานนอกแผนที่ทำเพิ่ม',
+        name: '',
         description: '',
         quantity: '',
-        progress: isMorning ? 25 : 50,
+        progress: 0,
         isPlanned: isMorning
       });
 
@@ -1010,7 +1032,7 @@ function switchShift(shift) {
         id: 'ACT-' + t.id,
         planned_name: t.name,
         planned_quantity: t.quantity,
-        progress: 75, // ค่าตั้งต้นสำหรับประเมินผลงานจริง
+        progress: t.progress !== undefined ? t.progress : 0,
         isPlanned: false
       }));
     }
@@ -1025,11 +1047,37 @@ function switchShift(shift) {
 // ==========================================
 // Dynamic Tasks Global Functions
 // ==========================================
-window.updateTaskField = function(id, field, value) {
+window.updateTaskField = function(id, field, value, inputEl) {
   const list = getActiveTasksList();
   const task = list.find(t => t.id === id);
   if (task) {
-    task[field] = value;
+    if (field === 'progress') {
+      let num = value === '' ? '' : parseInt(value, 10);
+      if (typeof num === 'number') {
+        if (isNaN(num)) num = 0;
+        if (num < 0) num = 0;
+        if (num > 100) {
+          num = 100;
+          if (inputEl) inputEl.value = 100;
+        }
+      }
+      task.progress = num === '' ? 0 : num;
+
+      // ปรับสถานะปุ่ม preset (25%, 50%, 75%, 100%) ในการ์ดโดยตรง ไม่ re-render ให้เสีย focus
+      const card = document.querySelector(`[data-task-id="${id}"]`);
+      if (card) {
+        card.querySelectorAll('.pill-pct').forEach(btn => {
+          const btnPct = parseInt(btn.dataset.pct, 10);
+          if (num !== '' && btnPct === num) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+      }
+    } else {
+      task[field] = value;
+    }
   }
 };
 
@@ -1037,8 +1085,23 @@ window.updateTaskProgress = function(id, progress) {
   const list = getActiveTasksList();
   const task = list.find(t => t.id === id);
   if (task) {
-    task.progress = progress;
-    renderDynamicTasks();
+    const val = parseInt(progress, 10) || 0;
+    task.progress = val;
+    const card = document.querySelector(`[data-task-id="${id}"]`);
+    if (card) {
+      const input = card.querySelector('.progress-num-input');
+      if (input) input.value = val;
+      card.querySelectorAll('.pill-pct').forEach(btn => {
+        const btnPct = parseInt(btn.dataset.pct, 10);
+        if (btnPct === val) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    } else {
+      renderDynamicTasks();
+    }
   }
 };
 
