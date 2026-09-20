@@ -36,7 +36,7 @@
       </div>
       
       <div class="header-subinfo">
-        <div class="project-pill" id="project-pill">🏢 โครงการ: <strong id="display-project-name">-</strong></div>
+        <div class="project-pill" id="project-pill" title="คลิกเพื่อเลือกหรือเปลี่ยนโครงการก่อสร้าง">🏢 โครงการ: <strong id="display-project-name">-</strong> <span class="pill-arrow">▾</span></div>
       </div>
 
       <!-- Horizontal Calendar Date Strip (Inspired by reference design) -->
@@ -85,6 +85,7 @@
               <div class="line-name-row">
                 <strong id="line-display-name">-</strong>
                 <span id="line-mode-badge" class="line-badge">🟢 LINE UID</span>
+                <button type="button" class="btn-sync-inline" id="btn-sync-profile" title="กดเพื่อซิงก์ข้อมูลล่าสุดจาก Google Sheets">🔄 ซิงก์ชีต</button>
               </div>
               <div class="line-role-row" id="line-role-row">
                 <span class="user-role-badge" id="line-role-text">-</span>
@@ -329,9 +330,28 @@
 
   </div>
 
-
-
-
+  <!-- Project Selector Modal (เลือกโครงการ) -->
+  <div class="modal-backdrop" id="modal-project-selector">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">🏢</span>
+          <h3>เลือกโครงการก่อสร้าง</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-project-modal" title="ปิด">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+          เลือกโครงการที่ต้องการบันทึกรายงานหน้างาน:
+        </p>
+        <div id="projects-list-container" class="projects-list-container">
+          <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.85rem;">
+            ⏳ กำลังโหลดรายชื่อโครงการจาก Google Sheets...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- JavaScript Application Modules -->
   <script type="module" src="js/gas_service.js"></script>

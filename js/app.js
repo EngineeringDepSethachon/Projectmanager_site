@@ -15,9 +15,6 @@ try {
   if (localStorage.getItem('site_line_role') === 'โฟร์แมนหน้างาน' || localStorage.getItem('site_line_role') === 'โฟร์แมน') {
     localStorage.setItem('site_line_role', '-');
   }
-  if (localStorage.getItem('site_project_name') === 'อาคารสำนักงาน 8 ชั้น') {
-    localStorage.setItem('site_project_name', '-');
-  }
 } catch (e) {}
 
 // ==========================================
@@ -27,8 +24,9 @@ const state = {
   activeShift: 'morning', // 'morning' | 'evening'
   project: {
     id: localStorage.getItem('site_project_id') || '-',
-    name: (localStorage.getItem('site_project_name') && localStorage.getItem('site_project_name') !== 'อาคารสำนักงาน 8 ชั้น') ? localStorage.getItem('site_project_name') : '-'
+    name: localStorage.getItem('site_project_name') || '-'
   },
+  availableProjects: [],
   lineUser: {
     uid: localStorage.getItem('site_line_uid') || '-',
     name: localStorage.getItem('site_line_name') || '-',
@@ -100,6 +98,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderProjectInfo();
   await initLiff();
   await syncUserProfileFromGAS();
+  await loadProjectsList();
   renderProjectInfo();
   renderLineProfile();
   renderGasStatus();
@@ -111,6 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderMachinery();
   renderIssues();
   bindEventHandlers();
+  setupModals();
 });
 
 // ==========================================
@@ -166,8 +166,7 @@ function parseUrlParamsUser() {
         localStorage.setItem('site_project_id', state.project.id);
       }
       if (prjName) {
-        const decodedPrjName = decodeURIComponent(prjName);
-        state.project.name = (decodedPrjName !== 'อาคารสำนักงาน 8 ชั้น') ? decodedPrjName : '-';
+        state.project.name = decodeURIComponent(prjName);
         localStorage.setItem('site_project_name', state.project.name);
       }
       renderProjectInfo();
@@ -227,8 +226,7 @@ async function syncUserProfileFromGAS() {
       }
 
       if (user.projectName) {
-        const syncPrjName = user.projectName || '-';
-        state.project.name = (syncPrjName !== 'อาคารสำนักงาน 8 ชั้น') ? syncPrjName : '-';
+        state.project.name = user.projectName;
         localStorage.setItem('site_project_name', state.project.name);
       }
 
@@ -251,6 +249,103 @@ function renderProjectInfo() {
       : ((state.project.id && state.project.id !== '-') ? state.project.id : '-');
     prjElem.textContent = disp;
   }
+}
+
+// ==========================================
+// Projects Dynamic Loader (ดึงจากชีต Projects ใน GAS)
+// ==========================================
+async function loadProjectsList() {
+  let cached = [];
+  try {
+    const cachedStr = localStorage.getItem('site_cached_projects');
+    if (cachedStr) cached = JSON.parse(cachedStr);
+  } catch(e) {}
+
+  if (Array.isArray(cached) && cached.length > 0) {
+    state.availableProjects = cached;
+    renderProjectSelector(cached);
+  }
+
+  try {
+    const liveProjects = await gasService.fetchProjects();
+    if (liveProjects && Array.isArray(liveProjects) && liveProjects.length > 0) {
+      state.availableProjects = liveProjects;
+      localStorage.setItem('site_cached_projects', JSON.stringify(liveProjects));
+      renderProjectSelector(liveProjects);
+
+      // ถ้าผู้ใช้มีรหัสโครงการ แต่ชื่อยังเป็น '-' หรือว่าง ให้ค้นหาชื่อจากรายชื่อโครงการ
+      if (state.project.id && state.project.id !== '-' && (!state.project.name || state.project.name === '-')) {
+        const match = liveProjects.find(p => p.id === state.project.id);
+        if (match && match.name) {
+          state.project.name = match.name;
+          localStorage.setItem('site_project_name', match.name);
+          renderProjectInfo();
+        }
+      } else if ((!state.project.id || state.project.id === '-') && liveProjects.length === 1) {
+        // หากในระบบมีโครงการเดียว ให้เลือกโครงการนั้นเป็นค่าเริ่มต้น
+        state.project.id = liveProjects[0].id;
+        state.project.name = liveProjects[0].name;
+        localStorage.setItem('site_project_id', state.project.id);
+        localStorage.setItem('site_project_name', state.project.name);
+        renderProjectInfo();
+      }
+    }
+  } catch (err) {
+    console.warn('loadProjectsList error:', err);
+  }
+}
+
+function renderProjectSelector(projects) {
+  const container = document.getElementById('projects-list-container');
+  if (!container) return;
+
+  if (!projects || projects.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.85rem;">
+        ยังไม่พบรายการโครงการในชีต Projects
+      </div>
+    `;
+    return;
+  }
+
+  const currentId = state.project.id;
+  let html = '';
+
+  projects.forEach(p => {
+    const isSelected = p.id === currentId;
+    html += `
+      <div class="project-card-item ${isSelected ? 'selected' : ''}" data-project-id="${escapeHtml(p.id)}" data-project-name="${escapeHtml(p.name)}">
+        <div class="project-card-top">
+          <div class="project-card-title">${escapeHtml(p.name)}</div>
+          <span class="project-card-badge">${escapeHtml(p.id)}</span>
+        </div>
+        <div class="project-card-meta">
+          ${p.location ? `<span>📍 ${escapeHtml(p.location)}</span>` : ''}
+          ${p.pm ? `<span>👤 PM: ${escapeHtml(p.pm)}</span>` : ''}
+          ${isSelected ? '<span class="project-card-check">✓ เลือกอยู่</span>' : ''}
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  // Bind click on items
+  container.querySelectorAll('.project-card-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const pid = el.getAttribute('data-project-id');
+      const pname = el.getAttribute('data-project-name');
+      state.project.id = pid;
+      state.project.name = pname;
+      localStorage.setItem('site_project_id', pid);
+      localStorage.setItem('site_project_name', pname);
+      renderProjectInfo();
+      renderProjectSelector(projects);
+      const modal = document.getElementById('modal-project-selector');
+      if (modal) modal.classList.remove('active');
+      showToast(`🏢 สลับโครงการเป็น: ${pname}`, 'success');
+    });
+  });
 }
 
 // ==========================================
@@ -1226,7 +1321,49 @@ function setupModals() {
     });
   }
 
+  // Project Selector Modal (เลือกโครงการ)
+  const modalProject = document.getElementById('modal-project-selector');
+  const btnOpenProject = document.getElementById('project-pill');
+  const btnCloseProject = document.getElementById('btn-close-project-modal');
 
+  if (btnOpenProject && modalProject) {
+    btnOpenProject.addEventListener('click', () => {
+      modalProject.classList.add('active');
+      if (state.availableProjects && state.availableProjects.length > 0) {
+        renderProjectSelector(state.availableProjects);
+      } else {
+        loadProjectsList();
+      }
+    });
+  }
+
+  const closeProjectModal = () => modalProject?.classList.remove('active');
+  if (btnCloseProject) btnCloseProject.addEventListener('click', closeProjectModal);
+  if (modalProject) {
+    modalProject.addEventListener('click', (e) => {
+      if (e.target === modalProject) closeProjectModal();
+    });
+  }
+
+  // Inline Sync Profile Button
+  const btnSync = document.getElementById('btn-sync-profile');
+  if (btnSync) {
+    btnSync.addEventListener('click', async () => {
+      btnSync.classList.add('spinning');
+      btnSync.innerText = '⏳ ซิงก์...';
+      try {
+        await syncUserProfileFromGAS();
+        await loadProjectsList();
+        await loadSubcontractorsList();
+        showToast('🔄 ซิงก์ข้อมูลจาก Google Sheets สำเร็จ!', 'success');
+      } catch (e) {
+        showToast('⚠️ ไม่สามารถซิงก์ได้ในขณะนี้', 'info');
+      } finally {
+        btnSync.classList.remove('spinning');
+        btnSync.innerText = '🔄 ซิงก์ชีต';
+      }
+    });
+  }
 }
 
 // ==========================================

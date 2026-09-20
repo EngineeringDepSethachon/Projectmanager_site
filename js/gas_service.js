@@ -194,5 +194,23 @@ export const gasService = {
       console.warn('fetchProjects error:', err);
       return null;
     }
+  },
+
+  /**
+   * สั่งซิงก์โครงสร้างชีตและหัวตารางทั้งหมดใน Google Sheets ผ่าน Web App API
+   */
+  async triggerInitSheets() {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return null;
+
+    try {
+      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=init_sheets&_t=' + Date.now();
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err) {
+      console.warn('triggerInitSheets error:', err);
+      return null;
+    }
   }
 };

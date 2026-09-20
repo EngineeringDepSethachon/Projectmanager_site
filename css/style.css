@@ -167,13 +167,13 @@ body {
 }
 
 .project-pill {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-main);
   background: var(--bg-card-subtle);
   border: 1.5px solid var(--border-dark);
   border-radius: var(--radius-full);
-  padding: 0.25rem 0.75rem;
+  padding: 0.3rem 0.8rem;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -181,6 +181,146 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.project-pill:hover {
+  background: #ffffff;
+  border-color: #0f766e;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(15, 118, 110, 0.15);
+}
+
+.project-pill:active {
+  transform: translateY(0);
+}
+
+.pill-arrow {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  margin-left: 0.15rem;
+}
+
+.project-pill:hover .pill-arrow {
+  color: #0f766e;
+  transform: translateY(1px);
+}
+
+/* Inline Sync Button */
+.btn-sync-inline {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius-full);
+  padding: 0.15rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+
+.btn-sync-inline:hover {
+  background: #ffffff;
+  color: #0f766e;
+  border-color: #0f766e;
+  transform: translateY(-1px);
+}
+
+.btn-sync-inline:active {
+  transform: translateY(0);
+}
+
+.btn-sync-inline.spinning {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* Project Selector Modal Cards */
+.projects-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.project-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.8rem 1rem;
+  border: 1.5px solid var(--border-dark);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+
+.project-card-item:hover {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-neo-sm);
+}
+
+.project-card-item.selected {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.2);
+}
+
+.project-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.project-card-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-heading);
+}
+
+.project-card-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: #0f766e;
+  color: #ffffff;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.project-card-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.project-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.project-card-check {
+  margin-left: auto;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f766e;
 }
 
 /* Horizontal Calendar Date Strip (Inspired by reference design) */
