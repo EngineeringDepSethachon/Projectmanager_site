@@ -92,9 +92,183 @@ body {
   flex-direction: column;
   position: relative;
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.08);
-  padding-bottom: 95px; /* Space for sticky bottom action button */
+  padding-bottom: 95px;
   border-left: 1.5px solid var(--border-subtle);
   border-right: 1.5px solid var(--border-subtle);
+}
+
+/* ==========================================================================
+   App Container & Frame Layout (used by foreman.html, weekly-plan.html, pm-center.html)
+   ========================================================================== */
+.app-container {
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.mobile-frame {
+  max-width: 500px;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg-page);
+  position: relative;
+  padding-bottom: 90px; /* space for bottom action bar */
+}
+
+.app-main {
+  padding: 0 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+/* Brand group (logo + title block inside header) */
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  font-size: 1.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.brand-title {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: var(--text-heading);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.brand-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  line-height: 1.2;
+  margin-top: 1px;
+  white-space: nowrap;
+}
+
+/* Meta strip: project pill + date pill in one row below header-top */
+.meta-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Date pill (non-clickable, just shows selected date) */
+.date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-card-subtle);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 0.28rem 0.7rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.date-pill .icon,
+.project-pill .icon {
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+/* Horizontal 7-day date strip container */
+.date-strip-container {
+  display: flex;
+  gap: 0.35rem;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+  cursor: pointer;
+}
+
+.date-strip-container::-webkit-scrollbar {
+  display: none;
+}
+
+.date-strip-container .date-item {
+  flex: 1 0 auto;
+  min-width: 40px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* Fixed bottom submit bar for foreman */
+.bottom-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 500px;
+  padding: 0.75rem 1rem;
+  background: #ffffff;
+  border-top: 2px solid var(--border-dark);
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+}
+
+.btn-submit-report {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 800;
+  border: 2px solid var(--border-dark);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: -0.01em;
+  box-shadow: var(--shadow-neo);
+}
+
+.btn-submit-report.morning {
+  background: var(--accent-yellow);
+  color: var(--text-heading);
+}
+
+.btn-submit-report.morning:hover {
+  background: #f5bc20;
+  transform: translateY(-1px);
+  box-shadow: 2px 5px 0px var(--border-dark);
+}
+
+.btn-submit-report.evening {
+  background: var(--accent-mint);
+  color: #ffffff;
+}
+
+.btn-submit-report.evening:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+  box-shadow: 2px 5px 0px var(--border-dark);
+}
+
+.btn-submit-report:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-neo-sm);
 }
 
 /* ==========================================================================
