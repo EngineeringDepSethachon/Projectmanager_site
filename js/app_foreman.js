@@ -45,6 +45,7 @@ const state = {
   existingMorningReport: null,
   existingEveningReport: null,
   photos: [],
+  eveningPhotos: [],
   machinery: [],
   availableMachinery: (() => {
     try {
@@ -372,14 +373,16 @@ function renderDynamicTasks() {
       `;
     }
 
-    // ============ EVENING COMPARISON CARD ============
-    const planPct = t.planned_progress !== undefined ? t.planned_progress : 0;
+    // ============ EVENING COMPARISON CARD (Forecast vs Actual) ============
+    const planPct = t.planned_progress !== undefined ? Number(t.planned_progress) : 0;
     const planQty = t.planned_quantity || t.quantity || '';
-    const actualPct = t.progress !== undefined ? t.progress : 0;
+    const actualPct = t.progress !== undefined ? Number(t.progress) : 0;
+    const actualQty = (t.quantity && t.quantity !== '-') ? t.quantity : (planQty !== '-' ? planQty : '');
     const diff = actualPct - planPct;
-    const diffColor = diff >= 0 ? '#059669' : '#dc2626';
-    const diffSign = diff >= 0 ? '+' : '';
-    const statusIcon = actualPct >= 100 ? '✅' : actualPct >= planPct ? '🟢' : actualPct >= planPct * 0.8 ? '🟡' : '🔴';
+    const diffColor = diff > 0 ? '#059669' : (diff === 0 ? '#047857' : '#dc2626');
+    const diffBg = diff > 0 ? '#dcfce7' : (diff === 0 ? '#ecfdf5' : '#fee2e2');
+    const diffBadge = diff > 0 ? `📈 +${diff}% เกินเป้า` : (diff === 0 ? `🎯 ตรงเป้าหมาย` : `⚠️ ${diff}% ช้ากว่าเป้า`);
+    const statusIcon = actualPct >= 100 ? '✅' : actualPct >= planPct && planPct > 0 ? '🟢' : actualPct >= planPct * 0.8 ? '🟡' : '🔴';
 
     return `
       <div class="dynamic-task-card evening-compare-card" data-task-id="${t.id}">
@@ -387,7 +390,7 @@ function renderDynamicTasks() {
         <div class="dynamic-task-top">
           <div class="task-tag-group">
             <span class="task-index-badge">งานที่ ${idx + 1}</span>
-            <span class="shift-phase-badge actual">${statusIcon} ยืนยันผลงาน</span>
+            <span class="shift-phase-badge actual">${statusIcon} ยืนยันผลงานปิดงาน</span>
             ${t.from_plan ? `
               <span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">🎯 ตามแผน</span>
             ` : `
@@ -397,47 +400,57 @@ function renderDynamicTasks() {
           ${!t.from_plan ? `<button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">🗑️ ลบ</button>` : ''}
         </div>
 
-        <!-- Task Name -->
-        <div style="font-size: 0.9rem; font-weight: 800; color: var(--text-heading); margin-bottom: 0.5rem;">
-          ${escapeHtml(t.name)}
-          ${t.workArea ? `<span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:6px;">📍 ${escapeHtml(t.workArea)}</span>` : ''}
+        <!-- Task Name & Work Area -->
+        <div style="margin-bottom: 0.55rem;">
+          <div style="font-size: 0.92rem; font-weight: 800; color: var(--text-heading); line-height: 1.3;">
+            ${escapeHtml(t.name)}
+          </div>
+          ${t.workArea ? `<div style="font-size:0.74rem; color:var(--text-muted); margin-top:2px;">📍 โซนทำงาน: <strong>${escapeHtml(t.workArea)}</strong></div>` : ''}
+          ${t.description ? `<div style="font-size:0.72rem; color:#4b5563; background:#f8fafc; padding:3px 6px; border-radius:4px; margin-top:4px; border:1px solid #e2e8f0;">📝 ${escapeHtml(t.description)}</div>` : ''}
         </div>
 
-        <!-- Comparison Row: เช้า vs เย็น -->
+        <!-- Comparison Row: เช้า (คาดการณ์) vs เย็น (ผลงานจริง) -->
         <div class="evening-compare-grid">
-          <!-- เช้า (คาดการณ์) -->
+          <!-- เช้า (คาดการณ์ / Forecast) -->
           <div class="compare-col morning-col">
             <div class="compare-col-label">🌅 เช้า (คาดการณ์)</div>
-            <div class="compare-qty-val">${escapeHtml(planQty) || '<span style="color:#9ca3af">-</span>'}</div>
-            <div class="compare-pct-big morning-pct">${planPct}<span style="font-size:0.7rem">%</span></div>
+            <div class="compare-qty-val">
+              <input type="text" class="form-input compare-qty-input" value="${escapeHtml(planQty)}" placeholder="เป้าหมายเช้า" oninput="window.updateEveningPlanField('${t.id}', 'planned_quantity', this.value)" style="font-size:0.75rem; margin-bottom:4px; text-align:center;">
+            </div>
+            <div class="compare-pct-big morning-pct">
+              <input type="number" min="0" max="100" class="plan-pct-inline-input" value="${planPct}" oninput="window.updateEveningPlanPct('${t.id}', this.value)" title="แตะเพื่อแก้ไข % เป้าหมายเช้าหากต้องการ">
+              <span style="font-size:0.7rem; font-weight:700;">%</span>
+            </div>
             <div class="compare-progress-bar">
-              <div class="compare-bar-fill morning-fill" style="width: ${Math.min(planPct,100)}%"></div>
+              <div class="compare-bar-fill morning-fill" id="compare-plan-bar-${t.id}" style="width: ${Math.min(planPct, 100)}%"></div>
             </div>
           </div>
 
           <!-- Arrow -->
           <div class="compare-arrow">→</div>
 
-          <!-- เย็น (ยืนยันจริง) -->
+          <!-- เย็น (ผลงานจริง / Actual) -->
           <div class="compare-col evening-col">
-            <div class="compare-col-label">🌆 เย็น (ยืนยัน)</div>
+            <div class="compare-col-label">🌆 ปิดงาน (ผลจริง)</div>
             <div class="compare-qty-val">
-              <input type="text" class="form-input compare-qty-input" value="${escapeHtml(String(actualPct !== planPct ? t.quantity || planQty : planQty))}" placeholder="ปริมาณจริง" oninput="window.updateTaskField('${t.id}', 'quantity', this.value)" style="font-size:0.78rem; margin-bottom:4px;">
+              <input type="text" class="form-input compare-qty-input" value="${escapeHtml(String(actualQty))}" placeholder="ปริมาณจริงที่ได้" oninput="window.updateTaskField('${t.id}', 'quantity', this.value)" style="font-size:0.75rem; margin-bottom:4px; text-align:center;">
             </div>
             <div class="compare-pct-big evening-pct" id="compare-pct-${t.id}">${actualPct}<span style="font-size:0.7rem">%</span></div>
             <div class="compare-progress-bar">
-              <div class="compare-bar-fill evening-fill" id="compare-bar-${t.id}" style="width: ${Math.min(actualPct,100)}%"></div>
+              <div class="compare-bar-fill evening-fill" id="compare-bar-${t.id}" style="width: ${Math.min(actualPct, 100)}%"></div>
             </div>
             <!-- Diff badge -->
-            <div style="font-size:0.72rem; font-weight:700; color:${diffColor}; margin-top:4px; text-align:center;">
-              ${diff !== 0 ? `${diffSign}${diff}% จากเป้า` : '= ตรงเป้าหมาย'}
+            <div class="diff-badge-status" id="compare-diff-${t.id}" style="color:${diffColor}; background:${diffBg};">
+              ${diffBadge}
             </div>
           </div>
         </div>
 
-        <!-- % Pills ปรับค่าจริง -->
-        <div style="margin-top:0.5rem;">
-          <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">ยืนยัน % ผลงานจริงสะสม:</label>
+        <!-- Controls: ยืนยัน % ผลงานจริง -->
+        <div style="margin-top:0.6rem; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; padding:6px 8px;">
+          <label style="font-size:0.72rem; font-weight:700; color:var(--text-heading); display:block; margin-bottom:4px;">
+            ✏️ ยืนยัน % ผลงานจริงสะสมตอนปิดงาน:
+          </label>
           <div class="progress-control-block">
             <div class="progress-input-wrapper">
               <input type="number" class="form-input progress-num-input" min="0" max="100" inputmode="numeric" value="${actualPct}" placeholder="0" onfocus="this.select()" oninput="window.updateEveningCompare('${t.id}', this.value, this)">
@@ -524,7 +537,7 @@ window.updateEveningCompare = function(id, value, inputEl) {
   if (num > 100) { num = 100; if (inputEl) inputEl.value = 100; }
   task.progress = num;
 
-  // อัปเดต UI ของ card โดยตรง (ไม่ re-render ทั้งหมด)
+  // อัปเดต UI ของ card โดยตรง (ไม่ re-render ทั้งหมดเพื่อความลื่นไหล)
   const card = document.querySelector(`[data-task-id="${id}"]`);
   if (card) {
     // pill active state
@@ -542,17 +555,66 @@ window.updateEveningCompare = function(id, value, inputEl) {
     // pct display
     const pctEl = card.querySelector(`#compare-pct-${id}`);
     if (pctEl) pctEl.innerHTML = `${num}<span style="font-size:0.7rem">%</span>`;
-    // diff badge — recalculate
-    const planPct = task.planned_progress !== undefined ? task.planned_progress : 0;
+
+    // diff badge recalculation
+    const planPct = task.planned_progress !== undefined ? Number(task.planned_progress) : 0;
     const diff = num - planPct;
-    const diffColor = diff >= 0 ? '#059669' : '#dc2626';
-    const diffSign = diff >= 0 ? '+' : '';
-    const diffEl = card.querySelector('.evening-col > div:last-child');
+    const diffColor = diff > 0 ? '#059669' : (diff === 0 ? '#047857' : '#dc2626');
+    const diffBg = diff > 0 ? '#dcfce7' : (diff === 0 ? '#ecfdf5' : '#fee2e2');
+    const diffBadge = diff > 0 ? `📈 +${diff}% เกินเป้า` : (diff === 0 ? `🎯 ตรงเป้าหมาย` : `⚠️ ${diff}% ช้ากว่าเป้า`);
+    const diffEl = card.querySelector(`#compare-diff-${id}`);
     if (diffEl) {
       diffEl.style.color = diffColor;
-      diffEl.innerText = diff !== 0 ? `${diffSign}${diff}% จากเป้า` : '= ตรงเป้าหมาย';
+      diffEl.style.background = diffBg;
+      diffEl.innerText = diffBadge;
+    }
+
+    // header phase badge icon update
+    const statusIcon = num >= 100 ? '✅' : num >= planPct && planPct > 0 ? '🟢' : num >= planPct * 0.8 ? '🟡' : '🔴';
+    const phaseBadge = card.querySelector('.shift-phase-badge.actual');
+    if (phaseBadge) {
+      phaseBadge.innerText = `${statusIcon} ยืนยันผลงานปิดงาน`;
     }
   }
+};
+
+// อัปเดต % เป้าหมายรอบเช้าจากในการ์ดปิดงาน (หากตอนเช้าลืมใส่หรือต้องการปรับ)
+window.updateEveningPlanPct = function(id, value) {
+  const list = getActiveTasksList();
+  const task = list.find(t => t.id === id);
+  if (!task) return;
+
+  let num = value === '' ? 0 : parseInt(value, 10);
+  if (isNaN(num)) num = 0;
+  if (num < 0) num = 0;
+  if (num > 100) num = 100;
+  task.planned_progress = num;
+
+  const card = document.querySelector(`[data-task-id="${id}"]`);
+  if (card) {
+    const planBar = card.querySelector(`#compare-plan-bar-${id}`);
+    if (planBar) planBar.style.width = Math.min(num, 100) + '%';
+
+    // diff badge recalculation
+    const actualPct = task.progress !== undefined ? Number(task.progress) : 0;
+    const diff = actualPct - num;
+    const diffColor = diff > 0 ? '#059669' : (diff === 0 ? '#047857' : '#dc2626');
+    const diffBg = diff > 0 ? '#dcfce7' : (diff === 0 ? '#ecfdf5' : '#fee2e2');
+    const diffBadge = diff > 0 ? `📈 +${diff}% เกินเป้า` : (diff === 0 ? `🎯 ตรงเป้าหมาย` : `⚠️ ${diff}% ช้ากว่าเป้า`);
+    const diffEl = card.querySelector(`#compare-diff-${id}`);
+    if (diffEl) {
+      diffEl.style.color = diffColor;
+      diffEl.style.background = diffBg;
+      diffEl.innerText = diffBadge;
+    }
+  }
+};
+
+window.updateEveningPlanField = function(id, field, value) {
+  const list = getActiveTasksList();
+  const task = list.find(t => t.id === id);
+  if (!task) return;
+  task[field] = value;
 };
 
 // ==========================================
@@ -569,33 +631,66 @@ function switchShift(shift) {
     } else {
       // ดึงงานและข้อมูลที่เปิดไว้ช่วงเช้ามาเป็น Baseline ในช่วงเย็น
       if (state.eveningActualTasks.length === 0) {
-        if (state.morningPlannedTasks.length > 0) {
-          state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
-            ...t,
-            id: 'ACT-' + (t.id || Date.now()),
-            source_task_id: t.source_task_id || t.id || '',
-            from_plan: !!t.from_plan,
-            company: t.company || state.subcontractor.name || '',
-            planned_quantity: t.quantity || '',
-            planned_progress: t.progress !== undefined ? t.progress : 0,
-            quantity: t.quantity || '',
-            progress: t.progress !== undefined ? t.progress : 0,
-            isPlanned: false
-          }));
+        let sourceTasks = [];
+        if (state.morningPlannedTasks && state.morningPlannedTasks.length > 0) {
+          sourceTasks = state.morningPlannedTasks;
+        }
+
+        // ดึง % เป้าหมายและปริมาณจาก existingMorningReport.task_summary
+        const summaryMap = {};
+        if (state.existingMorningReport && state.existingMorningReport.task_summary) {
+          const items = String(state.existingMorningReport.task_summary).split(' | ').filter(Boolean);
+          items.forEach((it, idx) => {
+            let pProg = 0;
+            const m = it.match(/\((\d+)%\)/);
+            if (m) pProg = Number(m[1]);
+            const mQty = it.match(/\[(?:ผลงาน|เป้าหมาย|ปริมาณ):\s*([^\]]+)\]/);
+            const pQty = mQty ? mQty[1].trim() : '';
+            const cleanName = it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').replace(/\[[^\]]+\]/, '').split(':')[0].trim();
+            if (cleanName) summaryMap[cleanName] = { progress: pProg, quantity: pQty };
+            summaryMap[idx] = { progress: pProg, quantity: pQty, name: cleanName, raw: it };
+          });
+        }
+
+        if (sourceTasks.length > 0) {
+          state.eveningActualTasks = sourceTasks.map((t, idx) => {
+            const summaryMatch = summaryMap[t.name] || summaryMap[idx] || {};
+            const planP = (t.progress !== undefined && Number(t.progress) > 0)
+              ? Number(t.progress)
+              : (summaryMatch.progress !== undefined ? Number(summaryMatch.progress) : 0);
+            const planQ = (t.quantity && t.quantity !== '-')
+              ? t.quantity
+              : (summaryMatch.quantity || '');
+
+            return {
+              ...t,
+              id: 'ACT-' + (t.id || Date.now()) + '-' + idx,
+              source_task_id: t.source_task_id || t.id || '',
+              from_plan: !!t.from_plan,
+              company: t.company || state.subcontractor.name || '',
+              planned_quantity: planQ,
+              planned_progress: planP,
+              quantity: planQ,
+              progress: planP,
+              isPlanned: false
+            };
+          });
         } else if (state.existingMorningReport && state.existingMorningReport.task_summary) {
-          const items = state.existingMorningReport.task_summary.split(' | ').filter(Boolean);
+          const items = String(state.existingMorningReport.task_summary).split(' | ').filter(Boolean);
           state.eveningActualTasks = items.map((it, idx) => {
             let pProg = 0;
             const m = it.match(/\((\d+)%\)/);
             if (m) pProg = Number(m[1]);
-            const cleanName = it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').trim();
+            const mQty = it.match(/\[(?:ผลงาน|เป้าหมาย|ปริมาณ):\s*([^\]]+)\]/);
+            const pQty = mQty ? mQty[1].trim() : '';
+            const cleanName = it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').replace(/\[[^\]]+\]/, '').split(':')[0].trim();
             return {
               id: 'ACT-MORN-' + (idx + 1),
-              name: cleanName,
+              name: cleanName || ('งานที่ ' + (idx + 1)),
               description: it,
-              planned_quantity: '',
+              planned_quantity: pQty,
               planned_progress: pProg,
-              quantity: '',
+              quantity: pQty,
               progress: pProg,
               isPlanned: false
             };
@@ -729,19 +824,15 @@ function renderMorningBaselineCard() {
       </div>
 
       ${tasksList.length > 0 ? `
-        <div class="morning-planned-tasks-list">
-          <div class="morning-tasks-list-title">
-            <span>🎯 เป้าหมายงานที่ตั้งไว้รอบเช้า (${tasksList.length} รายการ):</span>
-          </div>
-          ${tasksList.map((t, idx) => `
-            <div class="morning-task-item-line">
-              <span><strong>${idx + 1}.</strong> ${escapeHtml(t.name || t.taskName || 'งาน')}</span>
-              <span style="font-weight:700;">
-                ${t.quantity ? escapeHtml(t.quantity) : ''} 
-                ${t.progress !== undefined && t.progress !== '' ? `(เป้า ${t.progress}%)` : ''}
-              </span>
+        <div class="morning-tasks-connected-hint">
+          <div class="m-hint-left">
+            <span class="m-hint-icon">⚡</span>
+            <div>
+              <strong style="font-size:0.8rem; color:#14532d;">เชื่อมโยงงานตามแผน ${tasksList.length} รายการจากรอบเช้าแล้ว</strong>
+              <div style="font-size:0.68rem; color:#15803d; margin-top:2px;">เปรียบเทียบและระบุผลงานจริงที่การ์ดด้านล่าง 👇</div>
             </div>
-          `).join('')}
+          </div>
+          <span class="m-hint-badge">พร้อมรายงาน</span>
         </div>
       ` : ''}
 
@@ -784,6 +875,15 @@ function renderShiftUI() {
       // Hide baseline card in morning mode
       const baseContainer = document.getElementById('morning-baseline-card-container');
       if (baseContainer) baseContainer.style.display = 'none';
+
+      // Reset tasks section title
+      const tasksSecTitle = document.getElementById('tasks-section-title');
+      const tasksBadgeHint = document.getElementById('tasks-badge-hint');
+      if (tasksSecTitle) tasksSecTitle.innerText = '🎯 งานตามแผนที่ได้รับอนุมัติวันนี้ (เปิดงานเช้า)';
+      if (tasksBadgeHint) {
+        tasksBadgeHint.className = 'badge-hint morning';
+        tasksBadgeHint.innerText = 'เป้าหมายตามแผน';
+      }
 
       // Reset photo section labels กลับเป็นรอบเช้า
       const photoTitle = document.getElementById('photo-section-title');
@@ -877,7 +977,19 @@ function renderShiftUI() {
       } else {
         // มีรายงานรอบเช้าแล้ว -> แสดง Morning Baseline Card และฟอร์มกรอกผลงานจริงต่อจากรอบเช้า
         if (reqBanner) reqBanner.style.display = 'none';
-        if (tasksSection) tasksSection.style.opacity = '1';
+        if (tasksSection) {
+          tasksSection.style.opacity = '1';
+          tasksSection.style.pointerEvents = '';
+        }
+
+        // Update tasks section title to emphasis comparison
+        const tasksSecTitle = document.getElementById('tasks-section-title');
+        const tasksBadgeHint = document.getElementById('tasks-badge-hint');
+        if (tasksSecTitle) tasksSecTitle.innerText = '⚡ ยืนยันผลงานจริงเปรียบเทียบรอบเช้า (Forecast vs Actual)';
+        if (tasksBadgeHint) {
+          tasksBadgeHint.className = 'badge-hint evening';
+          tasksBadgeHint.innerText = '🌆 สรุปผลงานปิดงาน';
+        }
 
         renderMorningBaselineCard();
 
@@ -885,13 +997,13 @@ function renderShiftUI() {
         const photoTitle = document.getElementById('photo-section-title');
         const camTitle = document.getElementById('camera-trigger-title');
         const camDesc = document.getElementById('camera-trigger-desc');
-        if (photoTitle) photoTitle.innerText = 'ภาพถ่ายผลงานหน้างานตอนปิดงาน';
-        if (camTitle) camTitle.innerText = 'แตะถ่ายรูปผลงานหน้างาน / ความคืบหน้างาน';
-        if (camDesc) camDesc.innerText = 'ประทับเวลาปิดงาน — ภาพจะรวมในรายงานประจำวันฉบับสมบูรณ์';
+        if (photoTitle) photoTitle.innerText = 'ภาพถ่ายผลงานหน้างานตอนปิดงาน (บังคับ)';
+        if (camTitle) camTitle.innerText = 'แตะถ่ายภาพหน้างานตอนปิดงาน / ความคืบหน้าจริง';
+        if (camDesc) camDesc.innerText = 'ประทับเวลาปิดงาน — แนบเป็นหลักฐานผลงานประจำวันสมบูรณ์';
 
         if (photoMergeHint) {
           photoMergeHint.style.display = 'block';
-          photoMergeHint.innerHTML = '🔗 <strong>ระบบรวมภาพอัตโนมัติ:</strong> ภาพถ่ายผลงานปิดงานนี้จะถูกนำไปรวมกับภาพแถวเปิดงานตอนเช้า เป็นรายงานประจำวันฉบับสมบูรณ์';
+          photoMergeHint.innerHTML = '🔗 <strong>ระบบรวมภาพอัตโนมัติ:</strong> ภาพถ่ายผลงานปิดงานนี้จะถูกนำไปรวมกับภาพแถวเปิดงานตอนเช้า เพื่อส่งเป็นรายงานประจำวันฉบับสมบูรณ์ให้ PM';
         }
 
         if (state.existingEveningReport) {
@@ -933,6 +1045,7 @@ function renderShiftUI() {
     }
   }
 
+  renderPhotos();
   renderDynamicTasks();
 }
 
@@ -1023,23 +1136,63 @@ function renderWorkforce() {
 }
 
 function renderPhotos() {
+  const isMorning = state.activeShift === 'morning';
+  const currentPhotos = isMorning ? state.photos : state.eveningPhotos;
   const countEl = document.getElementById('photo-counter');
-  if (countEl) countEl.innerText = `${state.photos.length} รูป`;
+  if (countEl) countEl.innerText = `${currentPhotos.length} รูป${!isMorning ? ' (ปิดงาน)' : ''}`;
 
   const gridEl = document.getElementById('photos-preview-grid');
-  if (!gridEl) return;
+  if (gridEl) {
+    gridEl.innerHTML = currentPhotos.map((p, idx) => `
+      <div class="photo-card">
+        <img src="${p.url}" alt="รูปหน้างาน">
+        <div class="photo-stamp">${p.timestamp || ''}</div>
+        <button type="button" class="btn-remove-photo" onclick="window.removePhoto(${idx})">&times;</button>
+      </div>
+    `).join('');
+  }
 
-  gridEl.innerHTML = state.photos.map((p, idx) => `
-    <div class="photo-card">
-      <img src="${p.url}" alt="รูปหน้างาน">
-      <div class="photo-stamp">${p.timestamp || ''}</div>
-      <button type="button" class="btn-remove-photo" onclick="window.removePhoto(${idx})">&times;</button>
-    </div>
-  `).join('');
+  // Morning photos preview container (เฉพาะรอบปิดงาน)
+  const mornPhotoContainer = document.getElementById('morning-photos-container');
+  const mornPhotoGrid = document.getElementById('morning-photos-grid');
+  const mornPhotoBadge = document.getElementById('morning-photo-count-badge');
+
+  if (mornPhotoContainer) {
+    if (!isMorning && state.existingMorningReport) {
+      let mPhotos = [];
+      const em = state.existingMorningReport;
+      if (em.photoUrls) {
+        mPhotos = String(em.photoUrls).split(',').map(s => s.trim()).filter(Boolean);
+      } else if (state.photos && state.photos.length > 0) {
+        mPhotos = state.photos.map(p => p.url);
+      }
+
+      if (mPhotos.length > 0) {
+        mornPhotoContainer.style.display = 'block';
+        if (mornPhotoBadge) mornPhotoBadge.innerText = `${mPhotos.length} รูป`;
+        if (mornPhotoGrid) {
+          mornPhotoGrid.innerHTML = mPhotos.map((url, i) => `
+            <div class="photo-card morning-saved-photo">
+              <img src="${url}" alt="ภาพเปิดงานเช้า ${i+1}">
+              <div class="photo-stamp morning-stamp">🌅 เปิดงานเช้า #${i+1}</div>
+            </div>
+          `).join('');
+        }
+      } else {
+        mornPhotoContainer.style.display = 'none';
+      }
+    } else {
+      mornPhotoContainer.style.display = 'none';
+    }
+  }
 }
 
 window.removePhoto = function(idx) {
-  state.photos.splice(idx, 1);
+  if (state.activeShift === 'morning') {
+    state.photos.splice(idx, 1);
+  } else {
+    state.eveningPhotos.splice(idx, 1);
+  }
   renderPhotos();
 };
 
@@ -1240,19 +1393,24 @@ function handleFileUpload(e) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
 
-      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
-      const now = new Date();
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const isMorning = state.activeShift === 'morning';
+      const labelShift = isMorning ? '🌅 เปิดงาน' : '🌆 ปิดงาน';
 
-      state.photos.unshift({
+      const photoObj = {
         id: 'PH-' + Date.now(),
         url: compressedBase64,
         base64: compressedBase64,
-        timestamp: `${state.reportDate} ${timeStr}`
-      });
+        timestamp: `${state.reportDate} ${timeStr} (${labelShift})`
+      };
+
+      if (isMorning) {
+        state.photos.unshift(photoObj);
+      } else {
+        state.eveningPhotos.unshift(photoObj);
+      }
 
       renderPhotos();
-      showToast('📸 ถ่ายรูปและประทับเวลาสำเร็จ', 'success');
+      showToast(`📸 บันทึกภาพถ่าย${labelShift}สำเร็จ`, 'success');
     };
     img.src = event.target.result;
   };
@@ -1341,7 +1499,7 @@ async function submitDailyReport() {
       quantity: t.quantity || '',
       progress: t.progress !== undefined ? t.progress : 0
     })),
-    photos: state.photos,
+    photos: isMorning ? state.photos : (state.eveningPhotos.length > 0 ? state.eveningPhotos : state.photos),
     issues: finalIssues,
     status: isMorning ? 'morning_opened' : 'day_completed'
   };
@@ -1370,7 +1528,7 @@ async function submitDailyReport() {
       state.existingEveningReport = {
         ...payload,
         id: reportId,
-        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (${t.progress||0}%)`).join(' | ')
+        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (เป้า: ${t.planned_progress||0}% -> จริง: ${t.progress||0}%)`).join(' | ')
       };
       if (state.existingMorningReport) {
         state.existingMorningReport.status = 'day_completed';

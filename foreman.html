@@ -260,6 +260,15 @@
           <span class="badge-hint" id="photo-counter">0 รูป</span>
         </div>
         <div class="card-body">
+          <!-- พรีวิวภาพถ่ายเปิดงานรอบเช้า (แสดงในรอบปิดงาน) -->
+          <div id="morning-photos-container" style="display: none; margin-bottom: 1rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px;">
+            <div style="font-size: 0.78rem; font-weight: 700; color: #166534; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+              <span>🌅 ภาพเปิดงานรอบเช้าที่บันทึกแล้ว</span>
+              <span id="morning-photo-count-badge" style="font-size: 0.7rem; background: #dcfce7; color: #15803d; padding: 1px 6px; border-radius: 4px;">0 รูป</span>
+            </div>
+            <div class="photos-grid" id="morning-photos-grid"></div>
+          </div>
+
           <input type="file" id="camera-file-input" accept="image/*" capture="environment" style="display: none;">
           <div class="camera-trigger-box" id="camera-trigger-btn">
             <div class="cam-icon">📸</div>

@@ -5532,6 +5532,83 @@ th.pm-master-meta-cell {
   line-height: 1.4;
 }
 
+/* Morning Connected Tasks Hint inside Baseline Card */
+.morning-tasks-connected-hint {
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+  border: 1.5px solid #86efac;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.m-hint-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.m-hint-icon {
+  font-size: 1.25rem;
+}
+
+.m-hint-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: #10b981;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+/* Inline Morning Target Input */
+.plan-pct-inline-input {
+  width: 48px;
+  background: transparent;
+  border: 1px dashed #3b82f6;
+  border-radius: 4px;
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: #2563eb;
+  text-align: center;
+  padding: 0;
+  margin: 0;
+  outline: none;
+}
+
+.plan-pct-inline-input:focus {
+  background: #ffffff;
+  border: 1.5px solid #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* Diff Badge in Comparison Card */
+.diff-badge-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 4px;
+}
+
+/* Morning Saved Photo Thumbnail */
+.photo-card.morning-saved-photo {
+  border: 2px solid #86efac;
+  background: #f0fdf4;
+}
+
+.photo-stamp.morning-stamp {
+  background: rgba(6, 95, 70, 0.88);
+  color: #ffffff;
+  font-size: 0.65rem;
+}
+
+
 
 
 
