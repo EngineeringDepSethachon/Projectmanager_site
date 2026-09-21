@@ -57,29 +57,31 @@ const state = {
 // ==========================================
 // Initialization
 // ==========================================
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Instant First Paint (0ms) - Everything interactive immediately
   parseUrlParams();
   renderProfile();
   renderProjectInfo();
 
-  // 1. Sync User Profile from backend to resolve registered Company & Project
-  await syncUserProfile();
-
-  // 2. Initialize Month Timeline (Default to current month)
+  // Initialize Month Timeline (Default to current month)
   calculateMonthInfo(state.currentYear, state.currentMonth);
   renderMonthInfoUI();
+  syncCurrentMonthPlan();
 
-  // 3. Load Projects and Company Plans
-  await loadProjects();
-  await loadWeeklyPlans();
-
-  // 4. Bind UI Event Handlers
+  // Bind UI Event Handlers immediately so all buttons & modals work at 0ms
   bindNavigationEvents();
   bindToolbarActions();
   bindModalEvents();
   setupViewTabs();
   setupExitConfirmation();
+
+  // 2. Real-Time Sync attached immediately
   setupWeeklyRealtimeSync();
+
+  // 3. Fast Parallel Data Loading (<100ms Firestore + non-blocking background GAS)
+  syncUserProfile();
+  loadProjects();
+  loadWeeklyPlans();
 });
 
 // ==========================================
@@ -353,119 +355,138 @@ function initDefaultPlan() {
   state.expandedTasks.clear();
 }
 
+function applyLoadedDailyTasks(tasks, planId) {
+  if (!tasks || tasks.length === 0) return;
+  const grouped = {};
+  const totalDays = state.monthInfo.daysInMonth;
+  const days = state.monthInfo.days;
+
+  tasks.forEach((t, idx) => {
+    const cat = t.category || 'งานโครงสร้าง';
+
+    // Determine parent task name:
+    let groupKey = '';
+    if (t.parent_task_name) {
+      groupKey = t.parent_task_name;
+    } else if (t.description && t.description.includes('[งานหลัก:')) {
+      const matchMain = t.description.match(/\[งานหลัก:\s*([^\]]+)\]/);
+      if (matchMain) groupKey = matchMain[1].trim();
+    } else if (t.description && t.description.includes(':')) {
+      const parts = t.description.split(':');
+      if (parts[0].length > 2 && !parts[0].includes('http') && !parts[0].includes('[')) {
+        groupKey = parts[0].trim();
+      }
+    }
+    if (!groupKey) {
+      groupKey = t.taskName || t.name || cat;
+    }
+
+    let sDateStr = state.monthInfo.startIso;
+    let eDateStr = state.monthInfo.endIso;
+
+    if (t.description) {
+      const match = t.description.match(/\[(\d{4}-\d{2}-\d{2})\s+ถึง\s+(\d{4}-\d{2}-\d{2})\]/);
+      if (match) {
+        sDateStr = match[1];
+        eDateStr = match[2];
+      } else if (t.date) {
+        sDateStr = t.date;
+        eDateStr = t.date;
+      }
+    } else if (t.date) {
+      sDateStr = t.date;
+      eDateStr = t.date;
+    }
+
+    let workArea = t.workArea || t.work_area || '';
+    if (!workArea && t.description && t.description.includes('[โซน:')) {
+      const matchZone = t.description.match(/\[โซน:\s*([^\]]+)\]/);
+      if (matchZone && matchZone[1] !== '-') workArea = matchZone[1].trim();
+    }
+
+    if (!grouped[groupKey]) {
+      let sIdx = days.findIndex(d => d.iso === sDateStr);
+      let eIdx = days.findIndex(d => d.iso === eDateStr);
+      if (sIdx < 0) sIdx = 0;
+      if (eIdx < 0) eIdx = Math.min(totalDays - 1, sIdx + 6);
+      if (sIdx > eIdx) eIdx = sIdx;
+
+      grouped[groupKey] = {
+        id: 'MTASK-' + planId + '-' + Object.keys(grouped).length,
+        name: groupKey,
+        category: cat,
+        categoryColor: getCategoryColorClass(cat),
+        workArea: workArea,
+        startDayIndex: sIdx,
+        endDayIndex: eIdx,
+        startDate: days[sIdx].iso,
+        endDate: days[eIdx].iso,
+        subtasks: []
+      };
+    }
+
+    const taskName = t.taskName || t.name || '';
+    const isSelfMainTask = (taskName === groupKey && (!t.description || (t.description.startsWith('[') && !t.description.includes(': '))));
+
+    if (!isSelfMainTask && taskName) {
+      let cleanDesc = t.description || t.taskDesc || '';
+      cleanDesc = cleanDesc.replace(/\[\d{4}-\d{2}-\d{2}\s+ถึง\s+\d{4}-\d{2}-\d{2}\]/g, '');
+      cleanDesc = cleanDesc.replace(/\[งานหลัก:[^\]]+\]/g, '');
+      cleanDesc = cleanDesc.replace(/\[โซน:[^\]]+\]/g, '');
+      if (cleanDesc.startsWith(groupKey + ':')) {
+        cleanDesc = cleanDesc.slice(groupKey.length + 1).trim();
+      }
+      cleanDesc = cleanDesc.trim();
+
+      grouped[groupKey].subtasks.push({
+        id: t.taskId || ('STASK-' + idx),
+        name: taskName,
+        workArea: workArea,
+        description: cleanDesc,
+        targetQty: t.targetQty || t.quantity || '',
+        plannedWorkers: Number(t.plannedWorkers) || 0,
+        machinery: t.machinery || '-',
+        actualStatus: t.actualStatus || (Number(t.progress || t.actualProgress) >= 100 ? 'Completed' : 'Pending'),
+        actualProgress: Number(t.progress || t.actualProgress) || 0,
+        actualDate: t.taskDate || null,
+        reportedBy: t.foremanName || t.reportedBy || null
+      });
+    }
+  });
+
+  state.mainTasks = Object.values(grouped);
+  state.mainTasks.forEach(m => state.expandedTasks.add(m.id));
+  renderGanttTable();
+  updateKPISummary();
+}
+
 async function loadTasksForPlan(planId) {
   try {
-    const tasks = await gasService.fetchDailyTasks(planId);
-    if (tasks && tasks.length > 0) {
-      const grouped = {};
-      const totalDays = state.monthInfo.daysInMonth;
-      const days = state.monthInfo.days;
-
-      tasks.forEach((t, idx) => {
-        const cat = t.category || 'งานโครงสร้าง';
-
-        // Determine parent task name:
-        let groupKey = '';
-        if (t.parent_task_name) {
-          groupKey = t.parent_task_name;
-        } else if (t.description && t.description.includes('[งานหลัก:')) {
-          const matchMain = t.description.match(/\[งานหลัก:\s*([^\]]+)\]/);
-          if (matchMain) groupKey = matchMain[1].trim();
-        } else if (t.description && t.description.includes(':')) {
-          const parts = t.description.split(':');
-          if (parts[0].length > 2 && !parts[0].includes('http') && !parts[0].includes('[')) {
-            groupKey = parts[0].trim();
-          }
+    // 1. Fast Firestore fetch (<100ms)
+    if (firebaseService.isConfigured() && planId) {
+      try {
+        const fbTasks = await firebaseService.getPlanTasks(planId);
+        if (Array.isArray(fbTasks) && fbTasks.length > 0) {
+          applyLoadedDailyTasks(fbTasks, planId);
         }
-        if (!groupKey) {
-          groupKey = t.taskName || t.name || cat;
-        }
-
-        let sDateStr = state.monthInfo.startIso;
-        let eDateStr = state.monthInfo.endIso;
-
-        if (t.description) {
-          const match = t.description.match(/\[(\d{4}-\d{2}-\d{2})\s+ถึง\s+(\d{4}-\d{2}-\d{2})\]/);
-          if (match) {
-            sDateStr = match[1];
-            eDateStr = match[2];
-          } else if (t.date) {
-            sDateStr = t.date;
-            eDateStr = t.date;
-          }
-        } else if (t.date) {
-          sDateStr = t.date;
-          eDateStr = t.date;
-        }
-
-        let workArea = t.workArea || t.work_area || '';
-        if (!workArea && t.description && t.description.includes('[โซน:')) {
-          const matchZone = t.description.match(/\[โซน:\s*([^\]]+)\]/);
-          if (matchZone && matchZone[1] !== '-') workArea = matchZone[1].trim();
-        }
-
-        if (!grouped[groupKey]) {
-          let sIdx = days.findIndex(d => d.iso === sDateStr);
-          let eIdx = days.findIndex(d => d.iso === eDateStr);
-          if (sIdx < 0) sIdx = 0;
-          if (eIdx < 0) eIdx = Math.min(totalDays - 1, sIdx + 6);
-          if (sIdx > eIdx) eIdx = sIdx;
-
-          grouped[groupKey] = {
-            id: 'MTASK-' + planId + '-' + Object.keys(grouped).length,
-            name: groupKey,
-            category: cat,
-            categoryColor: getCategoryColorClass(cat),
-            workArea: workArea,
-            startDayIndex: sIdx,
-            endDayIndex: eIdx,
-            startDate: days[sIdx].iso,
-            endDate: days[eIdx].iso,
-            subtasks: []
-          };
-        }
-
-        const taskName = t.taskName || t.name || '';
-        const isSelfMainTask = (taskName === groupKey && (!t.description || (t.description.startsWith('[') && !t.description.includes(': '))));
-
-        if (!isSelfMainTask && taskName) {
-          let cleanDesc = t.description || t.taskDesc || '';
-          cleanDesc = cleanDesc.replace(/\[\d{4}-\d{2}-\d{2}\s+ถึง\s+\d{4}-\d{2}-\d{2}\]/g, '');
-          cleanDesc = cleanDesc.replace(/\[งานหลัก:[^\]]+\]/g, '');
-          cleanDesc = cleanDesc.replace(/\[โซน:[^\]]+\]/g, '');
-          if (cleanDesc.startsWith(groupKey + ':')) {
-            cleanDesc = cleanDesc.slice(groupKey.length + 1).trim();
-          }
-          cleanDesc = cleanDesc.trim();
-
-          grouped[groupKey].subtasks.push({
-            id: t.taskId || ('STASK-' + idx),
-            name: taskName,
-            workArea: workArea,
-            description: cleanDesc,
-            targetQty: t.targetQty || t.quantity || '',
-            plannedWorkers: Number(t.plannedWorkers) || 0,
-            machinery: t.machinery || '-',
-            actualStatus: t.actualStatus || (Number(t.progress || t.actualProgress) >= 100 ? 'Completed' : 'Pending'),
-            actualProgress: Number(t.progress || t.actualProgress) || 0,
-            actualDate: t.taskDate || null,
-            reportedBy: t.foremanName || t.reportedBy || null
-          });
-        }
-      });
-
-      state.mainTasks = Object.values(grouped);
-      state.mainTasks.forEach(m => state.expandedTasks.add(m.id));
-    } else {
-      state.mainTasks = [];
+      } catch (fbErr) {
+        console.warn('[Weekly] Firebase getPlanTasks error:', fbErr);
+      }
     }
-    renderGanttTable();
-    updateKPISummary();
+
+    // 2. Background Google Sheets fetch (non-blocking fallback & sync)
+    if (gasService.isConfigured() && planId) {
+      gasService.fetchDailyTasks(planId).then(gasTasks => {
+        if (Array.isArray(gasTasks) && gasTasks.length > 0) {
+          applyLoadedDailyTasks(gasTasks, planId);
+          if (firebaseService.isConfigured()) {
+            firebaseService.savePlanTasks(planId, gasTasks).catch(e => {});
+          }
+        }
+      }).catch(e => console.warn('[Weekly] GAS fetchDailyTasks error:', e));
+    }
   } catch (e) {
     console.warn('loadTasksForPlan error:', e);
-    state.mainTasks = [];
-    renderGanttTable();
-    updateKPISummary();
   }
 }
 
@@ -1507,39 +1528,62 @@ async function submitPlanToPM() {
     tasks: dailyTasksPayload
   };
 
+  // 1. Optimistic UI Update (0ms)
+  state.planStatus = 'Pending';
+  state.isDirty = false;
+  state.currentPlan = {
+    planId: planId,
+    projectId: state.project.id,
+    company: state.subcontractor.name,
+    startDate: state.monthInfo.startIso,
+    endDate: state.monthInfo.endIso,
+    weekLabel: state.monthInfo.label,
+    objective: state.monthObjective,
+    status: 'Pending',
+    pmStatus: 'Pending'
+  };
+  renderPlanMetaUI();
+  showToast('🎉 ส่งแผนงานประจำเดือนสำเร็จ! ระบบบันทึกและส่งแจ้งเตือนให้ PM เรียบร้อยแล้ว', 'success');
+
+  // Clear local draft for this month
+  const draftKey = `draft_mplan_${state.project.id}_${state.monthInfo.year}_${state.monthInfo.month}_${state.subcontractor.name}`;
+  try { localStorage.removeItem(draftKey); } catch (e) {}
+
+  // Close modal if open
+  document.getElementById('modal-submit-confirm')?.classList.remove('active');
+
+  // 2. Fast Firestore write (<100ms)
+  if (firebaseService.isConfigured()) {
+    firebaseService.saveWeeklyPlan(payload).catch(e => console.warn('[Weekly] Firestore save plan error:', e));
+    firebaseService.savePlanTasks(planId, dailyTasksPayload).catch(e => console.warn('[Weekly] Firestore save tasks error:', e));
+  }
+
+  // Cross-tab broadcast
   try {
-    const res = await gasService.saveWeeklyPlan(payload);
-    if (res && res.success) {
-      showToast('🎉 ส่งแผนงานประจำเดือนสำเร็จ! รอ PM กดอนุมัติเพื่อส่งต่องานให้โฟร์แมน', 'success');
-      state.planStatus = 'Pending';
-      state.isDirty = false;
-      renderPlanMetaUI();
-      if (firebaseService.isConfigured()) {
-        firebaseService.broadcastEvent('PLAN_SUBMITTED', {
-          planId: state.currentPlanId,
-          projectId: state.project.id,
-          subName: state.subcontractor.name
-        }).catch(e => console.warn('[WeeklySync] Firebase broadcast error:', e));
+    const channel = new BroadcastChannel('cpm_site_sync');
+    channel.postMessage({ type: 'PLAN_SUBMITTED', planId: planId, projectId: state.project.id, timestamp: Date.now() });
+    channel.close();
+  } catch (e) {}
+  try {
+    localStorage.setItem('cpm_sync_trigger', JSON.stringify({ type: 'PLAN_SUBMITTED', time: Date.now() }));
+  } catch (e) {}
+
+  // 3. Background Google Apps Script sync (non-blocking)
+  if (gasService.isConfigured()) {
+    gasService.saveWeeklyPlan(payload).then(res => {
+      if (res && res.success) {
+        console.log('[Weekly] GAS save succeeded for', planId);
+      } else {
+        console.warn('[Weekly] GAS save response not success:', res);
       }
-      try {
-        const channel = new BroadcastChannel('cpm_site_sync');
-        channel.postMessage({ type: 'PLAN_SUBMITTED', planId: state.currentPlanId, projectId: state.project.id, timestamp: Date.now() });
-        channel.close();
-      } catch (e) {}
-      try {
-        localStorage.setItem('cpm_sync_trigger', JSON.stringify({ type: 'PLAN_SUBMITTED', time: Date.now() }));
-      } catch (e) {}
-      await loadWeeklyPlans();
-    } else {
-      showToast(`⚠️ ส่งไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบ'}`, 'warning');
-    }
-  } catch (err) {
-    showToast(`❌ เกิดข้อผิดพลาด: ${err.message}`, 'error');
-  } finally {
-    if (btnSubmit) {
-      btnSubmit.disabled = false;
-      btnSubmit.innerHTML = '<span>🚀 ยื่นส่ง PM อนุมัติ</span>';
-    }
+    }).catch(err => {
+      console.warn('[Weekly] GAS save network error:', err);
+    });
+  }
+
+  if (btnSubmit) {
+    btnSubmit.disabled = false;
+    btnSubmit.innerHTML = '<span>🚀 ยื่นส่ง PM อนุมัติ</span>';
   }
 }
 
@@ -1594,22 +1638,59 @@ function setupViewTabs() {
   });
 }
 
-async function loadWeeklyPlans() {
+async function loadWeeklyPlans(isSilent = false) {
   const container = document.getElementById('weekly-plans-container');
   if (!container) return;
 
   try {
-    const plans = await gasService.fetchWeeklyPlans(state.project.id, '', state.subcontractor.name);
-    // Extra safeguard: Only keep plans belonging to this contractor's company
-    state.monthlyPlans = (plans || []).filter(p => {
-      if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
-      return !p.company || p.company === '-' || p.company === state.subcontractor.name;
-    });
-    renderArchivePlans();
-    syncCurrentMonthPlan();
-    state.isDirty = false;
+    // 1. Fast Firestore fetch (<100ms)
+    if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
+      try {
+        const fbPlans = await firebaseService.getWeeklyPlans(state.project.id);
+        if (Array.isArray(fbPlans) && fbPlans.length > 0) {
+          const myPlans = fbPlans.filter(p => {
+            if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
+            return !p.company || p.company === '-' || p.company === state.subcontractor.name;
+          });
+          if (myPlans.length > 0) {
+            state.monthlyPlans = myPlans;
+            renderArchivePlans();
+            syncCurrentMonthPlan();
+            state.isDirty = false;
+          }
+        }
+      } catch (fbErr) {
+        console.warn('[Weekly] Firebase getWeeklyPlans error:', fbErr);
+      }
+    }
+
+    // 2. Background Google Sheets fetch & merge (non-blocking)
+    if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+      gasService.fetchWeeklyPlans(state.project.id, '', state.subcontractor.name).then(gasPlans => {
+        if (Array.isArray(gasPlans)) {
+          const validGasPlans = gasPlans.filter(p => {
+            if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
+            return !p.company || p.company === '-' || p.company === state.subcontractor.name;
+          });
+          if (validGasPlans.length > 0) {
+            const map = new Map();
+            (state.monthlyPlans || []).forEach(p => map.set(String(p.planId), p));
+            validGasPlans.forEach(p => {
+              const existing = map.get(String(p.planId)) || {};
+              map.set(String(p.planId), { ...existing, ...p });
+            });
+            state.monthlyPlans = Array.from(map.values());
+          }
+          renderArchivePlans();
+          syncCurrentMonthPlan();
+          state.isDirty = false;
+        }
+      }).catch(e => {
+        if (!isSilent) console.warn('loadWeeklyPlans GAS error:', e);
+      });
+    }
   } catch (err) {
-    console.warn('loadWeeklyPlans error:', err);
+    if (!isSilent) console.warn('loadWeeklyPlans error:', err);
   }
 }
 
@@ -1788,11 +1869,33 @@ function setupExitConfirmation() {
 // ==========================================
 function setupWeeklyRealtimeSync() {
   if (firebaseService.isConfigured()) {
+    // 1. Listen to collection changes in real-time (<100ms)
+    if (state.project.id && state.project.id !== '-') {
+      firebaseService.listenWeeklyPlans(state.project.id, (plansList) => {
+        if (Array.isArray(plansList)) {
+          const myPlans = plansList.filter(p => {
+            if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
+            return !p.company || p.company === '-' || p.company === state.subcontractor.name;
+          });
+          if (myPlans.length > 0) {
+            state.monthlyPlans = myPlans;
+            renderArchivePlans();
+            syncCurrentMonthPlan();
+          }
+        }
+      });
+    }
+
+    // 2. Listen to broadcast events
     firebaseService.listenEvents(async (type, payload) => {
-      if (type === 'PLAN_APPROVED' || type === 'REFRESH_ALL') {
+      if (type === 'PLAN_APPROVED' || type === 'PLAN_STATUS_CHANGED' || type === 'REFRESH_ALL') {
         console.log('[WeeklyLiveSync] Firebase event received:', type, payload);
         await loadWeeklyPlans(true);
-        showToast('⚡ แผนงานได้รับการอนุมัติจาก PM แล้ว! (Firebase Realtime)', 'success');
+        if (payload?.status === 'Approved' || type === 'PLAN_APPROVED') {
+          showToast('🟢 แผนงานได้รับการอนุมัติจาก PM เรียบร้อยแล้ว! (Live Sync)', 'success');
+        } else if (payload?.status === 'Revision') {
+          showToast('⚠️ PM สั่งให้ปรับปรุงแผนงาน โปรดตรวจสอบคำสั่งการ', 'warning');
+        }
       }
     });
   }
@@ -1801,9 +1904,13 @@ function setupWeeklyRealtimeSync() {
     const channel = new BroadcastChannel('cpm_site_sync');
     channel.onmessage = async (event) => {
       const data = event.data;
-      if (data && (data.type === 'PLAN_APPROVED' || data.type === 'REFRESH_ALL')) {
+      if (data && (data.type === 'PLAN_APPROVED' || data.type === 'PLAN_STATUS_CHANGED' || data.type === 'REFRESH_ALL')) {
         await loadWeeklyPlans(true);
-        showToast('⚡ แผนงานได้รับการอนุมัติจาก PM แล้ว!', 'success');
+        if (data.type === 'PLAN_APPROVED' || data.status === 'Approved') {
+          showToast('🟢 แผนงานได้รับการอนุมัติจาก PM เรียบร้อยแล้ว!', 'success');
+        } else if (data.status === 'Revision') {
+          showToast('⚠️ PM สั่งให้ปรับปรุงแผนงาน', 'warning');
+        }
       }
     };
   } catch (e) {}

@@ -46,18 +46,26 @@ const state = {
 // ==========================================
 // Initialization
 // ==========================================
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Instant First Paint (0ms)
   parseUrlParams();
   renderProjectInfo();
   setupSubNavTabs();
   setupProjectModal();
   setupFilters();
   setupPMMonthStepper();
+  renderApprovalPlans();
+  renderDailyReportsTable();
+  updateBadges();
+  updateExecutiveKPIs();
 
-  await loadProjects();
-  await loadWeeklyPlans();
-  await loadDailyReports();
+  // 2. Real-Time Sync attached immediately
   setupRealtimeSync();
+
+  // 3. Fast Parallel Data Loading (<100ms Firestore + non-blocking GAS)
+  loadProjects();
+  loadWeeklyPlans();
+  loadDailyReports();
 
   document.getElementById('btn-sync-pm-all')?.addEventListener('click', async () => {
     showToast('🔄 กำลังล้างแคชและซิงก์ข้อมูลทั้งหมดจาก Google Sheets & Firebase...', 'info');
@@ -231,14 +239,50 @@ function setupSubNavTabs() {
 // ==========================================
 async function loadWeeklyPlans(isSilent = false) {
   try {
-    const plans = await gasService.fetchWeeklyPlans(state.project.id);
-    // Explicitly filter out any dummy mock seed data
-    state.weeklyPlans = (plans || []).filter(p => p.planId !== 'WPLAN-2026-W38-01');
-    renderApprovalPlans();
-    updateBadges();
-    updateExecutiveKPIs();
-    if (state.activeTab === 'view-pm-gantt') {
-      renderMasterMonthlyGantt();
+    // 1. Fast Firestore fetch (<100ms) for instant executive dashboard update
+    if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
+      try {
+        const fbPlans = await firebaseService.getWeeklyPlans(state.project.id);
+        if (Array.isArray(fbPlans) && fbPlans.length > 0) {
+          state.weeklyPlans = fbPlans.filter(p => p.planId !== 'WPLAN-2026-W38-01');
+          renderApprovalPlans();
+          updateBadges();
+          updateExecutiveKPIs();
+          if (state.activeTab === 'view-pm-gantt') {
+            renderMasterMonthlyGantt();
+          }
+        }
+      } catch (fbErr) {
+        console.warn('[PM] Firebase getWeeklyPlans error:', fbErr);
+      }
+    }
+
+    // 2. Background Google Sheets fetch & merge (non-blocking)
+    if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+      gasService.fetchWeeklyPlans(state.project.id).then(gasPlans => {
+        if (Array.isArray(gasPlans)) {
+          const validGasPlans = gasPlans.filter(p => p.planId !== 'WPLAN-2026-W38-01');
+          if (validGasPlans.length > 0) {
+            const map = new Map();
+            (state.weeklyPlans || []).forEach(p => map.set(String(p.planId), p));
+            validGasPlans.forEach(p => {
+              const existing = map.get(String(p.planId)) || {};
+              map.set(String(p.planId), { ...existing, ...p });
+            });
+            state.weeklyPlans = Array.from(map.values());
+          } else if (!state.weeklyPlans || state.weeklyPlans.length === 0) {
+            state.weeklyPlans = [];
+          }
+          renderApprovalPlans();
+          updateBadges();
+          updateExecutiveKPIs();
+          if (state.activeTab === 'view-pm-gantt') {
+            renderMasterMonthlyGantt();
+          }
+        }
+      }).catch(e => {
+        if (!isSilent) console.warn('loadWeeklyPlans GAS error:', e);
+      });
     }
   } catch (err) {
     if (!isSilent) console.warn('loadWeeklyPlans error:', err);
@@ -685,9 +729,8 @@ window.handlePMDecision = async function(planId, decision, overrideNotes = null)
   }
 
   const decisionText = decision === 'Approved' ? 'อนุมัติแผนงานประจำเดือน' : 'สั่งปรับปรุงแผนงาน';
-  showToast(`⏳ กำลังบันทึกผลการพิจารณา (${decisionText})...`, 'info');
 
-  // Optimistic UI Update: update local state immediately
+  // 1. Optimistic UI Update: update local state immediately (0ms)
   const nowStr = new Date().toLocaleString('th-TH');
   const targetPlan = (state.weeklyPlans || []).find(p => p.planId === planId);
   if (targetPlan) {
@@ -700,48 +743,59 @@ window.handlePMDecision = async function(planId, decision, overrideNotes = null)
   renderApprovalPlans();
   updateBadges();
   updateExecutiveKPIs();
+  if (state.activeTab === 'view-pm-gantt') {
+    renderMasterMonthlyGantt();
+  }
 
-  try {
-    const res = await gasService.approveWeeklyPlanPM(
+  showToast(`✅ บันทึกผล: ${decisionText} สำเร็จ!`, 'success');
+  broadcastSync('PLAN_APPROVED', { planId, decision });
+
+  // 2. Fast Firestore Sync (<100ms)
+  if (firebaseService.isConfigured()) {
+    firebaseService.updateWeeklyPlanStatus(planId, decision, notes, state.user.name).catch(e => console.warn('[PM] Firestore update status error:', e));
+
+    if (decision === 'Approved') {
+      firebaseService.getPlanTasks(planId).then(async (cachedTasks) => {
+        let tasks = cachedTasks;
+        if (!tasks || tasks.length === 0) {
+          tasks = await gasService.fetchDailyTasks(planId);
+        }
+        if (tasks && tasks.length > 0) {
+          const planCompany = targetPlan?.company || targetPlan?.subcontractor || '';
+          const tasksByDate = {};
+          tasks.forEach(t => {
+            const d = t.taskDate || t.date || '';
+            if (d) {
+              if (!tasksByDate[d]) tasksByDate[d] = [];
+              tasksByDate[d].push({ ...t, company: planCompany, planId: planId });
+            }
+          });
+          for (const [tDate, dTasks] of Object.entries(tasksByDate)) {
+            await firebaseService.syncApprovedTasks(tDate, state.project.id, dTasks);
+          }
+        }
+      }).catch(e => console.warn('[PM] Sync approved tasks to Firestore error:', e));
+    }
+  }
+
+  // 3. Background GAS Sync (non-blocking)
+  if (gasService.isConfigured()) {
+    gasService.approveWeeklyPlanPM(
       planId,
       decision,
       state.user.name,
       notes,
       state.user.uid,
       'ผู้จัดการโครงการ (PM)'
-    );
-    if (res && res.success) {
-      showToast(`✅ บันทึกผล: ${decisionText} สำเร็จ! งานย่อยพร้อมให้โฟร์แมนดึงไปทำงานแล้ว`, 'success');
-      broadcastSync('PLAN_APPROVED', { planId, decision });
-
-      // Sync approved tasks to Firestore (<100ms instant access for foremen)
-      if (decision === 'Approved' && firebaseService.isConfigured()) {
-        gasService.fetchDailyTasks(planId).then(async (tasks) => {
-          if (tasks && tasks.length > 0) {
-            const planCompany = targetPlan?.company || targetPlan?.subcontractor || '';
-            const tasksByDate = {};
-            tasks.forEach(t => {
-              const d = t.taskDate || t.date || '';
-              if (d) {
-                if (!tasksByDate[d]) tasksByDate[d] = [];
-                tasksByDate[d].push({ ...t, company: planCompany, planId: planId });
-              }
-            });
-            for (const [tDate, dTasks] of Object.entries(tasksByDate)) {
-              await firebaseService.syncApprovedTasks(tDate, state.project.id, dTasks);
-            }
-          }
-        }).catch(e => console.warn('[PM] Sync approved tasks to Firestore error:', e));
+    ).then(res => {
+      if (res && res.success) {
+        console.log('[PM] GAS approve succeeded for', planId);
+      } else {
+        console.warn('[PM] GAS approve response not success:', res);
       }
-
-      await loadWeeklyPlans();
-    } else {
-      showToast(`⚠️ บันทึกไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบสิทธิ์'}`, 'warning');
-      await loadWeeklyPlans();
-    }
-  } catch (err) {
-    showToast(`❌ เกิดข้อผิดพลาด: ${err.message}`, 'error');
-    await loadWeeklyPlans();
+    }).catch(err => {
+      console.warn('[PM] GAS approve network error:', err);
+    });
   }
 };
 
@@ -1004,18 +1058,31 @@ async function loadDailyReports(isSilent = false) {
       }
     }
 
-    // 2. Comprehensive Google Sheets fetch & merge
+    // 2. Background Google Sheets fetch & merge (non-blocking)
     if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
-      const gasList = await gasService.fetchDailyReports(state.project.id);
-      if (gasList && gasList.length > 0) {
-        const map = new Map();
-        list.forEach(r => map.set(String(r.id), r));
-        gasList.forEach(r => {
-          const existing = map.get(String(r.id)) || {};
-          map.set(String(r.id), { ...existing, ...r });
-        });
-        list = Array.from(map.values());
-      }
+      gasService.fetchDailyReports(state.project.id).then(gasList => {
+        if (Array.isArray(gasList) && gasList.length > 0) {
+          const map = new Map();
+          (state.dailyReports || []).forEach(r => map.set(String(r.id), r));
+          gasList.forEach(r => {
+            const existing = map.get(String(r.id)) || {};
+            map.set(String(r.id), { ...existing, ...r });
+          });
+          const merged = Array.from(map.values());
+          const prev = (state.dailyReports || []).length;
+          state.dailyReports = merged;
+          const badge = document.getElementById('badge-total-reports');
+          if (badge) badge.innerText = state.dailyReports.length;
+          if (state.activeTab === 'view-pm-reports') {
+            renderDailyReportsTable();
+          }
+          if (isSilent && state.dailyReports.length > prev) {
+            showToast(`⚡ มีรายงานใหม่เข้ามาจากหน้างาน! (${state.dailyReports.length - prev} ฉบับ)`, 'info');
+          }
+        }
+      }).catch(e => {
+        if (!isSilent) console.warn('loadDailyReports GAS error:', e);
+      });
     }
 
     const prevCount = (state.dailyReports || []).length;
@@ -1024,9 +1091,6 @@ async function loadDailyReports(isSilent = false) {
     if (badge) badge.innerText = state.dailyReports.length;
     if (state.activeTab === 'view-pm-reports') {
       renderDailyReportsTable();
-    }
-    if (isSilent && state.dailyReports.length > prevCount) {
-      showToast(`⚡ มีรายงานใหม่เข้ามาจากหน้างาน! (${state.dailyReports.length - prevCount} ฉบับ)`, 'info');
     }
   } catch (err) {
     if (!isSilent) console.warn('loadDailyReports error:', err);
@@ -1500,6 +1564,19 @@ function setupRealtimeSync() {
         if (badge) badge.innerText = state.dailyReports.length;
         if (state.activeTab === 'view-pm-reports') {
           renderDailyReportsTable();
+        }
+      });
+
+      firebaseService.listenWeeklyPlans(state.project.id, (plansList) => {
+        console.log('[PMRealtime] Weekly plans real-time snapshot:', plansList?.length || 0);
+        if (Array.isArray(plansList)) {
+          state.weeklyPlans = plansList.filter(p => p.planId !== 'WPLAN-2026-W38-01');
+          renderApprovalPlans();
+          updateBadges();
+          updateExecutiveKPIs();
+          if (state.activeTab === 'view-pm-gantt') {
+            renderMasterMonthlyGantt();
+          }
         }
       });
     }

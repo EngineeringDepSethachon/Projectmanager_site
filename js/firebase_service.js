@@ -273,5 +273,178 @@ export const firebaseService = {
       console.warn('[FirebaseService] listenApprovedTasks setup error:', err);
       return () => {};
     }
+  },
+
+  /**
+   * Save or update a Weekly / Monthly Plan in Firestore (<100ms)
+   * @param {object} plan - plan payload
+   */
+  async saveWeeklyPlan(plan) {
+    if (!this.isConfigured() || !plan) return false;
+    const planId = plan.plan_id || plan.planId || plan.id;
+    if (!planId) return false;
+    try {
+      const planDocRef = doc(db, 'weekly_plans', String(planId));
+      const normalizedPlan = {
+        ...plan,
+        planId: planId,
+        projectId: plan.project_id || plan.projectId || '',
+        projectName: plan.project_name || plan.projectName || '',
+        company: plan.company_name || plan.company || plan.subcontractor || '',
+        weekLabel: plan.week_label || plan.weekLabel || '',
+        startDate: plan.start_date || plan.startDate || '',
+        endDate: plan.end_date || plan.endDate || '',
+        objective: plan.weekly_objective || plan.objective || '',
+        status: plan.status || plan.pmStatus || 'Pending',
+        pmStatus: plan.pmStatus || plan.status || 'Pending',
+        pmName: plan.pmName || plan.pm_name || '',
+        pmComment: plan.pmComment || plan.pm_comment || plan.pmNotes || '',
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(planDocRef, normalizedPlan, { merge: true });
+
+      await this.broadcastEvent('PLAN_SUBMITTED', {
+        planId: planId,
+        projectId: normalizedPlan.projectId,
+        company: normalizedPlan.company,
+        status: normalizedPlan.status
+      });
+
+      return true;
+    } catch (err) {
+      console.warn('[FirebaseService] saveWeeklyPlan error:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Update Weekly Plan approval status in Firestore (<100ms)
+   */
+  async updateWeeklyPlanStatus(planId, status, pmComment = '', pmName = '') {
+    if (!this.isConfigured() || !planId) return false;
+    try {
+      const planDocRef = doc(db, 'weekly_plans', String(planId));
+      const nowStr = new Date().toLocaleString('th-TH');
+      await setDoc(planDocRef, {
+        planId: planId,
+        status: status,
+        pmStatus: status,
+        pmComment: pmComment,
+        pmNotes: pmComment,
+        pmName: pmName,
+        approvedAt: nowStr,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      await this.broadcastEvent('PLAN_STATUS_CHANGED', {
+        planId: planId,
+        status: status,
+        pmComment: pmComment,
+        pmName: pmName
+      });
+      return true;
+    } catch (err) {
+      console.warn('[FirebaseService] updateWeeklyPlanStatus error:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Fetch Weekly Plans from Firestore (<100ms)
+   * @param {string} projectId
+   * @returns {Promise<Array>}
+   */
+  async getWeeklyPlans(projectId) {
+    if (!this.isConfigured()) return [];
+    try {
+      const plansCol = collection(db, 'weekly_plans');
+      const snapshot = await getDocs(plansCol);
+      const plans = [];
+      snapshot.forEach(docSnap => {
+        plans.push({ id: docSnap.id, planId: docSnap.id, ...docSnap.data() });
+      });
+      plans.sort((a, b) => String(b.startDate || b.start_date || '').localeCompare(String(a.startDate || a.start_date || '')));
+      if (projectId && projectId !== '-' && projectId !== 'all') {
+        return plans.filter(p => {
+          const pid = p.projectId || p.project_id;
+          return !pid || pid === '-' || pid === projectId;
+        });
+      }
+      return plans;
+    } catch (err) {
+      console.warn('[FirebaseService] getWeeklyPlans error:', err);
+      return [];
+    }
+  },
+
+  /**
+   * Listen for Weekly Plans changes in real-time (<100ms push)
+   * @param {string} projectId
+   * @param {function} callback - callback(plansList)
+   */
+  listenWeeklyPlans(projectId, callback) {
+    if (!this.isConfigured()) return () => {};
+    try {
+      const plansCol = collection(db, 'weekly_plans');
+      return onSnapshot(plansCol, (snapshot) => {
+        const plans = [];
+        snapshot.forEach(docSnap => {
+          plans.push({ id: docSnap.id, planId: docSnap.id, ...docSnap.data() });
+        });
+        plans.sort((a, b) => String(b.startDate || b.start_date || '').localeCompare(String(a.startDate || a.start_date || '')));
+        if (projectId && projectId !== '-' && projectId !== 'all') {
+          const filtered = plans.filter(p => {
+            const pid = p.projectId || p.project_id;
+            return !pid || pid === '-' || pid === projectId;
+          });
+          callback(filtered);
+        } else {
+          callback(plans);
+        }
+      }, (err) => {
+        console.warn('[FirebaseService] listenWeeklyPlans error:', err);
+      });
+    } catch (err) {
+      console.warn('[FirebaseService] listenWeeklyPlans setup error:', err);
+      return () => {};
+    }
+  },
+
+  /**
+   * Save daily breakdown tasks of a plan in Firestore (<100ms)
+   */
+  async savePlanTasks(planId, tasks = []) {
+    if (!this.isConfigured() || !planId) return false;
+    try {
+      const docRef = doc(db, 'plan_tasks', String(planId));
+      await setDoc(docRef, {
+        planId: planId,
+        tasks: tasks,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn('[FirebaseService] savePlanTasks error:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Fetch daily breakdown tasks of a plan from Firestore (<100ms)
+   */
+  async getPlanTasks(planId) {
+    if (!this.isConfigured() || !planId) return [];
+    try {
+      const docRef = doc(db, 'plan_tasks', String(planId));
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.tasks)) return data.tasks;
+      }
+      return [];
+    } catch (err) {
+      console.warn('[FirebaseService] getPlanTasks error:', err);
+      return [];
+    }
   }
 };
