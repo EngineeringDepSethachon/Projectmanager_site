@@ -148,6 +148,8 @@ function parseUrlParams() {
 // ==========================================
 // Date & Calendar Strip
 // ==========================================
+// Date Locking (ล็อคเฉพาะวันปัจจุบันเท่านั้น ห้ามเลือกย้อนหลัง/ล่วงหน้า)
+// ==========================================
 function initDateDisplay() {
   const today = new Date();
   const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -158,61 +160,6 @@ function initDateDisplay() {
   if (dateEl) {
     dateEl.innerText = `${today.getDate()} ${thMonths[today.getMonth()]} ${today.getFullYear()}`;
   }
-
-  renderHorizontalDateStrip();
-}
-
-function renderHorizontalDateStrip() {
-  const container = document.getElementById('horizontal-date-strip');
-  if (!container) return;
-
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const mondayDiff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + mondayDiff);
-
-  const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const todayStr = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
-
-  let html = '';
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const dayNum = d.getDate();
-    const dayName = daysEn[d.getDay()];
-    const dateStr = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}`;
-    const isToday = dateStr === todayStr;
-
-    html += `
-      <div class="date-item ${isToday ? 'active' : ''}" data-date="${dateStr}">
-        <span class="day-name">${dayName}</span>
-        <span class="day-number">${dayNum}</span>
-      </div>
-    `;
-  }
-
-  container.innerHTML = html;
-
-  // เปลี่ยนวันที่รายงาน
-  container.querySelectorAll('.date-item').forEach(el => {
-    el.addEventListener('click', async () => {
-      container.querySelectorAll('.date-item').forEach(d => d.classList.remove('active'));
-      el.classList.add('active');
-      const chosenDate = el.getAttribute('data-date');
-      state.reportDate = chosenDate;
-
-      const [y, m, d] = chosenDate.split('-');
-      const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-      const dateEl = document.getElementById('display-report-date');
-      if (dateEl) {
-        dateEl.innerText = `${parseInt(d, 10)} ${thMonths[parseInt(m, 10)-1]} ${y}`;
-      }
-
-      showToast(`📅 เปลี่ยนวันที่: ${chosenDate}`, 'info');
-      await loadApprovedTasksForToday();
-    });
-  });
 }
 
 // ==========================================
@@ -225,9 +172,9 @@ function applyApprovedTasks(approvedList) {
 
   if (state.approvedTasksToday.length > 0) {
     const fromPlanTasks = state.approvedTasksToday.map((at, idx) => ({
-      id: 'TASK-' + (at.taskId || ('P-' + idx)),
+      id: 'TASK-' + (at.taskId || at.id || ('P-' + idx)),
       source_task_id: at.taskId || at.id || ('TASK-' + idx),
-      from_plan: true,
+      from_plan: at.from_plan !== undefined ? at.from_plan : true,
       company: at.company || state.subcontractor.name || '-',
       name: at.name || at.taskName || at.category || 'งานตามแผน',
       category: at.category || 'ทั่วไป',
@@ -235,19 +182,19 @@ function applyApprovedTasks(approvedList) {
       description: at.description || at.taskDesc || '',
       quantity: at.quantity || at.targetQty || '',
       plannedWorkers: at.plannedWorkers || 0,
-      progress: 0,
-      isPlanned: true
+      progress: at.progress !== undefined ? at.progress : 0,
+      isPlanned: at.isPlanned !== undefined ? at.isPlanned : true
     }));
 
-    const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
-    const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
+    const extraMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
+    const extraEvening = state.eveningActualTasks.filter(t => !t.from_plan);
 
-    state.morningPlannedTasks = [...fromPlanTasks, ...emergencyMorning];
+    state.morningPlannedTasks = [...fromPlanTasks, ...extraMorning];
 
     if (state.eveningActualTasks.length > 0) {
       state.eveningActualTasks = [
         ...state.eveningActualTasks.filter(t => t.from_plan),
-        ...emergencyEvening
+        ...extraEvening
       ];
     }
 
@@ -266,11 +213,11 @@ function applyApprovedTasks(approvedList) {
       `;
     }
   } else {
-    const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
-    const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
-    state.morningPlannedTasks = emergencyMorning;
+    const extraMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
+    const extraEvening = state.eveningActualTasks.filter(t => !t.from_plan);
+    state.morningPlannedTasks = extraMorning;
     if (state.eveningActualTasks.length > 0) {
-      state.eveningActualTasks = emergencyEvening;
+      state.eveningActualTasks = extraEvening;
     }
 
     if (banner) {
@@ -294,7 +241,15 @@ function applyApprovedTasks(approvedList) {
 async function loadApprovedTasksForToday() {
   const cacheKey = `cpm_cache_tasks_${state.project.id}_${state.reportDate}_${state.subcontractor.name}`;
 
-  // 1. Instant Cache Display (0ms)
+  // 1. Instant check: ถ้ามี existingMorningReport และมีรายการงาน ให้ใช้ทันที (0ms)
+  if (state.existingMorningReport) {
+    if (Array.isArray(state.existingMorningReport.task_progress) && state.existingMorningReport.task_progress.length > 0) {
+      applyApprovedTasks(state.existingMorningReport.task_progress);
+      return;
+    }
+  }
+
+  // 2. Instant Cache Display (0ms)
   try {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
@@ -305,9 +260,10 @@ async function loadApprovedTasksForToday() {
     }
   } catch (e) {}
 
-  // 2. Fast Firestore Fetch in parallel (<100ms)
+  // 3. Fast Firestore Fetch in parallel (<100ms)
   if (firebaseService.isConfigured()) {
-    firebaseService.getApprovedTasks(state.reportDate, state.project.id).then(fbTasks => {
+    try {
+      const fbTasks = await firebaseService.getApprovedTasks(state.reportDate, state.project.id);
       if (fbTasks && fbTasks.length > 0) {
         const mySub = state.subcontractor.name;
         const filtered = (mySub && mySub !== '-') 
@@ -316,12 +272,15 @@ async function loadApprovedTasksForToday() {
         if (filtered.length > 0) {
           applyApprovedTasks(filtered);
           try { localStorage.setItem(cacheKey, JSON.stringify(filtered)); } catch(e) {}
+          return; // ดึงจาก Firestore สำเร็จแล้ว ไม่ต้องรอ GAS
         }
       }
-    }).catch(e => console.warn('[Foreman] Firestore getApprovedTasks error:', e));
+    } catch (e) {
+      console.warn('[Foreman] Firestore getApprovedTasks error:', e);
+    }
   }
 
-  // 3. Background GAS Fetch (fallback & master sync)
+  // 4. Background GAS Fetch (fallback & master sync)
   if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
     gasService.fetchApprovedTasksForDate(state.reportDate, state.subcontractor.name, state.project.id).then(gasTasks => {
       if (gasTasks && gasTasks.length > 0) {
@@ -369,13 +328,13 @@ function renderDynamicTasks() {
               ${t.from_plan ? `
                 <span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">🎯 ตามแผน</span>
               ` : `
-                <span class="task-plan-badge" style="background:#fffbeb; color:#b45309; border:1px solid #f59e0b; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">⚡ นอกแผน</span>
+                <span class="task-plan-badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">📝 รายงานเพิ่มเติม (โฟร์แมน)</span>
               `}
             </div>
             ${!t.from_plan ? `<button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">🗑️ ลบ</button>` : ''}
           </div>
           <div style="margin-bottom: 0.4rem;">
-            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 2px;">ชื่องานตามแผน:</label>
+            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 2px;">${t.from_plan ? 'ชื่องานตามแผน:' : 'ชื่องานรายงานเพิ่มเติม:'}</label>
             <div style="font-size: 0.88rem; font-weight: 800; color: var(--text-heading);">${escapeHtml(t.name)}</div>
             ${t.workArea ? `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">📍 ${escapeHtml(t.workArea)}</div>` : ''}
           </div>
@@ -423,7 +382,7 @@ function renderDynamicTasks() {
             ${t.from_plan ? `
               <span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">🎯 ตามแผน</span>
             ` : `
-              <span class="task-plan-badge" style="background:#fffbeb; color:#b45309; border:1px solid #f59e0b; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">⚡ นอกแผน</span>
+              <span class="task-plan-badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">📝 รายงานเพิ่มเติม (โฟร์แมน)</span>
             `}
           </div>
           ${!t.from_plan ? `<button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">🗑️ ลบ</button>` : ''}
@@ -550,7 +509,7 @@ window.removeDynamicTask = function(id) {
   if (idx > -1) {
     list.splice(idx, 1);
     renderDynamicTasks();
-    showToast('ลบงานนอกแผนแล้ว', 'info');
+    showToast('ลบรายการงานรายงานเพิ่มเติมแล้ว', 'info');
   }
 };
 
@@ -888,6 +847,11 @@ function renderShiftUI() {
   const tasksSection = document.getElementById('tasks-card-section');
   const photoMergeHint = document.getElementById('photo-merge-hint');
 
+  // ตรวจสอบให้แน่ใจว่าปุ่ม Submit แสดงผลเสมอ ไม่ถูกซ่อนค้าง
+  if (submitBtn) {
+    submitBtn.style.display = '';
+  }
+
   if (tabMorning && tabEvening) {
     if (isMorning) {
       tabMorning.classList.add('active');
@@ -899,7 +863,10 @@ function renderShiftUI() {
       if (rainHoursBox) rainHoursBox.style.display = 'none';
       if (reqBanner) reqBanner.style.display = 'none';
       if (photoMergeHint) photoMergeHint.style.display = 'none';
-      if (tasksSection) tasksSection.style.opacity = '1';
+      if (tasksSection) {
+        tasksSection.style.opacity = '1';
+        tasksSection.style.pointerEvents = '';
+      }
 
       // Hide baseline card in morning mode
       const baseContainer = document.getElementById('morning-baseline-card-container');
@@ -923,7 +890,7 @@ function renderShiftUI() {
       if (camDesc) camDesc.innerText = 'ประทับเวลาเปิดงานรอบเช้า และ LINE UID';
 
       if (state.existingMorningReport) {
-        // รายงานเช้าส่งแล้ว → แสดง "สำเร็จ" พร้อมปุ่มแก้ไข
+        // รายงานเช้าส่งแล้ว → แสดง "สำเร็จ" พร้อมปุ่มลัดไปรอบเย็น และปุ่มบันทึกการแก้ไข
         const em = state.existingMorningReport;
         const mTime = em.timestamp || em['เวลาบันทึก (Timestamp)'] || '';
         const mWorkers = em.totalWorkforce ||
@@ -935,33 +902,43 @@ function renderShiftUI() {
           syncBanner.style.display = 'flex';
           syncBanner.innerHTML = `
             <div style="flex:1">
-              <div style="font-size:0.95rem; font-weight:800; color:#065f46; margin-bottom:4px;">✅ ส่งรายงานรอบเช้าเสร็จสิ้นแล้ว</div>
+              <div style="font-size:0.95rem; font-weight:800; color:#065f46; margin-bottom:4px;">✅ บันทึกรายงานเปิดงานรอบเช้าแล้ว</div>
               <div style="font-size:0.75rem; color:#047857; line-height:1.5;">
                 🕐 เวลา: <strong>${escapeHtml(String(mTime))}</strong>
                 &nbsp;|&nbsp; 👷 ยอดคน: <strong>${mWorkers} คน</strong>
                 &nbsp;|&nbsp; 📋 รหัส: <strong>${escapeHtml(String(em.id || '-'))}</strong>
               </div>
-              <div style="font-size:0.72rem; color:#6b7280; margin-top:4px;">หากต้องการแก้ไขข้อมูล กดปุ่ม "แก้ไข" ทางขวา</div>
+              <div style="font-size:0.72rem; color:#6b7280; margin-top:4px;">ท่านสามารถแก้ไขข้อมูลแล้วกดปุ่มอัปเดต หรือกดสลับไปรายงานปิดงานรอบเย็น</div>
             </div>
-            <button type="button" onclick="window.enableMorningEditMode()" style="flex-shrink:0; background:#2563eb; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:0.78rem; font-weight:700; cursor:pointer; white-space:nowrap;">✏️ แก้ไข</button>
+            <div style="display:flex; flex-direction:column; gap:5px; flex-shrink:0;">
+              <button type="button" onclick="window.switchShiftTab('evening')" style="background:#059669; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.75rem; font-weight:700; cursor:pointer; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.1);">🌆 ไปปิดงานรอบเย็น 👉</button>
+              <button type="button" onclick="window.enableMorningEditMode()" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:6px; padding:4px 8px; font-size:0.72rem; font-weight:600; cursor:pointer; white-space:nowrap;">✏️ แก้ไขรอบเช้า</button>
+            </div>
           `;
         }
-        // ซ่อน submit button — ต้องกดแก้ไขก่อน
+        // ปุ่ม submit ต้องมองเห็นเสมอ เพื่อให้กดอัปเดตข้อมูลรอบเช้าได้
         if (submitBtn) {
-          submitBtn.style.display = 'none';
+          submitBtn.style.display = '';
+          submitBtn.disabled = false;
+          submitBtn.className = 'btn-submit-report morning';
+          submitText.innerText = '✏️ บันทึกการแก้ไขรายงานเปิดงานตอนเช้า';
         }
-        // ซ่อน tasks section — แสดงเป็น summary แทน
-        if (tasksSection) tasksSection.style.opacity = '0.5';
-        if (tasksSection) tasksSection.style.pointerEvents = 'none';
+        if (tasksSection) {
+          tasksSection.style.opacity = '1';
+          tasksSection.style.pointerEvents = '';
+        }
       } else {
         if (syncBanner) syncBanner.style.display = 'none';
         if (submitBtn) {
           submitBtn.style.display = '';
           submitBtn.disabled = false;
           submitBtn.className = 'btn-submit-report morning';
-          submitText.innerText = 'ส่งรายงานเปิดงานตอนเช้า';
+          submitText.innerText = '🌅 ส่งรายงานเปิดงานตอนเช้า';
         }
-        if (tasksSection) { tasksSection.style.opacity = '1'; tasksSection.style.pointerEvents = ''; }
+        if (tasksSection) {
+          tasksSection.style.opacity = '1';
+          tasksSection.style.pointerEvents = '';
+        }
       }
 
     } else {
@@ -999,6 +976,7 @@ function renderShiftUI() {
         if (baseContainer) baseContainer.style.display = 'none';
 
         if (submitBtn) {
+          submitBtn.style.display = '';
           submitBtn.disabled = true;
           submitBtn.className = 'btn-submit-report evening';
           submitText.innerText = '⚠️ กรุณาบันทึกเปิดงานเช้าก่อนปิดงาน';
@@ -1048,6 +1026,7 @@ function renderShiftUI() {
             `;
           }
           if (submitBtn) {
+            submitBtn.style.display = '';
             submitBtn.disabled = false;
             submitBtn.className = 'btn-submit-report evening';
             submitText.innerText = '✏️ บันทึกการแก้ไขรายงานปิดงานประจำวัน';
@@ -1065,6 +1044,7 @@ function renderShiftUI() {
             `;
           }
           if (submitBtn) {
+            submitBtn.style.display = '';
             submitBtn.disabled = false;
             submitBtn.className = 'btn-submit-report evening';
             submitText.innerText = '🌆 ส่งรายงานปิดงานประจำวัน (รวมผลงานต่อจากรอบเช้า)';
@@ -1115,6 +1095,33 @@ function applyExistingReports(list) {
       state.machinery = String(mReport.machinery).split(',').map(s => s.trim()).filter(Boolean);
       renderMachinery();
     }
+
+    // Hydrate tasks immediately from morning report if empty (0ms)
+    if (state.morningPlannedTasks.length === 0) {
+      if (Array.isArray(mReport.task_progress) && mReport.task_progress.length > 0) {
+        applyApprovedTasks(mReport.task_progress);
+      } else if (mReport.task_summary) {
+        const parsedTasks = String(mReport.task_summary).split(' | ').filter(Boolean).map((it, idx) => {
+          let p = 0;
+          const matchP = it.match(/\((\d+)%\)/);
+          if (matchP) p = Number(matchP[1]);
+          const mQty = it.match(/\[(?:ผลงาน|เป้าหมาย|ปริมาณ):\s*([^\]]+)\]/);
+          const pQty = mQty ? mQty[1].trim() : '';
+          const cleanName = it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').replace(/\[[^\]]+\]/, '').trim();
+          return {
+            taskId: 'TASK-MORN-' + (idx + 1),
+            name: cleanName || ('งานที่ ' + (idx + 1)),
+            targetQty: pQty,
+            progress: p,
+            category: 'ทั่วไป',
+            from_plan: true
+          };
+        });
+        if (parsedTasks.length > 0) {
+          applyApprovedTasks(parsedTasks);
+        }
+      }
+    }
   }
 
   // Find evening report for today
@@ -1153,15 +1160,20 @@ async function checkExistingReportForToday() {
 
   // 2. Fast Firestore fetch (<100ms)
   if (firebaseService.isConfigured()) {
-    firebaseService.getDailyReports(state.project.id).then(fbList => {
+    try {
+      const fbList = await firebaseService.getDailyReports(state.project.id);
       if (fbList && fbList.length > 0) {
         applyExistingReports(fbList);
         try { localStorage.setItem(cacheKey, JSON.stringify(fbList)); } catch(e) {}
+        const hasToday = fbList.some(r => (r.report_date || r['วันที่รายงาน (Date)']) === state.reportDate);
+        if (hasToday) return; // พบรายงานวันนี้จาก Firestore แล้ว ไม่ต้องรอ GAS
       }
-    }).catch(e => console.warn('[Foreman] Firebase getDailyReports error:', e));
+    } catch (e) {
+      console.warn('[Foreman] Firebase getDailyReports error:', e);
+    }
   }
 
-  // 3. Background GAS fetch
+  // 3. Background GAS fetch (fallback)
   if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
     gasService.fetchDailyReports(state.project.id).then(gasList => {
       if (gasList && gasList.length > 0) {
@@ -1370,27 +1382,27 @@ function bindEventHandlers() {
     });
   });
 
-  // Fallback: Add unplanned task
+  // Add foreman extra reporting task (รายงานเพิ่มเติมของโฟร์แมน)
   document.getElementById('btn-add-unplanned-task')?.addEventListener('click', () => {
-    const taskName = prompt('ระบุชื่องานฉุกเฉินนอกแผน:');
+    const taskName = prompt('ระบุชื่องานที่ต้องการรายงานเพิ่มเติม (โฟร์แมนรายงานเพิ่มนอกเหนือจากแผน):');
     if (!taskName || !taskName.trim()) return;
 
     const list = getActiveTasksList();
     list.push({
-      id: 'UNPLAN-' + Date.now(),
+      id: 'EXTRA-' + Date.now(),
       source_task_id: '',
       from_plan: false,
       company: state.subcontractor.name || '-',
       name: taskName.trim(),
-      workArea: 'นอกแผน',
-      description: 'งานฉุกเฉินเพิ่มเติม',
+      workArea: 'รายงานเพิ่มเติม',
+      description: 'งานรายงานเพิ่มเติมของโฟร์แมน',
       quantity: '',
       progress: 0,
       isPlanned: false
     });
 
     renderDynamicTasks();
-    showToast('เพิ่มงานฉุกเฉินนอกแผนแล้ว', 'info');
+    showToast('➕ เพิ่มงานรายงานเพิ่มเติมของโฟร์แมนแล้ว', 'info');
   });
 
   // Camera upload
@@ -1564,8 +1576,8 @@ async function submitDailyReport() {
     issues: finalIssues,
     totalWorkforce: totalWorkers,
     task_summary: isMorning 
-      ? currentTasks.map((t, idx) => `${idx+1}. ${t.name} (เป้า: ${t.progress || 0}%)`).join(' | ')
-      : currentTasks.map((t, idx) => `${idx+1}. ${t.name} (เป้า: ${t.planned_progress || 0}% -> จริง: ${t.progress || 0}%)`).join(' | '),
+      ? currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.progress || 0}%)`).join(' | ')
+      : currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.planned_progress || 0}% -> จริง: ${t.progress || 0}%)`).join(' | '),
     status: isMorning ? 'morning_opened' : 'day_completed'
   };
 
@@ -1594,13 +1606,13 @@ async function submitDailyReport() {
       state.existingMorningReport = {
         ...payload,
         id: reportId,
-        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (${t.progress||0}%)`).join(' | ')
+        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (${t.progress||0}%)`).join(' | ')
       };
     } else {
       state.existingEveningReport = {
         ...payload,
         id: reportId,
-        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (เป้า: ${t.planned_progress||0}% -> จริง: ${t.progress||0}%)`).join(' | ')
+        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.planned_progress||0}% -> จริง: ${t.progress||0}%)`).join(' | ')
       };
       if (state.existingMorningReport) {
         state.existingMorningReport.status = 'day_completed';

@@ -142,16 +142,19 @@ export const firebaseService = {
     if (!this.isConfigured()) return [];
     try {
       const reportsCol = collection(db, 'daily_reports');
-      let q = reportsCol;
-      if (projectId && projectId !== '-' && projectId !== 'all') {
-        q = query(reportsCol, where('project_id', '==', projectId));
-      }
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(reportsCol);
       const reports = [];
       snapshot.forEach(docSnap => {
         reports.push({ id: docSnap.id, ...docSnap.data() });
       });
       reports.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      if (projectId && projectId !== '-' && projectId !== 'all') {
+        const filtered = reports.filter(r => {
+          const pid = r.project_id || r.projectId;
+          return !pid || pid === '-' || pid === projectId;
+        });
+        return filtered.length > 0 ? filtered : reports;
+      }
       return reports;
     } catch (err) {
       console.warn('[FirebaseService] getDailyReports error:', err);
@@ -168,19 +171,22 @@ export const firebaseService = {
     if (!this.isConfigured()) return () => {};
     try {
       const reportsCol = collection(db, 'daily_reports');
-      let q = reportsCol;
-      if (projectId && projectId !== '-' && projectId !== 'all') {
-        q = query(reportsCol, where('project_id', '==', projectId));
-      }
-
-      return onSnapshot(q, (snapshot) => {
+      return onSnapshot(reportsCol, (snapshot) => {
         const reports = [];
         snapshot.forEach(doc => {
           reports.push({ id: doc.id, ...doc.data() });
         });
         // Sort newest first
         reports.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
-        callback(reports);
+        if (projectId && projectId !== '-' && projectId !== 'all') {
+          const filtered = reports.filter(r => {
+            const pid = r.project_id || r.projectId;
+            return !pid || pid === '-' || pid === projectId;
+          });
+          callback(filtered.length > 0 ? filtered : reports);
+        } else {
+          callback(reports);
+        }
       }, (err) => {
         console.warn('[FirebaseService] listenDailyReports error:', err);
       });

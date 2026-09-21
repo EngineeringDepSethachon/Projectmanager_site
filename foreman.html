@@ -37,15 +37,10 @@
           <strong id="display-project-name">กำลังโหลดโครงการ...</strong>
           <span class="caret">▼</span>
         </div>
-        <div class="date-pill">
+        <div class="date-pill locked" title="รายงานประจำวันของวันนี้เท่านั้น">
           <span class="icon">📅</span>
-          <span id="display-report-date">20 ก.ย. 2026</span>
+          <span>วันนี้: <strong id="display-report-date">-</strong></span>
         </div>
-      </div>
-
-      <!-- Horizontal 7-Day Date Strip -->
-      <div class="date-strip-container" id="horizontal-date-strip">
-        <!-- Rendered via JS -->
       </div>
     </header>
 
@@ -129,9 +124,9 @@
             <!-- Rendered via JS -->
           </div>
 
-          <!-- Fallback: ปุ่มเพิ่มงานฉุกเฉินนอกแผนกรณีจำเป็น -->
-          <button type="button" id="btn-add-unplanned-task">
-            ⚠️ มีงานฉุกเฉินนอกแผนที่ต้องทำเพิ่ม? กดที่นี่
+          <!-- ปุ่มเพิ่มงานรายงานเพิ่มเติมของโฟร์แมน -->
+          <button type="button" id="btn-add-unplanned-task" class="btn-add-extra-task" style="width: 100%; font-size: 0.82rem; padding: 8px 12px; border: 1.5px dashed #3b82f6; background: #eff6ff; color: #1d4ed8; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px;">
+            <span>➕ รายงานงานเพิ่มเติมของโฟร์แมน (นอกเหนือจากแผน)</span>
           </button>
         </div>
       </section>
