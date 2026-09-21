@@ -134,6 +134,32 @@ export const firebaseService = {
   },
 
   /**
+   * Fetch Daily Reports for a project from Firestore
+   * @param {string} projectId
+   * @returns {Promise<Array>}
+   */
+  async getDailyReports(projectId) {
+    if (!this.isConfigured()) return [];
+    try {
+      const reportsCol = collection(db, 'daily_reports');
+      let q = reportsCol;
+      if (projectId && projectId !== '-' && projectId !== 'all') {
+        q = query(reportsCol, where('project_id', '==', projectId));
+      }
+      const snapshot = await getDocs(q);
+      const reports = [];
+      snapshot.forEach(docSnap => {
+        reports.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      reports.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      return reports;
+    } catch (err) {
+      console.warn('[FirebaseService] getDailyReports error:', err);
+      return [];
+    }
+  },
+
+  /**
    * Listen for Daily Reports for a specific project in real-time
    * @param {string} projectId
    * @param {function} callback - callback(reportsList)

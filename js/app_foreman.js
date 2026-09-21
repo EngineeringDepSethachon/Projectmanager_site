@@ -1051,9 +1051,42 @@ function renderShiftUI() {
 }
 
 async function checkExistingReportForToday() {
-  if (!gasService.isConfigured() || !state.project.id || state.project.id === '-') return;
+  if (!state.project.id || state.project.id === '-') return;
   try {
-    const list = await gasService.fetchDailyReports(state.project.id);
+    let list = [];
+
+    // 1. Fast Firestore fetch (<100ms) to immediately catch any newly submitted reports
+    if (firebaseService.isConfigured()) {
+      try {
+        const fbList = await firebaseService.getDailyReports(state.project.id);
+        if (fbList && fbList.length > 0) {
+          list = fbList;
+        }
+      } catch (fbErr) {
+        console.warn('[Foreman] Firebase getDailyReports error:', fbErr);
+      }
+    }
+
+    // 2. Fetch from GAS & merge with Firestore list
+    if (gasService.isConfigured()) {
+      try {
+        const gasList = await gasService.fetchDailyReports(state.project.id);
+        if (gasList && gasList.length > 0) {
+          const map = new Map();
+          // Put Firestore items first
+          list.forEach(r => map.set(String(r.id), r));
+          // Merge GAS items
+          gasList.forEach(r => {
+            const existing = map.get(String(r.id)) || {};
+            map.set(String(r.id), { ...existing, ...r });
+          });
+          list = Array.from(map.values());
+        }
+      } catch (gasErr) {
+        console.warn('[Foreman] GAS fetchDailyReports error:', gasErr);
+      }
+    }
+
     if (list && list.length > 0) {
       const today = state.reportDate;
       const mySub = state.subcontractor.name;
@@ -1502,6 +1535,10 @@ async function submitDailyReport() {
     })),
     photos: isMorning ? state.photos : (state.eveningPhotos.length > 0 ? state.eveningPhotos : state.photos),
     issues: finalIssues,
+    totalWorkforce: totalWorkers,
+    task_summary: isMorning 
+      ? currentTasks.map((t, idx) => `${idx+1}. ${t.name} (เป้า: ${t.progress || 0}%)`).join(' | ')
+      : currentTasks.map((t, idx) => `${idx+1}. ${t.name} (เป้า: ${t.planned_progress || 0}% -> จริง: ${t.progress || 0}%)`).join(' | '),
     status: isMorning ? 'morning_opened' : 'day_completed'
   };
 

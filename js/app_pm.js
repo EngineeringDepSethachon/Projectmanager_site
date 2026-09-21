@@ -930,7 +930,40 @@ function renderMasterMonthlyGantt() {
 // ==========================================
 async function loadDailyReports(isSilent = false) {
   try {
-    const list = await gasService.fetchDailyReports(state.project.id);
+    let list = [];
+
+    // 1. Fast Firestore fetch (<100ms) for instant executive dashboard update
+    if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
+      try {
+        const fbList = await firebaseService.getDailyReports(state.project.id);
+        if (fbList && fbList.length > 0) {
+          list = fbList;
+          state.dailyReports = list;
+          const badge = document.getElementById('badge-total-reports');
+          if (badge) badge.innerText = state.dailyReports.length;
+          if (state.activeTab === 'view-pm-reports') {
+            renderDailyReportsTable();
+          }
+        }
+      } catch (fbErr) {
+        console.warn('[PM] Firebase getDailyReports error:', fbErr);
+      }
+    }
+
+    // 2. Comprehensive Google Sheets fetch & merge
+    if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+      const gasList = await gasService.fetchDailyReports(state.project.id);
+      if (gasList && gasList.length > 0) {
+        const map = new Map();
+        list.forEach(r => map.set(String(r.id), r));
+        gasList.forEach(r => {
+          const existing = map.get(String(r.id)) || {};
+          map.set(String(r.id), { ...existing, ...r });
+        });
+        list = Array.from(map.values());
+      }
+    }
+
     const prevCount = (state.dailyReports || []).length;
     state.dailyReports = list || [];
     const badge = document.getElementById('badge-total-reports');
