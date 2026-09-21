@@ -211,15 +211,8 @@ function renderHorizontalDateStrip() {
 // ==========================================
 async function loadApprovedTasksForToday() {
   const banner = document.getElementById('plan-source-status-banner');
-  const tasksContainer = document.getElementById('dynamic-tasks-container');
-
-  if (tasksContainer) {
-    tasksContainer.innerHTML = `
-      <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.8rem;">
-        ⏳ กำลังตรวจสอบแผนงานที่ได้รับอนุมัติจาก PM...
-      </div>
-    `;
-  }
+  // NOTE: do NOT clear tasksContainer here — just update state quietly
+  // to avoid wiping emergency tasks mid-session.
 
   try {
     const approved = await gasService.fetchApprovedTasksForDate(
@@ -230,8 +223,8 @@ async function loadApprovedTasksForToday() {
     state.approvedTasksToday = approved || [];
 
     if (state.approvedTasksToday.length > 0) {
-      // มีงานที่ PM อนุมัติไว้ล่วงหน้า ➔ บรรจุเข้าตารางงานเช้าอัตโนมัติ
-      state.morningPlannedTasks = state.approvedTasksToday.map((at, idx) => ({
+      // สร้าง list งานตามแผนจาก backend
+      const fromPlanTasks = state.approvedTasksToday.map((at, idx) => ({
         id: 'TASK-' + Date.now() + '-' + idx,
         source_task_id: at.taskId,
         from_plan: true,
@@ -246,8 +239,22 @@ async function loadApprovedTasksForToday() {
         isPlanned: true
       }));
 
-      // ถ้าสลับมาดูช่วงเย็น ให้ล้าง baseline ใหม่ตามแผนเช้า
-      state.eveningActualTasks = [];
+      // คงงานฉุกเฉินนอกแผน (from_plan=false) ที่โฟร์แมนเพิ่มไว้ก่อน แล้วค่อยรวมกับงานแผน
+      const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
+      const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
+
+      // อัปเดต morningPlannedTasks: งานแผนใหม่ + งานฉุกเฉินที่มีอยู่
+      state.morningPlannedTasks = [...fromPlanTasks, ...emergencyMorning];
+
+      // ถ้า eveningActualTasks ยังว่างอยู่ ยังไม่ต้องยุ่ง (จะถูก init ตอน switchShift)
+      // แต่ถ้ามีงานฉุกเฉินเย็นอยู่แล้ว ให้คงไว้
+      if (state.eveningActualTasks.length > 0) {
+        // คงงานฉุกเฉินเย็น; งานจากแผนจะถูก sync ตอน switchShift ครั้งหน้า
+        state.eveningActualTasks = [
+          ...state.eveningActualTasks.filter(t => t.from_plan),
+          ...emergencyEvening
+        ];
+      }
 
       if (banner) {
         banner.className = 'approved-tasks-banner approved-active';
@@ -265,8 +272,13 @@ async function loadApprovedTasksForToday() {
       }
     } else {
       // ไม่มีงานที่ PM อนุมัติสำหรับวันนี้
-      state.morningPlannedTasks = [];
-      state.eveningActualTasks = [];
+      // คงแต่งานฉุกเฉินที่โฟร์แมนเพิ่มไว้
+      const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
+      const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
+      state.morningPlannedTasks = emergencyMorning;
+      if (state.eveningActualTasks.length > 0) {
+        state.eveningActualTasks = emergencyEvening;
+      }
 
       if (banner) {
         banner.className = 'approved-tasks-banner unapproved-warning';
@@ -284,7 +296,7 @@ async function loadApprovedTasksForToday() {
     }
   } catch (err) {
     console.warn('loadApprovedTasksForToday error:', err);
-    state.morningPlannedTasks = [];
+    // ไม่ reset state — คงงานฉุกเฉินไว้
   }
 
   renderDynamicTasks();
@@ -355,24 +367,31 @@ function renderDynamicTasks() {
       ` : ''}
 
       <!-- Target vs Actual Metrics -->
+      ${!isMorning ? `
+        <div class="task-baseline-goal-box">
+          <span>🎯 <strong>เป้าหมายรอบเช้า:</strong> ${escapeHtml(t.planned_quantity || t.quantity || 'ตามแผน')}</span>
+          <span style="font-weight:700; color:#1d4ed8;">เป้าคาดการณ์เช้า: ${t.planned_progress !== undefined ? t.planned_progress : (t.progress !== undefined ? t.progress : 0)}%</span>
+        </div>
+      ` : ''}
+
       <div class="task-metrics-grid">
         <div>
           <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
-            ${isMorning ? 'เป้าหมายปริมาณงาน:' : 'ปริมาณงานจริงที่ทำได้:'}
+            ${isMorning ? 'เป้าหมายปริมาณงาน:' : 'ปริมาณงานจริงที่ทำได้ (Actual Qty):'}
           </label>
           <input 
             type="text" 
             class="form-input" 
             style="font-size: 0.78rem;" 
             value="${escapeHtml(t.quantity || '')}" 
-            placeholder="เช่น 8 ต้น, 35 ตร.ม." 
+            placeholder="${isMorning ? 'เช่น 8 ต้น, 35 ตร.ม.' : 'ระบุปริมาณที่ทำได้จริง'}" 
             oninput="window.updateTaskField('${t.id}', 'quantity', this.value)"
           >
         </div>
 
         <div>
           <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
-            ${isMorning ? 'เป้าหมายความคืบหน้า (%):' : 'ผลงานจริงสะสม (%):'}
+            ${isMorning ? 'เป้าหมายความคืบหน้า (%):' : 'ผลงานจริงสะสม (% Actual):'}
           </label>
           <div class="progress-control-block">
             <div class="progress-input-wrapper">
@@ -475,33 +494,47 @@ function switchShift(shift) {
   state.activeShift = shift;
 
   if (shift === 'evening') {
-    // ดึงงานและข้อมูลที่เปิดไว้ช่วงเช้ามาเป็น Baseline ในช่วงเย็น
-    if (state.eveningActualTasks.length === 0) {
-      if (state.morningPlannedTasks.length > 0) {
-        state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
-          ...t,
-          id: 'ACT-' + (t.id || Date.now()),
-          source_task_id: t.source_task_id || t.id || '',
-          from_plan: !!t.from_plan,
-          company: t.company || state.subcontractor.name || '',
-          planned_quantity: t.quantity,
-          progress: t.progress !== undefined ? t.progress : 0,
-          isPlanned: false
-        }));
-      } else if (state.existingMorningReport && state.existingMorningReport.task_summary) {
-        const items = state.existingMorningReport.task_summary.split(' | ').filter(Boolean);
-        state.eveningActualTasks = items.map((it, idx) => ({
-          id: 'ACT-MORN-' + (idx + 1),
-          name: it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').trim(),
-          description: it,
-          progress: 0,
-          isPlanned: false
-        }));
+    // ตรวจสอบว่ามีรายงานเปิดงานรอบเช้าหรือยัง
+    if (!state.existingMorningReport) {
+      showToast('⚠️ ยังไม่มีการส่งรายงานเปิดงานรอบเช้าของวันนี้ กรุณาบันทึกรอบเช้าก่อน', 'warning');
+    } else {
+      // ดึงงานและข้อมูลที่เปิดไว้ช่วงเช้ามาเป็น Baseline ในช่วงเย็น
+      if (state.eveningActualTasks.length === 0) {
+        if (state.morningPlannedTasks.length > 0) {
+          state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
+            ...t,
+            id: 'ACT-' + (t.id || Date.now()),
+            source_task_id: t.source_task_id || t.id || '',
+            from_plan: !!t.from_plan,
+            company: t.company || state.subcontractor.name || '',
+            planned_quantity: t.quantity || '',
+            planned_progress: t.progress !== undefined ? t.progress : 0,
+            quantity: t.quantity || '',
+            progress: t.progress !== undefined ? t.progress : 0,
+            isPlanned: false
+          }));
+        } else if (state.existingMorningReport && state.existingMorningReport.task_summary) {
+          const items = state.existingMorningReport.task_summary.split(' | ').filter(Boolean);
+          state.eveningActualTasks = items.map((it, idx) => {
+            let pProg = 0;
+            const m = it.match(/\((\d+)%\)/);
+            if (m) pProg = Number(m[1]);
+            const cleanName = it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').trim();
+            return {
+              id: 'ACT-MORN-' + (idx + 1),
+              name: cleanName,
+              description: it,
+              planned_quantity: '',
+              planned_progress: pProg,
+              quantity: '',
+              progress: pProg,
+              isPlanned: false
+            };
+          });
+        }
       }
-    }
 
-    // ถ่ายโอนยอดกำลังพลและเครื่องจักรจากรอบเช้ามาเป็นค่าตั้งต้นรอบเย็น
-    if (state.existingMorningReport) {
+      // ถ่ายโอนยอดกำลังพลและเครื่องจักรจากรอบเช้ามาเป็นค่าตั้งต้นรอบเย็น
       const em = state.existingMorningReport;
       if (em.foreman_count !== undefined) {
         state.workforce.foreman = Number(em.foreman_count || 1);
@@ -514,14 +547,143 @@ function switchShift(shift) {
         state.machinery = String(em.machinery).split(',').map(s => s.trim()).filter(Boolean);
         renderMachinery();
       }
-    }
 
-    showToast('🌆 สลับสู่โหมด: รายงานสรุปจบงานประจำวัน (เชื่อมต่อจากรอบเช้า)', 'info');
+      showToast('🌆 สลับสู่โหมด: รายงานสรุปจบงานประจำวัน (เชื่อมต่อจากรอบเช้า)', 'info');
+    }
   } else {
     showToast('🌅 สลับสู่โหมด: เปิดงานตอนเช้า', 'info');
   }
 
   renderShiftUI();
+}
+
+// Expose switchShift to window for onclick handlers
+window.switchShiftTab = function(shift) {
+  switchShift(shift);
+};
+
+// เปิดโหมดแก้ไขรายงานเช้า (เรียกจากปุ่ม "✏️ แก้ไข" ใน syncBanner)
+window.enableMorningEditMode = function() {
+  const syncBanner = document.getElementById('shift-sync-status-banner');
+  const submitBtn = document.getElementById('btn-submit-daily-report');
+  const submitText = document.getElementById('btn-submit-text');
+  const tasksSection = document.getElementById('tasks-card-section');
+
+  if (syncBanner) {
+    syncBanner.className = 'shift-sync-status-banner morning-edit';
+    syncBanner.innerHTML = `
+      <div>
+        <strong>✏️ โหมดแก้ไขรายงานเปิดงานตอนเช้า</strong><br>
+        <span style="font-size: 0.72rem; opacity: 0.9;">แก้ไขยอดคน สภาพอากาศ หรืองาน แล้วกด "บันทึกการแก้ไข" ด้านล่าง</span>
+      </div>
+      <span style="font-size: 0.72rem; font-weight: 700; background: #2563eb; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+    `;
+  }
+  if (submitBtn) {
+    submitBtn.style.display = '';
+    submitBtn.disabled = false;
+    submitBtn.className = 'btn-submit-report morning';
+    submitText.innerText = '✏️ บันทึกการแก้ไขรายงานเปิดงานตอนเช้า';
+  }
+  if (tasksSection) {
+    tasksSection.style.opacity = '1';
+    tasksSection.style.pointerEvents = '';
+  }
+  showToast('🔓 เปิดโหมดแก้ไขรายงานเปิดงานเช้าแล้ว', 'info');
+};
+
+function renderMorningBaselineCard() {
+  const container = document.getElementById('morning-baseline-card-container');
+  if (!container) return;
+
+  const em = state.existingMorningReport;
+  if (!em || state.activeShift !== 'evening') {
+    container.style.display = 'none';
+    return;
+  }
+
+  const mId = em.id || em['รหัสรายงาน'] || em['รหัสรายงาน (Report ID)'] || '-';
+  const mTime = em.timestamp || em['เวลาบันทึก (Timestamp)'] || '-';
+  const mWf = (em.totalWorkforce !== undefined && em.totalWorkforce !== null && em.totalWorkforce !== '')
+    ? em.totalWorkforce
+    : (em['ยอดคนงานรวม (คน)'] || (Number(em.foreman_count || 1) + Number(em.skilled_count || 0) + Number(em.labor_count || 0) + Number(em.safety_count || 0)));
+  const mForeman = em.foreman_count !== undefined ? em.foreman_count : (em['โฟร์แมน (คน)'] || 1);
+  const mSkilled = em.skilled_count !== undefined ? em.skilled_count : (em['ช่างฝีมือ (คน)'] || 0);
+  const mLabor = em.labor_count !== undefined ? em.labor_count : (em['แรงงานทั่วไป (คน)'] || 0);
+  const mSafety = em.safety_count !== undefined ? em.safety_count : (em['จป.ความปลอดภัย (คน)'] || 0);
+  const mWeather = em.weather || em['สภาพอากาศ'] || '-';
+  const mMachinery = em.machinery || em['เครื่องจักรที่ใช้งาน'] || '-';
+
+  // รายการงานที่วางแผนไว้ตอนเช้า
+  let tasksList = [];
+  if (state.morningPlannedTasks && state.morningPlannedTasks.length > 0) {
+    tasksList = state.morningPlannedTasks;
+  } else if (em.task_summary) {
+    tasksList = String(em.task_summary).split(' | ').filter(Boolean).map(t => {
+      let p = 0;
+      const matchP = t.match(/\((\d+)%\)/);
+      if (matchP) p = Number(matchP[1]);
+      return {
+        name: t.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').trim(),
+        quantity: '',
+        progress: p
+      };
+    });
+  }
+
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="morning-baseline-card">
+      <div class="morning-baseline-header">
+        <div class="morning-baseline-title">
+          <span>🌅 ข้อมูลเปิดงานรอบเช้า (Baseline ที่ต้องรายงานต่อ)</span>
+        </div>
+        <span class="morning-connected-badge">🔗 รหัส: ${escapeHtml(mId)}</span>
+      </div>
+
+      <div class="morning-meta-grid">
+        <div class="morning-meta-box">
+          <label>👷 กำลังพลเปิดงานรอบเช้า:</label>
+          <strong>รวม ${mWf} คน</strong>
+          <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
+            โฟร์แมน ${mForeman}, ช่าง ${mSkilled}, แรงงาน ${mLabor}, จป. ${mSafety}
+          </div>
+        </div>
+
+        <div class="morning-meta-box">
+          <label>☀️ สภาพอากาศรอบเช้า:</label>
+          <strong style="font-size:0.76rem; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(mWeather)}">${escapeHtml(mWeather)}</strong>
+          <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
+            🚜 เครื่องจักร: ${escapeHtml(mMachinery)}
+          </div>
+        </div>
+      </div>
+
+      ${tasksList.length > 0 ? `
+        <div class="morning-planned-tasks-list">
+          <div class="morning-tasks-list-title">
+            <span>🎯 เป้าหมายงานที่ตั้งไว้รอบเช้า (${tasksList.length} รายการ):</span>
+          </div>
+          ${tasksList.map((t, idx) => `
+            <div class="morning-task-item-line">
+              <span><strong>${idx + 1}.</strong> ${escapeHtml(t.name || t.taskName || 'งาน')}</span>
+              <span style="font-weight:700;">
+                ${t.quantity ? escapeHtml(t.quantity) : ''} 
+                ${t.progress !== undefined && t.progress !== '' ? `(เป้า ${t.progress}%)` : ''}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px; font-size:0.72rem;">
+        <span style="color:var(--text-muted);">🕒 บันทึกเปิดงานเมื่อ: ${escapeHtml(mTime)}</span>
+        <span class="morning-switch-link" onclick="window.switchShiftTab('morning')">
+          ✏️ แก้ไขยอดคน/ข้อมูลเช้า
+        </span>
+      </div>
+    </div>
+  `;
 }
 
 function renderShiftUI() {
@@ -533,6 +695,9 @@ function renderShiftUI() {
   const submitBtn = document.getElementById('btn-submit-daily-report');
   const submitText = document.getElementById('btn-submit-text');
   const syncBanner = document.getElementById('shift-sync-status-banner');
+  const reqBanner = document.getElementById('morning-required-banner');
+  const tasksSection = document.getElementById('tasks-card-section');
+  const photoMergeHint = document.getElementById('photo-merge-hint');
 
   if (tabMorning && tabEvening) {
     if (isMorning) {
@@ -543,32 +708,58 @@ function renderShiftUI() {
         topBadge.innerText = '🌅 รอบเช้า';
       }
       if (rainHoursBox) rainHoursBox.style.display = 'none';
+      if (reqBanner) reqBanner.style.display = 'none';
+      if (photoMergeHint) photoMergeHint.style.display = 'none';
+      if (tasksSection) tasksSection.style.opacity = '1';
+
+      // Hide baseline card in morning mode
+      const baseContainer = document.getElementById('morning-baseline-card-container');
+      if (baseContainer) baseContainer.style.display = 'none';
 
       if (state.existingMorningReport) {
+        // รายงานเช้าส่งแล้ว → แสดง "สำเร็จ" พร้อมปุ่มแก้ไข
+        const em = state.existingMorningReport;
+        const mTime = em.timestamp || em['เวลาบันทึก (Timestamp)'] || '';
+        const mWorkers = em.totalWorkforce ||
+          (Number(em.foreman_count || 1) + Number(em.skilled_count || 0) +
+           Number(em.labor_count || 0) + Number(em.safety_count || 0));
+
         if (syncBanner) {
-          syncBanner.className = 'shift-sync-status-banner morning-edit';
+          syncBanner.className = 'shift-sync-status-banner morning-done';
           syncBanner.style.display = 'flex';
           syncBanner.innerHTML = `
-            <div>
-              <strong>ℹ️ คุณได้ส่งรายงานเปิดงานเช้าแล้ว (${escapeHtml(state.existingMorningReport.id)})</strong><br>
-              <span style="font-size: 0.72rem; opacity: 0.9;">ท่านสามารถปรับปรุงข้อมูลยอดคน สภาพอากาศ หรืองาน แล้วกดบันทึกการแก้ไขได้</span>
+            <div style="flex:1">
+              <div style="font-size:0.95rem; font-weight:800; color:#065f46; margin-bottom:4px;">✅ ส่งรายงานรอบเช้าเสร็จสิ้นแล้ว</div>
+              <div style="font-size:0.75rem; color:#047857; line-height:1.5;">
+                🕐 เวลา: <strong>${escapeHtml(String(mTime))}</strong>
+                &nbsp;|&nbsp; 👷 ยอดคน: <strong>${mWorkers} คน</strong>
+                &nbsp;|&nbsp; 📋 รหัส: <strong>${escapeHtml(String(em.id || '-'))}</strong>
+              </div>
+              <div style="font-size:0.72rem; color:#6b7280; margin-top:4px;">หากต้องการแก้ไขข้อมูล กดปุ่ม "แก้ไข" ทางขวา</div>
             </div>
-            <span style="font-size: 0.72rem; font-weight: 700; background: #2563eb; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+            <button type="button" onclick="window.enableMorningEditMode()" style="flex-shrink:0; background:#2563eb; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:0.78rem; font-weight:700; cursor:pointer; white-space:nowrap;">✏️ แก้ไข</button>
           `;
         }
+        // ซ่อน submit button — ต้องกดแก้ไขก่อน
         if (submitBtn) {
-          submitBtn.className = 'btn-submit-report morning';
-          submitText.innerText = '✏️ บันทึกการแก้ไขรายงานเปิดงานตอนเช้า';
+          submitBtn.style.display = 'none';
         }
+        // ซ่อน tasks section — แสดงเป็น summary แทน
+        if (tasksSection) tasksSection.style.opacity = '0.5';
+        if (tasksSection) tasksSection.style.pointerEvents = 'none';
       } else {
         if (syncBanner) syncBanner.style.display = 'none';
         if (submitBtn) {
+          submitBtn.style.display = '';
+          submitBtn.disabled = false;
           submitBtn.className = 'btn-submit-report morning';
           submitText.innerText = 'ส่งรายงานเปิดงานตอนเช้า';
         }
+        if (tasksSection) { tasksSection.style.opacity = '1'; tasksSection.style.pointerEvents = ''; }
       }
 
     } else {
+      // EVENING SHIFT (รอบปิดงาน / จบงาน)
       tabMorning.classList.remove('active');
       tabEvening.classList.add('active');
       if (topBadge) {
@@ -577,43 +768,81 @@ function renderShiftUI() {
       }
       if (rainHoursBox) rainHoursBox.style.display = 'flex';
 
-      if (state.existingEveningReport) {
-        if (syncBanner) {
-          syncBanner.className = 'shift-sync-status-banner morning-edit';
-          syncBanner.style.display = 'flex';
-          syncBanner.innerHTML = `
-            <div>
-              <strong>ℹ️ คุณได้ส่งรายงานสรุปจบงานแล้ว (${escapeHtml(state.existingEveningReport.id)})</strong><br>
-              <span style="font-size: 0.72rem; opacity: 0.9;">ท่านสามารถปรับปรุง % ผลงานจริง แล้วกดบันทึกการแก้ไขได้</span>
+      // เงื่อนไขสำคัญ: ตรวจสอบว่ามีรายงานเปิดงานรอบเช้าแล้วหรือไม่
+      if (!state.existingMorningReport) {
+        // ยังไม่มีรายงานรอบเช้า -> บังคับให้ส่งรอบเช้าก่อน
+        if (reqBanner) {
+          reqBanner.style.display = 'block';
+          reqBanner.innerHTML = `
+            <div class="morning-required-icon">⚠️</div>
+            <div class="morning-required-title">ยังไม่มีการส่งรายงานเปิดงานตอนเช้าของวันนี้</div>
+            <div class="morning-required-desc">
+              ตามระเบียบงานวิศวกรรมก่อสร้าง การรายงานปิดงานจำเป็นต้องอ้างอิงและบันทึกผลงานต่อจากรายงานเปิดงานรอบเช้า<br>
+              กรุณากดปุ่มด้านล่างเพื่อไปบันทึกเปิดงานรอบเช้าก่อน
             </div>
-            <span style="font-size: 0.72rem; font-weight: 700; background: #059669; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+            <button type="button" class="btn-goto-morning" onclick="window.switchShiftTab('morning')">
+              <span>🌅 ไปบันทึกเปิดงานตอนเช้าทันที</span>
+            </button>
           `;
         }
+        if (syncBanner) syncBanner.style.display = 'none';
+        if (photoMergeHint) photoMergeHint.style.display = 'none';
+        if (tasksSection) tasksSection.style.opacity = '0.4';
+
+        const baseContainer = document.getElementById('morning-baseline-card-container');
+        if (baseContainer) baseContainer.style.display = 'none';
+
         if (submitBtn) {
+          submitBtn.disabled = true;
           submitBtn.className = 'btn-submit-report evening';
-          submitText.innerText = '✏️ บันทึกการแก้ไขรายงานสรุปจบงาน';
-        }
-      } else if (state.existingMorningReport) {
-        if (syncBanner) {
-          syncBanner.className = 'shift-sync-status-banner evening-connected';
-          syncBanner.style.display = 'flex';
-          syncBanner.innerHTML = `
-            <div>
-              <strong>🔗 เชื่อมโยงข้อมูลจากรายงานรอบเช้าแล้ว</strong><br>
-              <span style="font-size: 0.72rem; opacity: 0.9;">รายการงานและกำลังพลถูกดึงมาจากรอบเช้าให้อัตโนมัติ — โปรดระบุ % ผลงานจริงและเวลาฝนตก</span>
-            </div>
-            <span style="font-size: 0.72rem; font-weight: 700; background: #10b981; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">ต่อเนื่องรอบเช้า</span>
-          `;
-        }
-        if (submitBtn) {
-          submitBtn.className = 'btn-submit-report evening';
-          submitText.innerText = 'ส่งรายงานสรุปจบงานประจำวัน (ต่อจากรอบเช้า)';
+          submitText.innerText = '⚠️ กรุณาบันทึกเปิดงานเช้าก่อนปิดงาน';
         }
       } else {
-        if (syncBanner) syncBanner.style.display = 'none';
-        if (submitBtn) {
-          submitBtn.className = 'btn-submit-report evening';
-          submitText.innerText = 'ส่งรายงานสรุปจบงานประจำวัน';
+        // มีรายงานรอบเช้าแล้ว -> แสดง Morning Baseline Card และฟอร์มกรอกผลงานจริงต่อจากรอบเช้า
+        if (reqBanner) reqBanner.style.display = 'none';
+        if (tasksSection) tasksSection.style.opacity = '1';
+
+        renderMorningBaselineCard();
+
+        if (photoMergeHint) {
+          photoMergeHint.style.display = 'block';
+          photoMergeHint.innerHTML = '🔗 <strong>ระบบรวมภาพอัตโนมัติ:</strong> ภาพถ่ายผลงานจริงปิดงานนี้จะถูกนำไปรวมกับภาพถ่ายแถวคนงานรอบเช้าเป็นเอกสารรายงานประจำวันฉบับสมบูรณ์ชุดเดียวกัน';
+        }
+
+        if (state.existingEveningReport) {
+          if (syncBanner) {
+            syncBanner.className = 'shift-sync-status-banner morning-edit';
+            syncBanner.style.display = 'flex';
+            syncBanner.innerHTML = `
+              <div>
+                <strong>ℹ️ คุณได้ส่งรายงานปิดงานแล้ว (${escapeHtml(state.existingEveningReport.id)})</strong><br>
+                <span style="font-size: 0.72rem; opacity: 0.9;">ท่านสามารถปรับปรุง % ผลงานจริง แล้วกดบันทึกการแก้ไขได้</span>
+              </div>
+              <span style="font-size: 0.72rem; font-weight: 700; background: #059669; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+            `;
+          }
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.className = 'btn-submit-report evening';
+            submitText.innerText = '✏️ บันทึกการแก้ไขรายงานปิดงานประจำวัน';
+          }
+        } else {
+          if (syncBanner) {
+            syncBanner.className = 'shift-sync-status-banner evening-connected';
+            syncBanner.style.display = 'flex';
+            syncBanner.innerHTML = `
+              <div>
+                <strong>🔗 เชื่อมโยงข้อมูลจากรายงานรอบเช้าแล้ว (${escapeHtml(state.existingMorningReport.id)})</strong><br>
+                <span style="font-size: 0.72rem; opacity: 0.9;">รายการงานและยอดคนถูกดึงมาจากรอบเช้าให้อัตโนมัติ — โปรดระบุ % ผลงานจริงและเวลาหยุดงานจากฝนตก</span>
+              </div>
+              <span style="font-size: 0.72rem; font-weight: 700; background: #10b981; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">ต่อเนื่องรอบเช้า</span>
+            `;
+          }
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.className = 'btn-submit-report evening';
+            submitText.innerText = '🌆 ส่งรายงานปิดงานประจำวัน (รวมผลงานต่อจากรอบเช้า)';
+          }
         }
       }
     }
@@ -631,14 +860,15 @@ async function checkExistingReportForToday() {
       const mySub = state.subcontractor.name;
       const myUid = state.lineUser.uid;
 
-      // Find morning report for today
+      // Find morning report for today (or already completed report)
       state.existingMorningReport = list.find(r => {
         const rDate = r.report_date || r['วันที่รายงาน (Date)'];
         const rShift = String(r.shift_label || '');
         const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
         const rUid = r.line_uid || r['LINE UID'];
         const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
-        const isMorn = rShift.includes('เช้า') || String(r.id || '').startsWith('MORN');
+        const isCompleted = rShift.includes('เช้า-จบงาน') || r.status === 'day_completed';
+        const isMorn = isCompleted || rShift.includes('เช้า') || String(r.id || '').startsWith('MORN');
         return rDate === today && isMatchUser && isMorn;
       }) || null;
 
@@ -649,7 +879,8 @@ async function checkExistingReportForToday() {
         const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
         const rUid = r.line_uid || r['LINE UID'];
         const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
-        const isEve = rShift.includes('เย็น') || rShift.includes('จบงาน') || String(r.id || '').startsWith('EVEN');
+        const isCompleted = rShift.includes('เช้า-จบงาน') || r.status === 'day_completed';
+        const isEve = isCompleted || rShift.includes('เย็น') || rShift.includes('จบงาน') || String(r.id || '').startsWith('EVEN');
         return rDate === today && isMatchUser && isEve;
       }) || null;
 
@@ -950,7 +1181,14 @@ async function submitDailyReport() {
   const btn = document.getElementById('btn-submit-daily-report');
   const isMorning = state.activeShift === 'morning';
   const shiftCode = isMorning ? 'morning' : 'evening';
-  const shiftLabel = isMorning ? 'เปิดงานตอนเช้า' : 'รายงานจบงาน';
+  const shiftLabel = isMorning ? 'เปิดงานตอนเช้า' : 'รายงานปิดงาน';
+
+  // ตรวจสอบกฎเหล็ก: รายงานปิดงานต้องรายงานต่อจากรายงานตอนเช้า
+  if (!isMorning && !state.existingMorningReport) {
+    alert('⚠️ ยังไม่มีการส่งรายงานเปิดงานตอนเช้าของวันนี้\n\nตามระเบียบงานก่อสร้าง รายงานปิดงานต้องรายงานต่อจากรายงานตอนเช้า กรุณากดไปที่ "เปิดงานตอนเช้า" เพื่อบันทึกเปิดงานก่อนครับ');
+    switchShift('morning');
+    return;
+  }
 
   const currentTasks = getActiveTasksList();
 
@@ -978,6 +1216,9 @@ async function submitDailyReport() {
   let reportId = '';
   if (isEditMorning) {
     reportId = state.existingMorningReport.id;
+  } else if (!isMorning && state.existingMorningReport) {
+    // ในรอบปิดงาน ให้ใช้รหัสรายงานเดิมจากรอบเช้าเพื่อรวมเป็นรายงานประจำวันฉบับสมบูรณ์
+    reportId = state.existingMorningReport.id;
   } else if (isEditEvening) {
     reportId = state.existingEveningReport.id;
   } else {
@@ -990,7 +1231,7 @@ async function submitDailyReport() {
     is_edit: isEdit,
     morning_report_id: state.existingMorningReport ? state.existingMorningReport.id : '',
     shift_type: shiftCode,
-    shift_label: shiftLabel,
+    shift_label: isMorning ? shiftLabel : 'รายงานประจำวัน (เช้า-จบงานครบถ้วน)',
     report_date: state.reportDate,
     timestamp: now.toISOString().replace('T', ' ').slice(0, 19),
     project_id: state.project.id,
@@ -1008,10 +1249,16 @@ async function submitDailyReport() {
       total: totalWorkers
     },
     machinery: state.machinery,
-    task_progress: currentTasks,
+    task_progress: currentTasks.map(t => ({
+      ...t,
+      planned_quantity: t.planned_quantity || t.quantity || '',
+      planned_progress: t.planned_progress !== undefined ? t.planned_progress : (t.progress !== undefined ? t.progress : 0),
+      quantity: t.quantity || '',
+      progress: t.progress !== undefined ? t.progress : 0
+    })),
     photos: state.photos,
     issues: finalIssues,
-    status: isMorning ? 'morning_opened' : 'evening_closed'
+    status: isMorning ? 'morning_opened' : 'day_completed'
   };
 
   let result = null;
@@ -1040,6 +1287,10 @@ async function submitDailyReport() {
         id: reportId,
         task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (${t.progress||0}%)`).join(' | ')
       };
+      if (state.existingMorningReport) {
+        state.existingMorningReport.status = 'day_completed';
+        state.existingMorningReport.shift_label = 'รายงานประจำวัน (เช้า-จบงานครบถ้วน)';
+      }
     }
     renderShiftUI();
     broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });

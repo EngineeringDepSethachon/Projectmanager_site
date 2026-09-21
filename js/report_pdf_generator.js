@@ -65,7 +65,8 @@ export function buildDailyReportHtml(report, options = {}) {
   const rawDate = report.report_date || report['วันที่'] || report['วันที่รายงาน (Date)'] || '-';
   const thaiDate = formatThaiDate(rawDate);
   const shift = report.shift_label || report['กะการทำงาน'] || report['รอบกะ (Shift: เช้า/จบงาน)'] || 'ประจำวัน';
-  const isMorning = String(shift).includes('เช้า');
+  const isCompleted = String(shift).includes('เช้า-จบงาน') || report.status === 'day_completed';
+  const isMorning = !isCompleted && String(shift).includes('เช้า');
   const timestamp = report.timestamp || report['เวลาบันทึก (Timestamp)'] || '-';
 
   const projectName = options.projectName || report.project_name || report.projectName || report['ชื่อโครงการ (Project Name)'] || 'โครงการก่อสร้าง';
@@ -148,7 +149,7 @@ export function buildDailyReportHtml(report, options = {}) {
               🏗️ โครงการ: <span style="color: #0f172a;">${escapeHtml(projectName)}</span>
             </div>
             <div style="font-size: 1.35rem; font-weight: 900; color: #0f172a; margin: 4px 0 2px 0;">
-              รายงานประจำวันหน้างาน (DAILY SITE REPORT)
+              ${isCompleted ? 'รายงานประจำวันหน้างานฉบับสมบูรณ์ (DAILY SITE REPORT - FULL)' : (isMorning ? 'รายงานเปิดงานรอบเช้า (DAILY SITE OPENING REPORT)' : 'รายงานสรุปปิดงานประจำวัน (DAILY SITE CLOSING REPORT)')}
             </div>
             <div style="font-size: 0.8rem; color: #64748b;">
               สังกัด / ผู้รับเหมา: <strong style="color: #0f172a;">${escapeHtml(company)}</strong>
@@ -158,7 +159,7 @@ export function buildDailyReportHtml(report, options = {}) {
             <div style="display: inline-block; text-align: left; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; font-size: 0.78rem;">
               <div><strong>รหัสรายงาน:</strong> <span style="font-family: monospace; font-weight: 800; color: #2563eb;">${escapeHtml(reportId)}</span></div>
               <div><strong>วันที่:</strong> ${escapeHtml(thaiDate)}</div>
-              <div><strong>รอบกะ:</strong> <span style="font-weight: 800; color: ${isMorning ? '#b45309' : '#059669'};">${escapeHtml(shift)}</span></div>
+              <div><strong>รอบกะ:</strong> <span style="font-weight: 800; color: ${isCompleted ? '#059669' : (isMorning ? '#b45309' : '#059669')};">${isCompleted ? '✨ ประจำวันสมบูรณ์ (เช้า-จบงาน)' : escapeHtml(shift)}</span></div>
             </div>
           </td>
         </tr>

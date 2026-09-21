@@ -984,7 +984,8 @@ function renderDailyReportsTable() {
         const reportId = r.id || r['รหัสรายงาน (Report ID)'] || r['รหัสรายงาน'] || `RPT-${idx}`;
         const date = r.report_date || r['วันที่รายงาน (Date)'] || r['วันที่'] || '-';
         const shift = r.shift_label || r['รอบกะ (Shift: เช้า/จบงาน)'] || r['กะการทำงาน'] || '-';
-        const isMorning = String(shift).includes('เช้า');
+        const isCompleted = String(shift).includes('เช้า-จบงาน') || r.status === 'day_completed';
+        const isMorning = !isCompleted && String(shift).includes('เช้า');
         const foreman = r.foreman_name || r['ชื่อโฟร์แมน'] || r['ผู้รายงาน'] || '-';
         const comp = r.sub_name || r.company || r['บริษัทผู้รับเหมา'] || r['บริษัท'] || '-';
         const totalWf = (r.totalWorkforce !== undefined && r.totalWorkforce !== null && r.totalWorkforce !== '') 
@@ -996,13 +997,19 @@ function renderDailyReportsTable() {
         const photoList = photoRaw ? String(photoRaw).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean) : [];
 
         return `
-          <div class="daily-report-card">
+          <div class="daily-report-card ${isCompleted ? 'completed-report-card' : ''}">
             <div>
               <div class="report-card-top">
                 <span class="report-date-badge">📅 ${escapeHtml(date)}</span>
-                <span class="report-shift-tag ${isMorning ? 'morning' : 'evening'}">
-                  ${isMorning ? '🌅 รอบเช้า (เปิดงาน)' : '🌆 รอบเย็น (จบงาน)'}
-                </span>
+                ${isCompleted ? `
+                  <span class="report-shift-tag" style="background: #ecfdf5; color: #065f46; border: 1.5px solid #10b981; font-weight: 800;">
+                    ✨ ประจำวันสมบูรณ์ (เช้า-จบงาน)
+                  </span>
+                ` : `
+                  <span class="report-shift-tag ${isMorning ? 'morning' : 'evening'}">
+                    ${isMorning ? '🌅 รอบเช้า (เปิดงาน)' : '🌆 รอบเย็น (จบงาน)'}
+                  </span>
+                `}
               </div>
 
               <div class="report-meta-info">

@@ -105,6 +105,16 @@
       <!-- BANNER: สถานะการส่งรายงานรอบเช้า / เชื่อมโยงรอบจบงาน -->
       <div id="shift-sync-status-banner" class="shift-sync-status-banner" style="display: none;"></div>
 
+      <!-- BANNER: แจ้งเตือนเมื่อยังไม่ส่งรายงานรอบเช้า (บังคับเปิดงานเช้าก่อน) -->
+      <div id="morning-required-banner" class="morning-required-card" style="display: none;">
+        <!-- Rendered via JS -->
+      </div>
+
+      <!-- CARD: สรุปข้อมูลเปิดงานรอบเช้า (Morning Baseline Summary Card) -->
+      <div id="morning-baseline-card-container" style="display: none;">
+        <!-- Rendered via JS when existingMorningReport exists in evening mode -->
+      </div>
+
       <!-- 2. Dynamic Tasks Section (มาจากแผนที่ PM อนุมัติล่วงหน้า) -->
       <section class="card" id="tasks-card-section">
         <div class="card-header flex-between">
@@ -258,6 +268,7 @@
               <span id="camera-trigger-desc">ประทับเวลาเปิดงานรอบเช้า และ LINE UID</span>
             </div>
           </div>
+          <div id="photo-merge-hint" class="photo-merge-hint" style="display: none;"></div>
           <div class="photos-grid" id="photos-preview-grid" style="margin-top: 0.75rem;"></div>
         </div>
       </section>

@@ -579,21 +579,14 @@ function doPost(e) {
     const reportsData = reportsSheet.getDataRange().getValues();
     let existingRowIndex = -1; // 1-based index in sheet
     let finalReportId = payload.id;
+    let morningRowData = null;
 
-    // A. ตรวจสอบจาก reportId ตรงตัวหากส่งมา
-    if (finalReportId && finalReportId !== "undefined" && finalReportId !== "-") {
-      for (let r = 1; r < reportsData.length; r++) {
-        if (String(reportsData[r][0]).trim() === String(finalReportId).trim()) {
-          existingRowIndex = r + 1;
-          break;
-        }
-      }
-    }
-
-    // B. หากเป็นรอบเช้าและไม่พบจาก ID ให้ตรวจว่าบริษัท/โฟร์แมนคนนี้มีรายงานรอบเช้าของวันนี้ในโครงการนี้แล้วหรือไม่
-    if (existingRowIndex === -1 && isMorning) {
+    if (!isMorning) {
+      // โหมดรายงานจบงาน / ปิดงาน: ค้นหารายงานเปิดงานรอบเช้าของวันนี้
+      let morningReportId = payload.morning_report_id || "";
       for (let r = 1; r < reportsData.length; r++) {
         const row = reportsData[r];
+        const rId = String(row[0] || "").trim();
         const rDate = formatDateValue(row[1]);
         const rShift = String(row[2] || "");
         const rSub = String(row[6] || "").trim();
@@ -601,14 +594,61 @@ function doPost(e) {
         const rProj = String(row[22] || "").trim();
 
         const isSameDate = (rDate === reportDate);
-        const isSameShift = (rShift.includes("เช้า") || String(row[0]).startsWith("MORN"));
         const isSameProj = (!projectId || projectId === "-" || rProj === projectId || rProj === "-");
         const isSameSub = (subName && subName !== "-" && rSub === subName) || (lineUid && lineUid !== "-" && rUid === lineUid);
+        const isMorningShift = (rShift.includes("เช้า") || rId.startsWith("MORN"));
 
-        if (isSameDate && isSameShift && isSameProj && isSameSub) {
+        if (morningReportId && rId === morningReportId) {
           existingRowIndex = r + 1;
-          finalReportId = String(row[0]); // ใช้รหัสรายงานเดิมเพื่อแก้ไขทับ
+          morningRowData = row;
+          finalReportId = rId;
           break;
+        }
+        if (isSameDate && isSameProj && isSameSub && isMorningShift) {
+          existingRowIndex = r + 1;
+          morningRowData = row;
+          finalReportId = rId;
+          break;
+        }
+      }
+
+      // ตรวจสอบกฎเหล็ก: รายงานปิดงานต้องรายงานต่อจากรายงานตอนเช้า
+      if (existingRowIndex === -1) {
+        return jsonResponse({
+          status: "error",
+          message: "ไม่พบรายงานเปิดงานรอบเช้าของวันนี้ (" + reportDate + ") การรายงานปิดงานจำเป็นต้องรายงานต่อจากรายงานตอนเช้า กรุณาส่งรายงานรอบเช้าก่อน"
+        });
+      }
+    } else {
+      // โหมดรายงานเปิดงานรอบเช้า: ค้นหารายงานเช้าเดิมเพื่อแก้ไข
+      if (finalReportId && finalReportId !== "undefined" && finalReportId !== "-") {
+        for (let r = 1; r < reportsData.length; r++) {
+          if (String(reportsData[r][0]).trim() === String(finalReportId).trim()) {
+            existingRowIndex = r + 1;
+            break;
+          }
+        }
+      }
+
+      if (existingRowIndex === -1) {
+        for (let r = 1; r < reportsData.length; r++) {
+          const row = reportsData[r];
+          const rDate = formatDateValue(row[1]);
+          const rShift = String(row[2] || "");
+          const rSub = String(row[6] || "").trim();
+          const rUid = String(row[4] || "").trim();
+          const rProj = String(row[22] || "").trim();
+
+          const isSameDate = (rDate === reportDate);
+          const isSameShift = (rShift.includes("เช้า") || String(row[0]).startsWith("MORN"));
+          const isSameProj = (!projectId || projectId === "-" || rProj === projectId || rProj === "-");
+          const isSameSub = (subName && subName !== "-" && rSub === subName) || (lineUid && lineUid !== "-" && rUid === lineUid);
+
+          if (isSameDate && isSameShift && isSameProj && isSameSub) {
+            existingRowIndex = r + 1;
+            finalReportId = String(row[0]);
+            break;
+          }
         }
       }
     }
@@ -617,23 +657,38 @@ function doPost(e) {
       finalReportId = ((shiftType === "morning" ? "MORN-" : "EVEN-") + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd-HHmmss"));
     }
 
-    // 2. สภาพอากาศ & เวลาหยุดงาน (รอบเช้าเป็น 0 ชม. เพราะยังไม่มีการหยุดงาน / รอบจบงานคำนวณตามจริง)
-    const weather = payload.weather || "☀️ แจ่มใส";
+    // 2. สภาพอากาศ & เวลาหยุดงาน
+    let weather = payload.weather || "☀️ แจ่มใส";
+    if (!isMorning && morningRowData) {
+      const morningWeather = String(morningRowData[8] || "").trim();
+      if (morningWeather && morningWeather !== "-" && !weather.includes(morningWeather)) {
+        weather = morningWeather + " / ปิดงาน: " + weather;
+      }
+    }
     const rainDelayHours = isMorning ? 0 : Number(payload.rain_delay_hours || 0);
 
     // 3. กำลังพล (+/-)
     const wf = payload.workforce || {};
-    const countForeman = Number(wf.foreman || 0);
-    const countSkilled = Number(wf.skilled_workers || 0);
-    const countLabor = Number(wf.general_labor || 0);
-    const countSafety = Number(wf.safety_officer || 0);
-    const totalWorkforce = countForeman + countSkilled + countLabor + countSafety;
+    let countForeman = Number(wf.foreman || 0);
+    let countSkilled = Number(wf.skilled_workers || 0);
+    let countLabor = Number(wf.general_labor || 0);
+    let countSafety = Number(wf.safety_officer || 0);
+    let totalWorkforce = countForeman + countSkilled + countLabor + countSafety;
+
+    // หากเป็นรอบปิดงานและไม่มีการกรอกยอดคนใหม่ ให้ใช้ยอดคนรอบเช้าที่เป็น Baseline
+    if (!isMorning && morningRowData && totalWorkforce === 0) {
+      countForeman = Number(morningRowData[10] || 0);
+      countSkilled = Number(morningRowData[11] || 0);
+      countLabor = Number(morningRowData[12] || 0);
+      countSafety = Number(morningRowData[13] || 0);
+      totalWorkforce = Number(morningRowData[14] || (countForeman + countSkilled + countLabor + countSafety));
+    }
 
     // 4. รายการงาน (งานที่คาดการณ์รอบเช้า หรือ ผลงานจริงรอบจบงาน)
     const taskItems = payload.task_progress || [];
     const taskSummaryList = [];
 
-    // หากเป็นการแก้ไขแถวเดิม ให้ลบรายการงานเก่าของ reportId นี้ใน Tasks_Detail ออกก่อนเพื่อป้องกันงานซ้ำ
+    // หากเป็นการแก้ไขหรือต่อจากแถวเดิม ให้ลบรายการงานเก่าของ reportId นี้ใน Tasks_Detail ออกก่อนเพื่อป้องกันงานซ้ำ
     if (existingRowIndex > 0) {
       try {
         const tasksData = tasksSheet.getDataRange().getValues();
@@ -647,18 +702,30 @@ function doPost(e) {
       }
     }
 
+    const currentShiftLabel = isMorning ? "เปิดงานตอนเช้า" : "รายงานประจำวัน (เช้า-จบงานครบถ้วน)";
+
     // บันทึกลงตาราง Tasks_Detail ทีละรายการ
     taskItems.forEach(function(t, idx) {
       const taskName = t.name || t.task_name || ("งานที่ " + (idx + 1));
       const desc = t.description || t.note || "-";
       const progress = Number(t.progress || 0);
+      const plannedProg = t.planned_progress !== undefined ? t.planned_progress : "-";
       const qty = t.quantity || "-";
-      taskSummaryList.push((idx + 1) + ". " + taskName + " (" + progress + "%) : " + desc);
+      
+      let metricStr = "";
+      if (!isMorning && plannedProg !== "-") {
+        metricStr = "(เป้าเช้า: " + plannedProg + "% -> ผลจริง: " + progress + "%)";
+      } else {
+        metricStr = "(" + progress + "%)";
+      }
+      if (qty && qty !== "-") metricStr += " [ผลงาน: " + qty + "]";
+
+      taskSummaryList.push((idx + 1) + ". " + taskName + " " + metricStr + " : " + desc);
 
       tasksSheet.appendRow([
         finalReportId,
         reportDate,
-        shiftLabel,
+        currentShiftLabel,
         lineUid,
         t.id || ("TSK-" + (idx + 1)),
         taskName,
@@ -703,16 +770,32 @@ function doPost(e) {
       }
     });
 
+    // รวมรูปภาพ: ถ้ารายงานรอบจบงานต่อจากรอบเช้า ให้นำรูปถ่ายรอบเช้ามารวมเข้าด้วยกัน
+    if (!isMorning && morningRowData) {
+      const morningPhotosRaw = String(morningRowData[19] || "").trim();
+      if (morningPhotosRaw) {
+        const morningPhotos = morningPhotosRaw.split(",").map(s => s.trim()).filter(Boolean);
+        const combined = [...morningPhotos];
+        photoUrls.forEach(url => {
+          if (!combined.includes(url)) combined.push(url);
+        });
+        photoUrls = combined;
+      }
+    }
+
     // 6. เครื่องจักร & ปัญหาอุปสรรค
-    const machinery = Array.isArray(payload.machinery) ? payload.machinery.join(", ") : (payload.machinery || "-");
+    let machinery = Array.isArray(payload.machinery) ? payload.machinery.join(", ") : (payload.machinery || "-");
+    if (!isMorning && morningRowData && (!machinery || machinery === "-")) {
+      machinery = String(morningRowData[17] || "-");
+    }
     const issues = Array.isArray(payload.issues) ? payload.issues.join(", ") : (payload.issues || "ปกติ");
-    const status = payload.status || (shiftType === "morning" ? "morning_opened" : "evening_closed");
+    const status = isMorning ? (payload.status || "morning_opened") : "day_completed";
 
     // 7. บันทึกหรืออัปเดตลงตาราง Daily_Reports
     const rowValues = [
       finalReportId,
       reportDate,
-      shiftLabel,
+      currentShiftLabel,
       timestamp,
       lineUid,
       lineName,
@@ -1243,11 +1326,16 @@ function sendLineShiftFlexNotification(data) {
   }
 
   const isMorning = data.shiftType === "morning";
-  const headerColor = isMorning ? "#b45309" : "#065f46";
-  const badgeTitle = isMorning 
-    ? (data.isUpdate ? "✏️ อัปเดตรายงานเปิดงานเช้า" : "🌅 รายงานเปิดงานตอนเช้า") 
-    : (data.isUpdate ? "✏️ อัปเดตรายงานสรุปจบงาน" : "🌆 สรุปผลงานจบงานประจำวัน");
-  const taskHeaderTitle = isMorning ? "🎯 แผนงานที่คาดการณ์วันนี้ (" + data.taskItems.length + " รายการ):" : "⚡ ผลงานจริงที่ทำได้วันนี้ (" + data.taskItems.length + " รายการ):";
+  const isCompleted = String(data.shiftLabel || "").includes("เช้า-จบงาน") || data.status === "day_completed";
+  const headerColor = isCompleted ? "#065f46" : (isMorning ? "#b45309" : "#1e40af");
+  const badgeTitle = isCompleted 
+    ? (data.isUpdate ? "✏️ อัปเดตรายงานประจำวันสมบูรณ์" : "🌆 สรุปผลงานจบงานประจำวัน (เช้า-จบงานครบถ้วน)") 
+    : (isMorning 
+        ? (data.isUpdate ? "✏️ อัปเดตรายงานเปิดงานเช้า" : "🌅 รายงานเปิดงานตอนเช้า") 
+        : (data.isUpdate ? "✏️ อัปเดตรายงานสรุปจบงาน" : "🌆 สรุปผลงานจบงานประจำวัน"));
+  const taskHeaderTitle = isCompleted 
+    ? "⚡ ผลงานจริงสะสมวันนี้ (" + data.taskItems.length + " รายการ):" 
+    : (isMorning ? "🎯 แผนงานที่คาดการณ์วันนี้ (" + data.taskItems.length + " รายการ):" : "⚡ ผลงานจริงที่ทำได้วันนี้ (" + data.taskItems.length + " รายการ):");
   const accentTextColor = isMorning ? "#f59e0b" : "#10b981";
 
   const directPhotoUrl = formatDirectDriveImageUrl(data.photoUrl || "");
@@ -1356,13 +1444,16 @@ function sendLineShiftFlexNotification(data) {
             type: "box",
             layout: "vertical",
             spacing: "xs",
-            contents: data.taskItems.slice(0, 4).map(function(t) {
+            contents: data.taskItems.slice(0, 5).map(function(t) {
+              const pProg = t.planned_progress !== undefined ? t.planned_progress : "-";
+              const aProg = t.progress !== undefined ? t.progress : 0;
+              const metricText = (!isMorning && pProg !== "-") ? ("เป้า " + pProg + "% ➔ " + aProg + "%") : (aProg + "%");
               return {
                 type: "box",
                 layout: "horizontal",
                 contents: [
-                  { type: "text", text: "• " + (t.name || t.task_name || "งาน"), size: "xxs", color: "#cbd5e1", flex: 4, wrap: true },
-                  { type: "text", text: (t.progress || 0) + "%", size: "xxs", color: accentTextColor, align: "end", flex: 1, weight: "bold" }
+                  { type: "text", text: "• " + (t.name || t.task_name || "งาน"), size: "xxs", color: "#cbd5e1", flex: 3, wrap: true },
+                  { type: "text", text: metricText, size: "xxs", color: accentTextColor, align: "end", flex: 2, weight: "bold" }
                 ]
               };
             })
