@@ -402,6 +402,7 @@ function doGet(e) {
       const weeklySheet = getOrCreateWeeklyPlansSheet(ss);
       const targetDate = (e.parameter && e.parameter.date ? formatDateValue(e.parameter.date) : Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd"));
       const targetCompany = (e.parameter && e.parameter.company ? String(e.parameter.company).trim() : "");
+      const targetProjectId = (e.parameter && (e.parameter.projectId || e.parameter.project_id) ? String(e.parameter.projectId || e.parameter.project_id).trim() : "");
 
       // Map approved plans covering targetDate
       const weeklyData = weeklySheet.getDataRange().getValues();
@@ -409,10 +410,21 @@ function doGet(e) {
       for (let w = 1; w < weeklyData.length; w++) {
         const wRow = weeklyData[w];
         const wPlanId = String(wRow[0] || "").trim();
+        const wProjId = String(wRow[1] || "").trim();
+        const wComp = String(wRow[4] || "").trim();
         const wStart = formatDateValue(wRow[6]);
         const wEnd = formatDateValue(wRow[7]);
         const wStatus = String(wRow[14] || "").trim();
         if (wStatus === "Approved") {
+          // Check project filter if provided
+          if (targetProjectId && targetProjectId !== "-" && wProjId && wProjId !== targetProjectId) {
+            continue;
+          }
+          // Check company filter if provided
+          if (targetCompany && targetCompany !== "-" && targetCompany !== "ผู้รับเหมา" && wComp && wComp !== "-") {
+            const matchCompany = (wComp === targetCompany || wComp.includes(targetCompany) || targetCompany.includes(wComp));
+            if (!matchCompany) continue;
+          }
           if (!wStart || !wEnd || (targetDate >= wStart && targetDate <= wEnd)) {
             approvedPlanIds[wPlanId] = true;
           }
@@ -433,10 +445,15 @@ function doGet(e) {
         // Must be approved directly or via parent plan
         const isApproved = (pmStatus === "Approved" || approvedPlanIds[pId] === true);
         if (!isApproved) continue;
-        if (targetCompany && targetCompany !== "-" && company !== "-" && company !== targetCompany) continue;
 
-        // Date matches directly OR task is from active approved plan for this week
-        const isDateMatch = (taskDate === targetDate || approvedPlanIds[pId] === true);
+        // Company filter if specified
+        if (targetCompany && targetCompany !== "-" && targetCompany !== "ผู้รับเหมา" && company && company !== "-") {
+          const matchCompany = (company === targetCompany || company.includes(targetCompany) || targetCompany.includes(company));
+          if (!matchCompany) continue;
+        }
+
+        // Date matches directly OR task is from active approved plan for this week/month
+        const isDateMatch = (taskDate === targetDate || approvedPlanIds[pId] === true || !taskDate);
         if (!isDateMatch) continue;
 
         tasks.push({

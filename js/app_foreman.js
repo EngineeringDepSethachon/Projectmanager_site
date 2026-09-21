@@ -218,7 +218,11 @@ async function loadApprovedTasksForToday() {
   }
 
   try {
-    const approved = await gasService.fetchApprovedTasksForDate(state.reportDate, state.project.id);
+    const approved = await gasService.fetchApprovedTasksForDate(
+      state.reportDate,
+      state.subcontractor.name,
+      state.project.id
+    );
     state.approvedTasksToday = approved || [];
 
     if (state.approvedTasksToday.length > 0) {

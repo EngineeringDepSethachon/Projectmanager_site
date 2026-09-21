@@ -394,38 +394,63 @@ function renderApprovalPlans() {
 
         <!-- PM Decision Panel -->
         <div class="pm-decision-panel">
-          <div>
-            <label style="font-size: 0.78rem; font-weight: 800; color: var(--text-heading); display: block; margin-bottom: 6px;">
-              ✍️ คำสั่งการ / ความเห็นจาก PM ถึงหัวหน้าผู้รับเหมา:
-            </label>
+          ${status === 'Approved' ? `
+            <div class="pm-approved-banner" style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: var(--radius-xs); padding: 12px 14px;">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 1.3rem;">✅</span>
+                  <div>
+                    <strong style="color: #065f46; font-size: 0.92rem;">แผนงานนี้ได้รับการอนุมัติเรียบร้อยแล้ว (Approved)</strong>
+                    <div style="font-size: 0.74rem; color: #047857; margin-top: 2px;">
+                      พร้อมให้โฟร์แมนดึงไปปฏิบัติงานหน้างาน • พิจารณาโดย: <strong>${escapeHtml(p.pmName || state.user.name)}</strong>
+                      ${p.approvedAt && p.approvedAt !== '-' ? `<span>🕒 เมื่อ: ${escapeHtml(p.approvedAt)}</span>` : ''}
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="btn-pm-revision" style="padding: 5px 12px; font-size: 0.72rem;" onclick="window.promptPMRevision('${p.planId}')">
+                  ⚠️ สั่งปรับปรุงแผน (Revision)
+                </button>
+              </div>
+              ${(p.pmComment && p.pmComment !== '-') ? `
+                <div style="margin-top: 8px; font-size: 0.78rem; background: #ffffff; border-left: 3px solid #059669; padding: 6px 10px; border-radius: 4px; color: #065f46;">
+                  💬 <strong>คำสั่งการ:</strong> "${escapeHtml(p.pmComment)}"
+                </div>
+              ` : ''}
+            </div>
+          ` : `
+            <div>
+              <label style="font-size: 0.78rem; font-weight: 800; color: var(--text-heading); display: block; margin-bottom: 6px;">
+                ✍️ คำสั่งการ / ความเห็นจาก PM ถึงหัวหน้าผู้รับเหมา:
+              </label>
 
-            <!-- Quick Preset Chips -->
-            <div class="pm-quick-comments">
-              <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '✅ อนุมัติแผนงาน อนุญาตให้เข้าปฏิบัติงานตามมาตรการความปลอดภัย')">
-                + อนุมัติเข้างาน
-              </button>
-              <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '⚠️ ขอให้เพิ่มกำลังพลในส่วนงานโครงสร้างให้ทันกำหนด')">
-                + ให้เพิ่มคนงาน
-              </button>
-              <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '⚠️ จัดทำแผนความปลอดภัย (Safety Plan) และติดตั้งค้ำยันให้แน่นหนา')">
-                + เน้น Safety
-              </button>
-              <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '⚠️ ขอให้แยกขั้นตอนเทคอนกรีตและระบุสเปกให้ชัดเจนก่อนเริ่มงาน')">
-                + ขอรายละเอียดเพิ่ม
-              </button>
+              <!-- Quick Preset Chips -->
+              <div class="pm-quick-comments">
+                <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '✅ อนุมัติแผนงาน อนุญาตให้เข้าปฏิบัติงานตามมาตรการความปลอดภัย')">
+                  + อนุมัติเข้างาน
+                </button>
+                <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '⚠️ ขอให้เพิ่มกำลังพลในส่วนงานโครงสร้างให้ทันกำหนด')">
+                  + ให้เพิ่มคนงาน
+                </button>
+                <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '⚠️ จัดทำแผนความปลอดภัย (Safety Plan) และติดตั้งค้ำยันให้แน่นหนา')">
+                  + เน้น Safety
+                </button>
+                <button type="button" class="btn-quick-comment" onclick="window.setQuickComment('${p.planId}', '⚠️ ขอให้แยกขั้นตอนเทคอนกรีตและระบุสเปกให้ชัดเจนก่อนเริ่มงาน')">
+                  + ขอรายละเอียดเพิ่ม
+                </button>
+              </div>
+
+              <textarea id="pm-notes-${p.planId}" class="pm-comment-input" rows="2" placeholder="ระบุข้อสั่งการ คำแนะนำ หรือเงื่อนไขเพิ่มเติมถึงผู้รับเหมา...">${p.pmNotes || p.pmComment || ''}</textarea>
             </div>
 
-            <textarea id="pm-notes-${p.planId}" class="pm-comment-input" rows="2" placeholder="ระบุข้อสั่งการ คำแนะนำ หรือเงื่อนไขเพิ่มเติมถึงผู้รับเหมา...">${p.pmNotes || p.pmComment || ''}</textarea>
-          </div>
-
-          <div class="pm-decision-buttons">
-            <button type="button" class="btn-pm-revision" onclick="window.handlePMDecision('${p.planId}', 'Revision')">
-              ⚠️ สั่งปรับปรุงแผน (Revision)
-            </button>
-            <button type="button" class="btn-pm-approve" onclick="window.handlePMDecision('${p.planId}', 'Approved')">
-              ✅ อนุมัติแผนงานประจำเดือน (Approve)
-            </button>
-          </div>
+            <div class="pm-decision-buttons">
+              <button type="button" class="btn-pm-revision" onclick="window.handlePMDecision('${p.planId}', 'Revision')">
+                ⚠️ สั่งปรับปรุงแผน (Revision)
+              </button>
+              <button type="button" class="btn-pm-approve" onclick="window.handlePMDecision('${p.planId}', 'Approved')">
+                ✅ อนุมัติแผนงานประจำเดือน (Approve)
+              </button>
+            </div>
+          `}
         </div>
       </div>
     `;
@@ -600,9 +625,23 @@ window.togglePMAuditTrail = async function(planId) {
   }
 };
 
-window.handlePMDecision = async function(planId, decision) {
+window.promptPMRevision = function(planId) {
+  const targetPlan = (state.weeklyPlans || []).find(p => p.planId === planId);
+  const currentComment = targetPlan && targetPlan.pmComment && targetPlan.pmComment !== '-' ? targetPlan.pmComment : '';
+  const reason = prompt(`ระบุเหตุผลหรือข้อสั่งการที่ต้องการให้ผู้รับเหมาปรับปรุงแผนงาน (${planId}):`, currentComment);
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showToast('โปรดระบุเหตุผลที่ต้องการให้ปรับปรุงแผนงาน', 'warning');
+    return;
+  }
   const notesEl = document.getElementById(`pm-notes-${planId}`);
-  const notes = notesEl ? notesEl.value.trim() : '';
+  if (notesEl) notesEl.value = reason.trim();
+  window.handlePMDecision(planId, 'Revision', reason.trim());
+};
+
+window.handlePMDecision = async function(planId, decision, overrideNotes = null) {
+  const notesEl = document.getElementById(`pm-notes-${planId}`);
+  const notes = overrideNotes !== null ? overrideNotes : (notesEl ? notesEl.value.trim() : '');
 
   if (decision === 'Revision' && !notes) {
     showToast('โปรดระบุเหตุผลหรือข้อสั่งการที่ต้องแก้ไขในช่องข้อคิดเห็น', 'warning');
@@ -613,12 +652,26 @@ window.handlePMDecision = async function(planId, decision) {
   const decisionText = decision === 'Approved' ? 'อนุมัติแผนงานประจำเดือน' : 'สั่งปรับปรุงแผนงาน';
   showToast(`⏳ กำลังบันทึกผลการพิจารณา (${decisionText})...`, 'info');
 
+  // Optimistic UI Update: update local state immediately
+  const nowStr = new Date().toLocaleString('th-TH');
+  const targetPlan = (state.weeklyPlans || []).find(p => p.planId === planId);
+  if (targetPlan) {
+    targetPlan.pmStatus = decision;
+    targetPlan.status = decision;
+    targetPlan.pmName = state.user.name;
+    targetPlan.pmComment = notes || (decision === 'Approved' ? 'อนุมัติแผนงานเรียบร้อย' : 'ส่งกลับให้แก้ไข');
+    targetPlan.approvedAt = nowStr;
+  }
+  renderApprovalPlans();
+  updateBadges();
+  updateExecutiveKPIs();
+
   try {
     const res = await gasService.approveWeeklyPlanPM(
       planId,
       decision,
-      notes,
       state.user.name,
+      notes,
       state.user.uid,
       'ผู้จัดการโครงการ (PM)'
     );
@@ -627,9 +680,11 @@ window.handlePMDecision = async function(planId, decision) {
       await loadWeeklyPlans();
     } else {
       showToast(`⚠️ บันทึกไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบสิทธิ์'}`, 'warning');
+      await loadWeeklyPlans();
     }
   } catch (err) {
     showToast(`❌ เกิดข้อผิดพลาด: ${err.message}`, 'error');
+    await loadWeeklyPlans();
   }
 };
 

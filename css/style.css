@@ -5090,4 +5090,82 @@ th.pm-master-meta-cell {
   }
 }
 
+/* ==========================================================================
+   Subcontractor Planner Exit Confirmation & Header Close Styles
+   ========================================================================== */
+.btn-close-planner {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1.5px solid #ef4444;
+  border-radius: var(--radius-xs);
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  box-shadow: 1.5px 1.5px 0px #b91c1c;
+}
+
+.btn-close-planner:hover {
+  background: #fca5a5;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0px #b91c1c;
+}
+
+.btn-exit-action {
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+  border: 2px solid var(--border-dark);
+  box-shadow: 2px 3px 0px var(--border-dark);
+}
+
+.btn-exit-action:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 4px 0px var(--border-dark);
+}
+
+.btn-exit-submit {
+  background: var(--accent-coral);
+  color: #ffffff;
+}
+
+.btn-exit-submit:hover {
+  background: var(--accent-coral-hover);
+}
+
+.btn-exit-discard {
+  background: #fff1f2;
+  color: #be123c;
+  border-color: #e11d48;
+  box-shadow: 2px 3px 0px #e11d48;
+}
+
+.btn-exit-discard:hover {
+  background: #ffe4e6;
+}
+
+.btn-exit-cancel {
+  background: #f8fafc;
+  color: var(--text-main);
+  border-color: #cbd5e1;
+  box-shadow: 2px 3px 0px #94a3b8;
+}
+
+.btn-exit-cancel:hover {
+  background: #e2e8f0;
+}
+
+
 

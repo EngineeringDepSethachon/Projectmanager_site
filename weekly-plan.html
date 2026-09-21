@@ -33,6 +33,9 @@
           <button type="button" class="btn-sync-inline" id="btn-sync-plans" title="ซิงก์ข้อมูลจาก Google Sheets">
             🔄 ซิงก์ชีต
           </button>
+          <button type="button" class="btn-close-planner" id="btn-close-planner" title="ปิดหน้าวางแผน">
+            <span>✕ ปิดหน้าต่าง</span>
+          </button>
         </div>
       </div>
     </header>
@@ -454,6 +457,37 @@
         <button type="button" class="btn-cancel" id="btn-cancel-submit-modal">ยกเลิก</button>
         <button type="button" class="btn-save" id="btn-confirm-submit-plan" style="background: var(--accent-coral); color: #ffffff; font-weight: 800;">
           🚀 ยืนยันส่งแผนให้ PM
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ยืนยันการปิดหน้าวางแผนงาน (Confirm Exit Modal) -->
+  <div class="modal-backdrop" id="modal-confirm-exit">
+    <div class="modal-card" style="max-width: 520px; text-align: center; padding: 24px;">
+      <div style="font-size: 3rem; margin-bottom: 12px; line-height: 1;">⚠️</div>
+      <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-heading); margin-bottom: 8px;">
+        คุณมีการแก้ไขแผนงานที่ยังไม่ได้ส่งอนุมัติ
+      </h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 24px;">
+        ต้องการส่งแผนงานนี้ให้ <strong>ผู้จัดการโครงการ (PM)</strong> พิจารณาอนุมัติเลยหรือไม่?<br>
+        หรือต้องการปิดหน้าต่างออกไปโดยไม่บันทึกข้อมูล?
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <!-- Option 1: Submit to PM -->
+        <button type="button" class="btn-exit-action btn-exit-submit" id="btn-exit-submit-pm">
+          <span>🚀 ส่งแผนให้ PM อนุมัติทันที</span>
+        </button>
+
+        <!-- Option 2: Close without saving -->
+        <button type="button" class="btn-exit-action btn-exit-discard" id="btn-exit-discard">
+          <span>❌ ปิดไปเลยแบบไม่เซฟ (ไม่บันทึก)</span>
+        </button>
+
+        <!-- Option 3: Cancel (Stay) -->
+        <button type="button" class="btn-exit-action btn-exit-cancel" id="btn-exit-cancel">
+          <span>↩️ ยกเลิก (แก้ไขแผนงานต่อ)</span>
         </button>
       </div>
     </div>

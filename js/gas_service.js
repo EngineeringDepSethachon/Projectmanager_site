@@ -268,14 +268,23 @@ export const gasService = {
   /**
    * ดึงรายการงานย่อยที่ PM อนุมัติแล้วสำหรับวันที่กำหนด เพื่อให้โฟร์แมนดึงไปเปิดงานเช้า
    */
-  async fetchApprovedTasksForDate(date = '', company = '') {
+  async fetchApprovedTasksForDate(date = '', company = '', projectId = '') {
     const url = this.getUrl();
     if (!this.isConfigured()) return [];
+
+    // Smart fallback if company argument was mistakenly passed as projectId
+    let finalCompany = company;
+    let finalProjectId = projectId;
+    if (company && (company.startsWith('PRJ-') || company === 'all') && !projectId) {
+      finalProjectId = company;
+      finalCompany = '';
+    }
 
     try {
       let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_approved_tasks_for_date&_t=' + Date.now();
       if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
-      if (company && company !== '-') queryUrl += `&company=${encodeURIComponent(company)}`;
+      if (finalCompany && finalCompany !== '-' && finalCompany !== 'ผู้รับเหมา') queryUrl += `&company=${encodeURIComponent(finalCompany)}`;
+      if (finalProjectId && finalProjectId !== '-') queryUrl += `&projectId=${encodeURIComponent(finalProjectId)}`;
 
       const res = await fetch(queryUrl, { method: 'GET' });
       if (!res.ok) return [];

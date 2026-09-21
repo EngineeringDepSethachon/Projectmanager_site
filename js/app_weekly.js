@@ -49,7 +49,8 @@ const state = {
   // UI Helpers
   editingTaskId: null,
   modalSubtasksTemp: [],
-  expandedTasks: new Set()
+  expandedTasks: new Set(),
+  isDirty: false
 };
 
 // ==========================================
@@ -76,6 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindToolbarActions();
   bindModalEvents();
   setupViewTabs();
+  setupExitConfirmation();
 });
 
 // ==========================================
@@ -1491,6 +1493,7 @@ async function submitPlanToPM() {
     if (res && res.success) {
       showToast('🎉 ส่งแผนงานประจำเดือนสำเร็จ! รอ PM กดอนุมัติเพื่อส่งต่องานให้โฟร์แมน', 'success');
       state.planStatus = 'Pending';
+      state.isDirty = false;
       renderPlanMetaUI();
       await loadWeeklyPlans();
     } else {
@@ -1508,6 +1511,7 @@ async function submitPlanToPM() {
 
 function autoSaveDraft() {
   if (!state.monthInfo) return;
+  state.isDirty = true;
   const draftKey = `draft_mplan_${state.project.id}_${state.monthInfo.year}_${state.monthInfo.month}_${state.subcontractor.name}`;
   const data = {
     objective: state.monthObjective,
@@ -1569,6 +1573,7 @@ async function loadWeeklyPlans() {
     });
     renderArchivePlans();
     syncCurrentMonthPlan();
+    state.isDirty = false;
   } catch (err) {
     console.warn('loadWeeklyPlans error:', err);
   }
@@ -1694,3 +1699,53 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// ==========================================
+// Exit Confirmation Modal (ส่ง PM หรือปิดแบบไม่เซฟ)
+// ==========================================
+function setupExitConfirmation() {
+  const btnClose = document.getElementById('btn-close-planner');
+  const modalExit = document.getElementById('modal-confirm-exit');
+  const btnSubmitPM = document.getElementById('btn-exit-submit-pm');
+  const btnDiscard = document.getElementById('btn-exit-discard');
+  const btnCancel = document.getElementById('btn-exit-cancel');
+
+  function requestExit() {
+    if (state.isDirty) {
+      if (modalExit) modalExit.classList.add('active');
+    } else {
+      doExit();
+    }
+  }
+
+  function doExit() {
+    state.isDirty = false;
+    window.location.href = 'index.html';
+  }
+
+  btnClose?.addEventListener('click', requestExit);
+
+  btnCancel?.addEventListener('click', () => {
+    modalExit?.classList.remove('active');
+  });
+
+  btnDiscard?.addEventListener('click', () => {
+    modalExit?.classList.remove('active');
+    doExit();
+  });
+
+  btnSubmitPM?.addEventListener('click', () => {
+    modalExit?.classList.remove('active');
+    openSubmitConfirmModal();
+  });
+
+  // Browser tab close guard
+  window.addEventListener('beforeunload', (e) => {
+    if (state.isDirty) {
+      e.preventDefault();
+      e.returnValue = 'คุณมีข้อมูลแผนงานที่ยังไม่ได้ส่งอนุมัติ ต้องการปิดโดยไม่บันทึกหรือไม่?';
+      return e.returnValue;
+    }
+  });
+}
+
