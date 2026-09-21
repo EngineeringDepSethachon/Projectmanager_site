@@ -150,9 +150,11 @@ function setupSubNavTabs() {
 async function loadWeeklyPlans() {
   try {
     const plans = await gasService.fetchWeeklyPlans(state.project.id);
-    state.weeklyPlans = plans || [];
+    // Explicitly filter out any dummy mock seed data
+    state.weeklyPlans = (plans || []).filter(p => p.planId !== 'WPLAN-2026-W38-01');
     renderApprovalPlans();
     updateBadges();
+    updateExecutiveKPIs();
     if (state.activeTab === 'view-pm-gantt') {
       renderMasterMonthlyGantt();
     }
@@ -162,7 +164,7 @@ async function loadWeeklyPlans() {
 }
 
 function updateBadges() {
-  const pendingCount = (state.weeklyPlans || []).filter(p => p.status === 'Pending' || p.pmStatus === 'Pending').length;
+  const pendingCount = (state.weeklyPlans || []).filter(p => (p.status === 'Pending' || p.pmStatus === 'Pending')).length;
   const badgePending = document.getElementById('badge-pending-plans');
   if (badgePending) {
     if (pendingCount > 0) {
@@ -174,20 +176,53 @@ function updateBadges() {
   }
 }
 
+function updateExecutiveKPIs() {
+  const plans = (state.weeklyPlans || []).filter(p => p.planId !== 'WPLAN-2026-W38-01');
+  const subsSet = new Set();
+  plans.forEach(p => {
+    const c = p.submittedByCompany || p.company;
+    if (c && c !== '-' && c !== 'ผู้รับเหมา') subsSet.add(c);
+  });
+
+  const pendingCount = plans.filter(p => (p.status || p.pmStatus) === 'Pending').length;
+  const approvedCount = plans.filter(p => (p.status || p.pmStatus) === 'Approved').length;
+
+  let totalWorkers = 0;
+  let totalTasks = 0;
+  plans.forEach(p => {
+    totalWorkers += Number(p.avgWorkers || 0);
+    totalTasks += Number(p.totalTasks || 0);
+  });
+
+  const elSubs = document.getElementById('pm-kpi-subs');
+  const elPending = document.getElementById('pm-kpi-pending');
+  const elApproved = document.getElementById('pm-kpi-approved');
+  const elWorkers = document.getElementById('pm-kpi-workers');
+  const elTasksSub = document.getElementById('pm-kpi-tasks-sub');
+
+  if (elSubs) elSubs.innerText = `${subsSet.size} บริษัท`;
+  if (elPending) elPending.innerText = `${pendingCount} แผน`;
+  if (elApproved) elApproved.innerText = `${approvedCount} แผน`;
+  if (elWorkers) elWorkers.innerText = `${totalWorkers} คน/วัน`;
+  if (elTasksSub) elTasksSub.innerText = `${totalTasks} รายการงานทั้งหมด`;
+}
+
 function renderApprovalPlans() {
   const container = document.getElementById('pm-plans-container');
   if (!container) return;
 
-  let filtered = state.weeklyPlans || [];
+  // Real data only: exclude legacy mock WPLAN-2026-W38-01
+  let filtered = (state.weeklyPlans || []).filter(p => p.planId !== 'WPLAN-2026-W38-01');
   if (state.approvalFilter !== 'all') {
     filtered = filtered.filter(p => (p.status === state.approvalFilter || p.pmStatus === state.approvalFilter));
   }
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted); border: 2px dashed var(--border-subtle); border-radius: var(--radius-sm);">
-        <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">👔</div>
-        <strong style="font-size: 0.95rem;">ไม่พบแผนงานในหมวดหมู่นี้</strong>
+      <div class="pm-empty-executive-state">
+        <div class="empty-icon-circle">📋</div>
+        <h3>ยังไม่มีแผนงานที่ยื่นส่งเข้ามาในหมวดนี้</h3>
+        <p>ระบบเชื่อมโยง Google Sheets แบบเรียลไทม์ — เมื่อหัวหน้าผู้รับเหมายื่นส่งแผนงานประจำเดือน รายการและประวัติผู้ยื่นจะปรากฏที่นี่โดยอัตโนมัติ</p>
       </div>
     `;
     return;
@@ -201,20 +236,48 @@ function renderApprovalPlans() {
     const pct = Math.round(Number(p.overallProgress || p.progress) || 0);
     const avgWf = Number(p.avgWorkers) || 0;
 
+    // Submitter identity from real log / sheet columns
+    const submitterName = p.submittedByName || p.createdBy || p.foremanName || 'หัวหน้าผู้รับเหมา';
+    const submitterRole = p.submittedByRole || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)';
+    const submitterCompany = p.submittedByCompany || p.company || 'ผู้รับเหมาประจำโครงการ';
+    const submitDate = p.submittedAt || '-';
+
     return `
       <div class="pm-plan-approval-card" data-plan-id="${escapeHtml(p.planId)}">
         <!-- Card Header -->
         <div class="pm-plan-card-header">
           <div class="pm-plan-title-box">
-            <span class="user-company-badge">🏢 ${escapeHtml(p.company || 'ผู้รับเหมา')}</span>
-            <h3 style="margin-top: 4px;">${escapeHtml(p.weekLabel || p.planId)}</h3>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <span class="user-company-badge">🏢 ${escapeHtml(submitterCompany)}</span>
+              <span class="pm-plan-id-badge">${escapeHtml(p.planId)}</span>
+            </div>
+            <h3 style="margin-top: 6px; font-size: 1.15rem; color: var(--text-heading);">${escapeHtml(p.weekLabel || p.planId)}</h3>
             <div class="pm-plan-meta-tags">
-              <span>📅 ช่วงเวลา: <strong>${escapeHtml(p.startDate || '')}</strong> ถึง <strong>${escapeHtml(p.endDate || '')}</strong></span>
-              <span>👤 ส่งโดย: ${escapeHtml(p.createdBy || p.foremanName || 'หัวหน้าผู้รับเหมา')}</span>
-              <span>🕒 วันที่ยื่น: ${escapeHtml(p.submittedAt || '-')}</span>
+              <span>📅 ช่วงเวลาตามแผน: <strong>${escapeHtml(p.startDate || '')}</strong> ถึง <strong>${escapeHtml(p.endDate || '')}</strong></span>
+              <span>🕒 วันที่ยื่นส่ง: <strong>${escapeHtml(submitDate)}</strong></span>
             </div>
           </div>
           <span class="gantt-status-pill ${statusClass}">${statusText}</span>
+        </div>
+
+        <!-- Real Submitter Profile Section (ดึงจาก Log จริง) -->
+        <div class="pm-submitter-profile-box">
+          <div class="submitter-avatar-wrap">
+            <div class="submitter-avatar-icon">👷</div>
+          </div>
+          <div class="submitter-info-wrap">
+            <div class="submitter-headline">
+              <span class="submitter-label">ผู้ยื่นเสนอแผนงาน:</span>
+              <strong class="submitter-name">${escapeHtml(submitterName)}</strong>
+              <span class="submitter-role-pill">💼 ${escapeHtml(submitterRole)}</span>
+              <span class="submitter-verified-pill">✓ บันทึกใน Log ระบบแล้ว</span>
+            </div>
+            <div class="submitter-subline">
+              <span>🏢 บริษัท: <strong>${escapeHtml(submitterCompany)}</strong></span>
+              <span>🕒 ส่งเมื่อ: <strong>${escapeHtml(submitDate)}</strong></span>
+              ${p.submittedByUid && p.submittedByUid !== '-' ? `<span class="submitter-uid-tag">UID: ${escapeHtml(p.submittedByUid.slice(0, 12))}...</span>` : ''}
+            </div>
+          </div>
         </div>
 
         <!-- Card Body -->
@@ -245,21 +308,48 @@ function renderApprovalPlans() {
             </div>
           </div>
 
-          <!-- Drawer Toggle Button -->
-          <button type="button" class="pm-drawer-toggle-btn" onclick="window.togglePMSubtasks('${p.planId}')">
-            <span>🔍 ตรวจสอบงานย่อยในแผนงาน (${total} รายการ)</span>
-            <span id="pm-arrow-${p.planId}">▼ ขยายดูรายละเอียด</span>
-          </button>
+          <!-- Latest PM Decision Note (If already reviewed) -->
+          ${(p.pmName && p.pmName !== '-' && p.approvedAt && p.approvedAt !== '-') ? `
+            <div class="pm-latest-action-box ${statusClass}">
+              <div class="action-box-title">
+                <span>📌 คำสั่งการล่าสุดจาก PM:</span>
+                <span class="action-box-time">บันทึกเมื่อ: ${escapeHtml(p.approvedAt)}</span>
+              </div>
+              <div class="action-box-by">
+                โดย: <strong>${escapeHtml(p.pmName)}</strong> | มติ: <strong>${statusText}</strong>
+              </div>
+              ${p.pmComment && p.pmComment !== '-' ? `
+                <div class="action-box-comment">
+                  "${escapeHtml(p.pmComment)}"
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
 
-          <!-- Drawer Content -->
+          <!-- Drawers Button Group (Subtasks + Audit Trail) -->
+          <div class="pm-drawers-btn-group">
+            <button type="button" class="pm-drawer-toggle-btn btn-view-subtasks" onclick="window.togglePMSubtasks('${p.planId}')">
+              <span>🔍 ตรวจสอบงานย่อยในแผนงาน (${total} รายการ)</span>
+              <span id="pm-arrow-${p.planId}">▼ ขยายดูรายละเอียด</span>
+            </button>
+            <button type="button" class="pm-drawer-toggle-btn btn-view-audit" onclick="window.togglePMAuditTrail('${p.planId}')">
+              <span>📜 ประวัติการดำเนินการ (Audit Trail)</span>
+              <span id="pm-audit-arrow-${p.planId}">▼ ดูประวัติ Log</span>
+            </button>
+          </div>
+
+          <!-- Drawer Content 1: Subtasks -->
           <div id="pm-subtasks-${p.planId}" class="pm-plan-tasks-drawer" style="display: none;"></div>
+
+          <!-- Drawer Content 2: Audit Trail -->
+          <div id="pm-audit-${p.planId}" class="pm-audit-drawer" style="display: none;"></div>
         </div>
 
         <!-- PM Decision Panel -->
         <div class="pm-decision-panel">
           <div>
-            <label style="font-size: 0.76rem; font-weight: 800; color: var(--text-heading); display: block; margin-bottom: 4px;">
-              ✍️ ข้อสั่งการ / คอมเมนต์จาก PM ถึงหัวหน้าผู้รับเหมา:
+            <label style="font-size: 0.78rem; font-weight: 800; color: var(--text-heading); display: block; margin-bottom: 6px;">
+              ✍️ คำสั่งการ / ความเห็นจาก PM ถึงหัวหน้าผู้รับเหมา:
             </label>
 
             <!-- Quick Preset Chips -->
@@ -390,6 +480,79 @@ window.togglePMSubtasks = async function(planId) {
   }
 };
 
+window.togglePMAuditTrail = async function(planId) {
+  const drawer = document.getElementById(`pm-audit-${planId}`);
+  const arrow = document.getElementById(`pm-audit-arrow-${planId}`);
+  if (!drawer) return;
+
+  if (drawer.style.display === 'block') {
+    drawer.style.display = 'none';
+    if (arrow) arrow.innerText = '▼ ดูประวัติ Log';
+    return;
+  }
+
+  drawer.style.display = 'block';
+  if (arrow) arrow.innerText = '▲ ซ่อนประวัติ Log';
+  drawer.innerHTML = `<div style="text-align:center; padding:1.2rem; color:var(--text-muted);">⏳ กำลังดึงประวัติ Audit Trail...</div>`;
+
+  try {
+    const logs = await gasService.fetchPlanLogs(planId);
+    if (!logs || logs.length === 0) {
+      drawer.innerHTML = `
+        <div style="text-align:center; padding:1.2rem; color:var(--text-muted); font-size:0.82rem;">
+          ยังไม่มีรายการบันทึก Audit Trail ในระบบ
+        </div>
+      `;
+      return;
+    }
+
+    drawer.innerHTML = `
+      <div class="audit-trail-timeline">
+        ${logs.map(lg => {
+          let actionBadge = '';
+          let actionIcon = '📝';
+          if (lg.action === 'SUBMIT_PLAN') {
+            actionBadge = '<span class="audit-action-badge submit">🚀 ยื่นส่งแผนงาน</span>';
+            actionIcon = '📤';
+          } else if (lg.action === 'PM_APPROVE') {
+            actionBadge = '<span class="audit-action-badge approve">✅ อนุมัติแผนงาน</span>';
+            actionIcon = '🟢';
+          } else if (lg.action === 'PM_REVISION') {
+            actionBadge = '<span class="audit-action-badge revision">⚠️ ส่งกลับให้แก้ไข</span>';
+            actionIcon = '🔴';
+          } else {
+            actionBadge = `<span class="audit-action-badge">${escapeHtml(lg.action)}</span>`;
+          }
+
+          return `
+            <div class="audit-trail-step">
+              <div class="audit-step-bullet">${actionIcon}</div>
+              <div class="audit-step-content">
+                <div class="audit-step-header">
+                  ${actionBadge}
+                  <span class="audit-step-time">🕒 ${escapeHtml(lg.timestamp || '-')}</span>
+                </div>
+                <div class="audit-step-user">
+                  <strong>👤 ${escapeHtml(lg.userName || 'ไม่ระบุ')}</strong>
+                  <span class="audit-role-pill">💼 ${escapeHtml(lg.role || '-')}</span>
+                  ${lg.company ? `<span class="audit-company-pill">🏢 ${escapeHtml(lg.company)}</span>` : ''}
+                </div>
+                ${lg.notes && lg.notes !== '-' ? `
+                  <div class="audit-step-notes">
+                    💬 "${escapeHtml(lg.notes)}"
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  } catch (err) {
+    drawer.innerHTML = `<div style="padding:0.8rem; color:var(--accent-coral); font-size:0.8rem;">เกิดข้อผิดพลาดในการโหลด Audit Trail: ${err.message}</div>`;
+  }
+};
+
 window.handlePMDecision = async function(planId, decision) {
   const notesEl = document.getElementById(`pm-notes-${planId}`);
   const notes = notesEl ? notesEl.value.trim() : '';
@@ -404,7 +567,14 @@ window.handlePMDecision = async function(planId, decision) {
   showToast(`⏳ กำลังบันทึกผลการพิจารณา (${decisionText})...`, 'info');
 
   try {
-    const res = await gasService.approveWeeklyPlanPM(planId, decision, notes, state.user.name);
+    const res = await gasService.approveWeeklyPlanPM(
+      planId,
+      decision,
+      notes,
+      state.user.name,
+      state.user.uid,
+      'ผู้จัดการโครงการ (PM)'
+    );
     if (res && res.success) {
       showToast(`✅ บันทึกผล: ${decisionText} สำเร็จ! งานย่อยพร้อมให้โฟร์แมนดึงไปทำงานแล้ว`, 'success');
       await loadWeeklyPlans();

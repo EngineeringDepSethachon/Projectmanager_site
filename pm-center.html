@@ -58,6 +58,42 @@
     <!-- Main Content Area -->
     <main class="app-main">
 
+      <!-- Executive Overview KPI Bar -->
+      <section class="pm-executive-kpi-bar">
+        <div class="pm-kpi-card">
+          <div class="kpi-icon-box kpi-blue">🏢</div>
+          <div class="kpi-content">
+            <span class="kpi-title">ผู้รับเหมาในโครงการ</span>
+            <strong class="kpi-number" id="pm-kpi-subs">0 บริษัท</strong>
+            <span class="kpi-subtext" id="pm-kpi-subs-sub">สังกัดที่ลงทะเบียน</span>
+          </div>
+        </div>
+        <div class="pm-kpi-card highlight-pending">
+          <div class="kpi-icon-box kpi-amber">⏳</div>
+          <div class="kpi-content">
+            <span class="kpi-title">รอตรวจสอบ / อนุมัติ</span>
+            <strong class="kpi-number" id="pm-kpi-pending">0 แผน</strong>
+            <span class="kpi-subtext">ต้องการการสั่งการจาก PM</span>
+          </div>
+        </div>
+        <div class="pm-kpi-card highlight-approved">
+          <div class="kpi-icon-box kpi-green">✅</div>
+          <div class="kpi-content">
+            <span class="kpi-title">อนุมัติพร้อมปฏิบัติงาน</span>
+            <strong class="kpi-number" id="pm-kpi-approved">0 แผน</strong>
+            <span class="kpi-subtext">ส่งต่อไปหน้างาน</span>
+          </div>
+        </div>
+        <div class="pm-kpi-card">
+          <div class="kpi-icon-box kpi-purple">👷</div>
+          <div class="kpi-content">
+            <span class="kpi-title">กำลังพลเฉลี่ยในแผน</span>
+            <strong class="kpi-number" id="pm-kpi-workers">0 คน/วัน</strong>
+            <span class="kpi-subtext" id="pm-kpi-tasks-sub">0 รายการงาน</span>
+          </div>
+        </div>
+      </section>
+
       <!-- ============================================== -->
       <!-- 1. VIEW: ศูนย์อนุมัติแผนงาน (Approval Center) -->
       <!-- ============================================== -->

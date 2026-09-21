@@ -328,7 +328,7 @@ export const gasService = {
   /**
    * บันทึกผลการพิจารณาอนุมัติของ PM
    */
-  async approveWeeklyPlanPM(planId, status = 'Approved', pmName = '', pmComment = '') {
+  async approveWeeklyPlanPM(planId, status = 'Approved', pmName = '', pmComment = '', pmUid = '', pmRole = '') {
     const url = this.getUrl();
     if (!this.isConfigured()) {
       return { success: false, message: 'ไม่ได้ตั้งค่า Google Apps Script Web App' };
@@ -345,7 +345,9 @@ export const gasService = {
           plan_id: planId,
           status: status,
           pm_name: pmName,
-          pm_comment: pmComment
+          pm_comment: pmComment,
+          pm_uid: pmUid,
+          pm_role: pmRole
         })
       });
 
@@ -360,6 +362,31 @@ export const gasService = {
       return { success: false, message: `HTTP Error: ${response.status}` };
     } catch (err) {
       return { success: false, message: 'ส่งข้อมูลล้มเหลว: ' + err.message };
+    }
+  },
+
+  /**
+   * ดึงประวัติ Log การอนุมัติและการดำเนินการ (Audit Trail)
+   */
+  async fetchPlanLogs(planId = '') {
+    const url = this.getUrl();
+    if (!this.isConfigured()) return [];
+
+    try {
+      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_plan_logs&_t=' + Date.now();
+      if (planId) {
+        queryUrl += '&planId=' + encodeURIComponent(planId);
+      }
+      const res = await fetch(queryUrl, { method: 'GET' });
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.logs)) {
+        return data.logs;
+      }
+      return [];
+    } catch (err) {
+      console.warn('fetchPlanLogs error:', err);
+      return [];
     }
   },
 

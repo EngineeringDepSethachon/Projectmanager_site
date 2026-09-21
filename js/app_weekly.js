@@ -710,8 +710,8 @@ function renderGanttTable() {
                     งานย่อยไม่ต้องระบุวันที่ — โฟร์แมนรายงานตามที่ทำได้จริงหน้างาน
                   </span>
                 </div>
-                <button type="button" class="btn-mini-action" onclick="window.openAddSubtaskModal('${m.id}')" style="background: var(--accent-mint); color: #065f46; font-weight: 800;">
-                  ➕ เพิ่มงานย่อย
+                <button type="button" class="btn-gantt-secondary" onclick="window.openAddSubtaskModal('${m.id}')" style="padding: 4px 12px; font-size: 0.8rem; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; border-radius: 6px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                  <span>➕</span> เพิ่มงานย่อย
                 </button>
               </div>
 
@@ -1458,6 +1458,12 @@ async function submitPlanToPM() {
     }
   });
 
+  // Resolve submitter identity from LINE profile / state / localStorage
+  const submitterName = state.lineUser?.displayName || state.lineUser?.name || localStorage.getItem('site_user_name') || localStorage.getItem('site_line_name') || 'หัวหน้าผู้รับเหมา';
+  const submitterRole = state.lineUser?.role || localStorage.getItem('site_user_role') || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)';
+  const submitterUid = state.lineUser?.userId || state.lineUser?.uid || localStorage.getItem('site_user_uid') || localStorage.getItem('site_line_uid') || '-';
+  const submitterCompany = state.subcontractor?.name || localStorage.getItem('site_company_name') || '-';
+
   const payload = {
     plan_id: planId,
     project_id: state.project.id,
@@ -1470,6 +1476,12 @@ async function submitPlanToPM() {
     days_count: state.monthInfo.daysInMonth,
     weekly_objective: state.monthObjective || 'ดำเนินการตามแผนงานประจำเดือน',
     foreman_note: foremanNote,
+    submitted_by_name: submitterName,
+    submitted_by_role: submitterRole,
+    submitted_by_uid: submitterUid,
+    submitted_by_company: submitterCompany,
+    submittedByName: submitterName,
+    submittedByRole: submitterRole,
     daily_tasks: dailyTasksPayload,
     tasks: dailyTasksPayload
   };
