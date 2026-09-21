@@ -20,8 +20,8 @@
         <div class="brand-group">
           <div class="brand-logo">📊</div>
           <div>
-            <h1 class="brand-title">SUBCONTRACTOR GANTT PLANNER</h1>
-            <p class="brand-subtitle">ระบบวางแผนงานรายสัปดาห์แบบ Gantt Chart & แตกงานย่อย (ส่ง PM อนุมัติล่วงหน้า)</p>
+            <h1 class="brand-title">SUBCONTRACTOR MONTHLY GANTT PLANNER</h1>
+            <p class="brand-subtitle">ระบบวางแผนงานประจำเดือนแบบ Gantt Chart & แตกงานย่อย (ส่ง PM อนุมัติล่วงหน้า)</p>
           </div>
         </div>
         <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
@@ -49,8 +49,10 @@
               <strong id="sub-user-name" style="font-size: 0.95rem;">หัวหน้าผู้รับเหมา</strong>
               <span class="user-role-badge">หัวหน้าผู้รับเหมา (LV2)</span>
             </div>
-            <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
-              🏢 สังกัดบริษัท: <strong id="sub-company-name" style="color: var(--text-heading);">-</strong>
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px;">
+              <span>🏢 สังกัดบริษัท:</span>
+              <strong id="sub-company-name" style="color: var(--text-heading);">-</strong>
+              <span style="font-size: 0.68rem; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; font-weight: 800;">🔒 ล็อกตามโปรไฟล์</span>
             </div>
           </div>
         </div>
@@ -58,7 +60,7 @@
         <!-- View Mode Navigation Tabs -->
         <div style="display: flex; gap: 6px; background: #f1f5f9; padding: 4px; border-radius: var(--radius-sm); border: 1.5px solid var(--border-subtle);">
           <button type="button" class="tag-chip active" id="tab-view-gantt" style="margin: 0; padding: 6px 14px; font-weight: 800;">
-            📊 ตาราง Gantt วางแผนสัปดาห์นี้
+            📊 ตาราง Gantt วางแผนประจำเดือน
           </button>
           <button type="button" class="tag-chip" id="tab-view-archive" style="margin: 0; padding: 6px 14px; font-weight: 800;">
             📁 ประวัติแผนงานทั้งหมด
@@ -76,15 +78,15 @@
         <!-- Top Toolbar: Week Navigator & Action Buttons -->
         <div class="gantt-top-toolbar">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <!-- Week Stepper -->
-            <div class="week-stepper-control">
-              <button type="button" class="week-nav-btn" id="btn-prev-week" title="สัปดาห์ก่อนหน้า">◀ ก่อนหน้า</button>
-              <div class="week-current-badge">
-                <span class="week-date-range" id="display-week-range">กำลังคำนวณสัปดาห์...</span>
-                <span class="week-label-sub" id="display-week-label">สัปดาห์ที่ -</span>
+            <!-- Month Stepper -->
+            <div class="month-stepper-control">
+              <button type="button" class="month-nav-btn" id="btn-prev-month" title="เดือนก่อนหน้า">◀ ก่อนหน้า</button>
+              <div class="month-current-badge">
+                <span class="month-date-range" id="display-month-range">กำลังคำนวณเดือน...</span>
+                <span class="month-label-sub" id="display-month-label">เดือน -</span>
               </div>
-              <button type="button" class="week-nav-btn" id="btn-next-week" title="สัปดาห์ถัดไป">ถัดไป ▶</button>
-              <button type="button" class="week-nav-btn" id="btn-today-week" title="ไปยังสัปดาห์ปัจจุบัน" style="background:#ecfdf5; color:#065f46; border-color:#10b981;">วันนี้</button>
+              <button type="button" class="month-nav-btn" id="btn-next-month" title="เดือนถัดไป">ถัดไป ▶</button>
+              <button type="button" class="month-nav-btn" id="btn-today-month" title="ไปยังเดือนปัจจุบัน" style="background:#ecfdf5; color:#065f46; border-color:#10b981;">เดือนนี้</button>
             </div>
 
             <!-- Current Plan Status Badge -->
@@ -113,8 +115,8 @@
         <!-- Milestone & KPI Strip -->
         <div class="gantt-milestone-strip">
           <div class="milestone-input-row">
-            <span class="milestone-label">🎯 เป้าหมายประจำสัปดาห์ (Milestone):</span>
-            <input type="text" id="input-week-objective" class="milestone-field" placeholder="ระบุเป้าหมายสำคัญที่ต้องบรรลุในสัปดาห์นี้ เช่น ตัดหัวเข็มเสร็จ 100% และเทลีนฐานราก Zone A...">
+            <span class="milestone-label">🎯 เป้าหมายประจำเดือน (Monthly Milestone):</span>
+            <input type="text" id="input-month-objective" class="milestone-field" placeholder="ระบุเป้าหมายสำคัญที่ต้องบรรลุในเดือนนี้ เช่น ตัดหัวเข็มและเทฐานรากครบ 100% พร้อมขึ้นเสาชั้น 1...">
           </div>
 
           <div class="gantt-kpi-summary-grid">
@@ -159,10 +161,10 @@
         <!-- Rule Hint -->
         <div style="padding: 8px 18px; background: #fffbeb; border-bottom: 1px solid #fef3c7; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 0.76rem;">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span>💡 <strong>คำแนะนำ:</strong> สามารถ <strong>ลากแถบกราฟ Gantt</strong> หรือลากขอบซ้าย/ขวาเพื่อปรับวันที่ได้ตามต้องการ</span>
+            <span>💡 <strong>คำแนะนำ:</strong> สามารถ <strong>ลากแถบกราฟ Gantt</strong> หรือลากขอบซ้าย/ขวาเพื่อปรับวันที่ได้ตลอดทั้งเดือน</span>
           </div>
           <span class="subtasks-rule-pill">
-            🎯 งานย่อยจะไม่กำหนดวันตายตัว — โฟร์แมนรายงานตามที่ทำได้จริงหน้างาน
+            ⚡ งานย่อยไม่ต้องระบุวันที่ — โฟร์แมนรายงานตามที่ทำได้จริงหน้างาน
           </span>
         </div>
 
@@ -285,11 +287,11 @@
 
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <span style="font-size: 0.7rem; color: var(--text-muted);">ระยะเวลาด่วน:</span>
-            <button type="button" class="btn-mini-action btn-quick-dur" data-days="1">1 วัน</button>
-            <button type="button" class="btn-mini-action btn-quick-dur" data-days="2">2 วัน</button>
             <button type="button" class="btn-mini-action btn-quick-dur" data-days="3">3 วัน</button>
-            <button type="button" class="btn-mini-action btn-quick-dur" data-days="4">4 วัน</button>
-            <button type="button" class="btn-mini-action btn-quick-dur" data-days="7">ทั้งสัปดาห์ (7 วัน)</button>
+            <button type="button" class="btn-mini-action btn-quick-dur" data-days="5">5 วัน</button>
+            <button type="button" class="btn-mini-action btn-quick-dur" data-days="7">7 วัน (1 สัปดาห์)</button>
+            <button type="button" class="btn-mini-action btn-quick-dur" data-days="14">14 วัน (2 สัปดาห์)</button>
+            <button type="button" class="btn-mini-action btn-quick-dur" data-days="30">ทั้งเดือน (30 วัน)</button>
           </div>
         </div>
 
@@ -405,7 +407,7 @@
       <div class="modal-header">
         <div class="modal-title">
           <span class="icon">🚀</span>
-          <h3>ยื่นแผนงานสัปดาห์ให้ PM พิจารณา</h3>
+          <h3>ยื่นแผนงานประจำเดือนให้ PM พิจารณา</h3>
         </div>
         <button type="button" class="modal-close-btn" id="btn-close-submit-modal" title="ปิด">×</button>
       </div>

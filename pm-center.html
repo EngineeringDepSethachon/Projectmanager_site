@@ -66,7 +66,7 @@
           <div class="card-header flex-between">
             <div class="card-title">
               <span class="icon">👔</span>
-              <h2>แผนงานรายสัปดาห์ที่ต้องพิจารณา</h2>
+              <h2>แผนงานประจำเดือนที่ต้องพิจารณา (Monthly Lookahead Plans)</h2>
             </div>
             <div class="quick-tags-grid" id="pm-approval-filters" style="margin-bottom: 0;">
               <button type="button" class="tag-chip active" data-filter="all">ทั้งหมด</button>
@@ -86,20 +86,31 @@
       </div>
 
       <!-- ============================================== -->
-      <!-- 2. VIEW: แผนภูมิ Gantt ไทม์ไลน์ (Lookahead Gantt) -->
+      <!-- 2. VIEW: แผนภูมิ Gantt ไทม์ไลน์ (Master Monthly Gantt) -->
       <!-- ============================================== -->
       <div id="view-pm-gantt" class="pm-view-pane" style="display: none;">
         <section class="card">
           <div class="card-header flex-between">
             <div class="card-title">
               <span class="icon">📊</span>
-              <h2>แผนภูมิ Gantt ไทม์ไลน์ภาพรวมโครงการ (Lookahead Timeline)</h2>
+              <h2>แผนภูมิ Gantt ไทม์ไลน์ภาพรวมโครงการ (Master Monthly Gantt)</h2>
             </div>
-            <span class="badge-hint" id="gantt-total-weeks">0 สัปดาห์</span>
+            <!-- Month Stepper for PM -->
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <div class="month-stepper-control" style="padding: 2px 6px;">
+                <button type="button" class="month-nav-btn" id="btn-pm-prev-month" title="เดือนก่อนหน้า">◀ ก่อนหน้า</button>
+                <div class="month-current-badge" style="padding: 0 8px;">
+                  <strong class="month-date-range" id="pm-display-month-label" style="font-size: 0.82rem;">กำลังโหลด...</strong>
+                </div>
+                <button type="button" class="month-nav-btn" id="btn-pm-next-month" title="เดือนถัดไป">ถัดไป ▶</button>
+                <button type="button" class="month-nav-btn" id="btn-pm-today-month" style="background:#ecfdf5; color:#065f46; border-color:#10b981;">เดือนนี้</button>
+              </div>
+              <span class="badge-hint" id="gantt-total-weeks">0 แผนงาน</span>
+            </div>
           </div>
           <div class="card-body">
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
-              แสดงไทม์ไลน์ความคืบหน้าของแต่ละสัปดาห์และบริษัทผู้รับเหมา สามารถคลิกที่แท่ง Gantt เพื่อดูงานย่อยในสัปดาห์นั้น
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">
+              แสดงไทม์ไลน์ความคืบหน้าของทุกผู้รับเหมาตลอดทั้งเดือน สามารถคลิกที่แถบกราฟเพื่อตรวจสอบงานย่อย
             </p>
             <div id="gantt-chart-container" class="gantt-chart-wrapper">
               <!-- Rendered via JS -->

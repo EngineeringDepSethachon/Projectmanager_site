@@ -167,8 +167,8 @@ function doGet(e) {
         const rawRole = String(colIdx.roleCol > -1 ? row[colIdx.roleCol] : row[3] || "-").trim();
         const rawProj = String(colIdx.projCol > -1 ? row[colIdx.projCol] : "-").trim();
 
-        const cleanComp = (rawComp === "หจก. นครพิงค์โครงสร้าง" || !rawComp) ? "-" : rawComp;
-        const cleanRole = (rawRole === "โฟร์แมนหน้างาน" || rawRole === "โฟร์แมน" || !rawRole) ? "-" : rawRole;
+        const cleanComp = rawComp || "-";
+        const cleanRole = rawRole || "-";
         const cleanProjId = (!rawProj || rawProj === "-") ? "-" : rawProj;
         const cleanProjName = (cleanProjId !== "-" && projectsMap[cleanProjId]) ? projectsMap[cleanProjId] : (cleanProjId !== "-" ? cleanProjId : "-");
 
@@ -637,6 +637,7 @@ function handleSaveWeeklyPlan(ss, payload) {
   const startDate = payload.start_date || "";
   const endDate = payload.end_date || "";
   const dailyTasks = payload.daily_tasks || payload.tasks || [];
+  const objective = payload.weekly_objective || payload.objective || "-";
   const daysCount = payload.days_count || (new Set(dailyTasks.map(t => t.date)).size) || 0;
   const totalTasks = dailyTasks.length;
 

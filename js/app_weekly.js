@@ -1,9 +1,11 @@
 /**
- * app_weekly.js - Subcontractor Weekly Planning & Interactive Gantt Controller (LV2 - Desktop)
+ * app_weekly.js - Subcontractor Monthly Lookahead Planning & Interactive Gantt Controller (LV2 - Desktop)
  * หน้าจอสำหรับหัวหน้าผู้รับเหมา:
- * - เพิ่มรายการงานหลักและลากแถบกราฟ Gantt ตามวันที่วางแผนไว้
- * - แตกงานย่อย (Subtasks) ใต้แต่ละงานหลัก "โดยงานย่อยไม่ต้องลงวันที่ จะเป็นไปตามที่โฟร์แมนทำได้จริงหน้างาน"
- * - ยื่นส่งแผนงานให้ PM อนุมัติล่วงหน้า
+ * - แผนงานต้องเป็นของ "บริษัทของผู้ใช้งานเท่านั้น" ดึงตรงจากฐานข้อมูล Users_Master / Site_Users
+ * - วางแผนงานเป็นรายเดือน (28 - 31 วันตามปฏิทินจริง) มีแถบเลื่อนสลับเดือน
+ * - ลากแถบกราฟ Gantt และปรับขอบซ้าย/ขวาเพื่อกำหนดช่วงเวลาตลอดทั้งเดือน
+ * - แตกงานย่อย (Subtasks) ใต้แต่ละงานหลัก โดยงานย่อย "ไม่ต้องลงวันที่ จะเป็นไปตามที่โฟร์แมนทำได้จริงหน้างาน"
+ * - ยื่นส่งแผนงานประจำเดือนให้ PM อนุมัติล่วงหน้า
  */
 
 import { gasService } from './gas_service.js';
@@ -27,20 +29,23 @@ const state = {
     avatar: localStorage.getItem('site_line_avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80'
   },
   activeView: 'gantt', // 'gantt' | 'archive'
-  currentWeekOffset: 0, // 0 = current week, 1 = next week, -1 = prev week
-  weekInfo: null, // { monday, sunday, startIso, endIso, label, days: [...] }
-  
-  // Current Week Plan Data
-  currentPlan: null, // Loaded from GAS or local draft
-  mainTasks: [], // [{ id, name, category, workArea, startDayIndex, endDayIndex, startDate, endDate, subtasks: [...] }]
-  weekObjective: '',
+
+  // Monthly Timeline Info
+  currentYear: new Date().getFullYear(),
+  currentMonth: new Date().getMonth(), // 0-11
+  monthInfo: null, // { year, month, daysInMonth, startIso, endIso, monthNameThai, yearThai, label, days: [...] }
+
+  // Current Month Plan Data
+  currentPlan: null,
+  mainTasks: [],
+  monthObjective: '',
   planStatus: 'Draft', // 'Draft' | 'Pending' | 'Approved' | 'Revision'
   pmNotes: '',
-  
-  // Historical / All plans
-  weeklyPlans: [],
+
+  // Historical Plans for this company
+  monthlyPlans: [],
   archiveFilter: 'all',
-  
+
   // UI Helpers
   editingTaskId: null,
   modalSubtasksTemp: [],
@@ -54,13 +59,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   parseUrlParams();
   renderProfile();
   renderProjectInfo();
-  
-  calculateWeekInfo(state.currentWeekOffset);
-  renderWeekInfoUI();
-  
+
+  // 1. Sync User Profile from backend to resolve registered Company & Project
+  await syncUserProfile();
+
+  // 2. Initialize Month Timeline (Default to current month)
+  calculateMonthInfo(state.currentYear, state.currentMonth);
+  renderMonthInfoUI();
+
+  // 3. Load Projects and Company Plans
   await loadProjects();
   await loadWeeklyPlans();
-  
+
+  // 4. Bind UI Event Handlers
   bindNavigationEvents();
   bindToolbarActions();
   bindModalEvents();
@@ -68,7 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ==========================================
-// URL Parsing & Profile
+// Profile & User Company Resolution (Strict LV2 Scoping)
 // ==========================================
 function parseUrlParams() {
   try {
@@ -104,13 +115,52 @@ function parseUrlParams() {
   }
 }
 
+async function syncUserProfile() {
+  if (!state.user.uid || state.user.uid === '-') return;
+
+  try {
+    const profile = await gasService.fetchUserProfile(state.user.uid);
+    if (profile) {
+      if (profile.displayName || profile.lineName) {
+        state.user.name = profile.displayName || profile.lineName;
+        localStorage.setItem('site_line_name', state.user.name);
+      }
+      if (profile.avatar) {
+        state.user.avatar = profile.avatar;
+        localStorage.setItem('site_line_avatar', profile.avatar);
+      }
+      if (profile.company && profile.company !== '-') {
+        state.subcontractor.name = profile.company;
+        localStorage.setItem('site_sub_name', profile.company);
+      }
+      if (profile.projectId && profile.projectId !== '-' && (!state.project.id || state.project.id === '-')) {
+        state.project.id = profile.projectId;
+        state.project.name = profile.projectName || profile.projectId;
+        localStorage.setItem('site_project_id', state.project.id);
+        localStorage.setItem('site_project_name', state.project.name);
+      }
+      renderProfile();
+      renderProjectInfo();
+    }
+  } catch (err) {
+    console.warn('syncUserProfile error:', err);
+  }
+}
+
 function renderProfile() {
   const nameEl = document.getElementById('sub-user-name');
   const compEl = document.getElementById('sub-company-name');
   const avatarEl = document.getElementById('sub-avatar');
 
   if (nameEl) nameEl.innerText = state.user.name !== '-' ? state.user.name : 'หัวหน้าผู้รับเหมา';
-  if (compEl) compEl.innerText = state.subcontractor.name !== '-' ? state.subcontractor.name : 'หจก. ผู้รับเหมาโครงสร้าง';
+  if (compEl) {
+    const compName = state.subcontractor.name;
+    if (compName && compName !== '-') {
+      compEl.innerText = compName;
+    } else {
+      compEl.innerText = 'หจก. ผู้รับเหมาประจำระบบ';
+    }
+  }
   if (avatarEl && state.user.avatar) avatarEl.src = state.user.avatar;
 }
 
@@ -136,55 +186,64 @@ async function loadProjects() {
 }
 
 // ==========================================
-// Week Calculation & Navigation
+// Monthly Calculation & Stepper
 // ==========================================
-function calculateWeekInfo(offset = 0) {
+function calculateMonthInfo(year, month) {
+  state.currentYear = year;
+  state.currentMonth = month;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayIso = toIsoDate(today);
 
-  // Compute Monday of the target week
-  const day = today.getDay(); // 0 is Sun, 1 is Mon...
-  const diffToMon = day === 0 ? -6 : 1 - day;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + diffToMon + (offset * 7));
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthNamesThai = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const monthNamesThaiShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const dayNamesShort = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  const dayInitials = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
   const days = [];
-  const dayNamesShort = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
-  const monthNamesThaiShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-
-  for (let i = 0; i < 7; i++) {
-    const cur = new Date(monday);
-    cur.setDate(monday.getDate() + i);
-    const iso = toIsoDate(cur);
-    const isToday = iso === toIsoDate(today);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const curDate = new Date(year, month, d);
+    const dayOfWeek = curDate.getDay();
+    const iso = toIsoDate(curDate);
 
     days.push({
-      date: cur,
+      dateNumber: d,
+      dayIndex: d - 1, // 0-indexed: 0 .. daysInMonth - 1
+      date: curDate,
       iso: iso,
-      dayIndex: i,
-      dayNameShort: dayNamesShort[i],
-      dateNumber: cur.getDate(),
-      monthShort: monthNamesThaiShort[cur.getMonth()],
-      yearThaiShort: (cur.getFullYear() + 543).toString().slice(-2),
-      isToday: isToday,
-      isWeekend: i >= 5
+      dayOfWeek: dayOfWeek,
+      dayNameShort: dayNamesShort[dayOfWeek],
+      dayInitial: dayInitials[dayOfWeek],
+      monthShort: monthNamesThaiShort[month],
+      isToday: (iso === todayIso),
+      isWeekend: (dayOfWeek === 0 || dayOfWeek === 6)
     });
   }
 
-  const sunday = days[6].date;
-  const yearThai = sunday.getFullYear() + 543;
+  const startIso = days[0].iso;
+  const endIso = days[daysInMonth - 1].iso;
+  const monthNameThai = monthNamesThai[month];
+  const yearThai = year + 543;
 
-  state.weekInfo = {
-    monday: monday,
-    sunday: sunday,
-    startIso: days[0].iso,
-    endIso: days[6].iso,
-    label: `สัปดาห์ (${days[0].dateNumber} ${days[0].monthShort} - ${days[6].dateNumber} ${days[6].monthShort} ${yearThai})`,
+  state.monthInfo = {
+    year: year,
+    month: month,
+    daysInMonth: daysInMonth,
+    startIso: startIso,
+    endIso: endIso,
+    monthNameThai: monthNameThai,
+    yearThai: yearThai,
+    label: `แผนงานประจำเดือน ${monthNameThai} ${yearThai}`,
+    rangeText: `1 - ${daysInMonth} ${monthNamesThaiShort[month]} ${yearThai}`,
     days: days
   };
 
-  // Sync active plan for this calculated week
-  syncCurrentWeekPlan();
+  // Set CSS custom property dynamically for timeline grid
+  document.documentElement.style.setProperty('--timeline-days', daysInMonth);
+
+  syncCurrentMonthPlan();
 }
 
 function toIsoDate(d) {
@@ -194,17 +253,20 @@ function toIsoDate(d) {
   return `${year}-${month}-${date}`;
 }
 
-function renderWeekInfoUI() {
-  const rangeEl = document.getElementById('display-week-range');
-  const labelEl = document.getElementById('display-week-label');
-  if (!state.weekInfo) return;
+function renderMonthInfoUI() {
+  const rangeEl = document.getElementById('display-month-range') || document.getElementById('display-week-range');
+  const labelEl = document.getElementById('display-month-label') || document.getElementById('display-week-label');
+  if (!state.monthInfo) return;
 
   if (rangeEl) {
-    rangeEl.innerText = `${state.weekInfo.days[0].dateNumber} ${state.weekInfo.days[0].monthShort} - ${state.weekInfo.days[6].dateNumber} ${state.weekInfo.days[6].monthShort} ${state.weekInfo.sunday.getFullYear() + 543}`;
+    rangeEl.innerText = state.monthInfo.rangeText;
   }
   if (labelEl) {
-    const isThisWeek = state.currentWeekOffset === 0;
-    labelEl.innerText = isThisWeek ? '🌟 สัปดาห์ปัจจุบัน (Current Week)' : (state.currentWeekOffset > 0 ? `ล่วงหน้า +${state.currentWeekOffset} สัปดาห์` : `ย้อนหลัง ${state.currentWeekOffset} สัปดาห์`);
+    const now = new Date();
+    const isThisMonth = (state.currentYear === now.getFullYear() && state.currentMonth === now.getMonth());
+    labelEl.innerText = isThisMonth 
+      ? `🌟 ${state.monthInfo.monthNameThai} ${state.monthInfo.yearThai} (เดือนนี้ • ${state.monthInfo.daysInMonth} วัน)` 
+      : `📅 ${state.monthInfo.monthNameThai} ${state.monthInfo.yearThai} (${state.monthInfo.daysInMonth} วัน)`;
   }
 
   renderGanttDaysHeader();
@@ -212,11 +274,11 @@ function renderWeekInfoUI() {
 
 function renderGanttDaysHeader() {
   const container = document.getElementById('gantt-days-header');
-  if (!container || !state.weekInfo) return;
+  if (!container || !state.monthInfo) return;
 
-  container.innerHTML = state.weekInfo.days.map(d => `
-    <div class="gantt-day-th ${d.isWeekend ? 'weekend' : ''} ${d.isToday ? 'today' : ''}" data-day-index="${d.dayIndex}">
-      <span class="th-day-name">${d.dayNameShort}</span>
+  container.innerHTML = state.monthInfo.days.map(d => `
+    <div class="gantt-day-th ${d.isWeekend ? 'weekend' : ''} ${d.isToday ? 'today' : ''}" data-day-index="${d.dayIndex}" title="วันที่ ${d.dateNumber} ${d.monthShort} (${d.dayNameShort})">
+      <span class="th-day-name">${d.dayInitial}</span>
       <span class="th-day-num">${d.dateNumber}</span>
       ${d.isToday ? '<span class="badge-today-indicator">วันนี้</span>' : ''}
     </div>
@@ -224,30 +286,30 @@ function renderGanttDaysHeader() {
 }
 
 // ==========================================
-// Sync Plan for the Active Week
+// Sync Plan for the Active Month
 // ==========================================
-function syncCurrentWeekPlan() {
-  if (!state.weekInfo) return;
+function syncCurrentMonthPlan() {
+  if (!state.monthInfo) return;
 
-  const weekStart = state.weekInfo.startIso;
-  const weekEnd = state.weekInfo.endIso;
+  const mStart = state.monthInfo.startIso;
+  const mEnd = state.monthInfo.endIso;
 
-  // Search if a plan already exists in loaded plans from GAS
-  const existingPlan = (state.weeklyPlans || []).find(p => {
-    return p.startDate === weekStart || (p.startDate >= weekStart && p.startDate <= weekEnd);
+  // Search if a plan already exists in loaded plans from GAS for this company
+  const existingPlan = (state.monthlyPlans || []).find(p => {
+    const s = p.startDate || '';
+    const e = p.endDate || s;
+    return (s <= mEnd && e >= mStart);
   });
 
   if (existingPlan) {
     state.currentPlan = existingPlan;
     state.planStatus = existingPlan.status || existingPlan.pmStatus || 'Pending';
-    state.weekObjective = existingPlan.objective || '';
+    state.monthObjective = existingPlan.objective || '';
     state.pmNotes = existingPlan.pmNotes || existingPlan.pmComment || '';
-    
-    // Load daily tasks from GAS or parse into mainTasks
     loadTasksForPlan(existingPlan.planId);
   } else {
     // Check local draft
-    const draftKey = `draft_plan_${state.project.id}_${weekStart}`;
+    const draftKey = `draft_mplan_${state.project.id}_${state.monthInfo.year}_${state.monthInfo.month}_${state.subcontractor.name}`;
     const savedDraft = localStorage.getItem(draftKey);
 
     if (savedDraft) {
@@ -255,7 +317,7 @@ function syncCurrentWeekPlan() {
         const parsed = JSON.parse(savedDraft);
         state.currentPlan = null;
         state.planStatus = 'Draft';
-        state.weekObjective = parsed.objective || '';
+        state.monthObjective = parsed.objective || '';
         state.mainTasks = parsed.mainTasks || [];
         state.pmNotes = '';
       } catch (e) {
@@ -274,29 +336,34 @@ function syncCurrentWeekPlan() {
 function initDefaultPlan() {
   state.currentPlan = null;
   state.planStatus = 'Draft';
-  state.weekObjective = '';
+  state.monthObjective = '';
   state.pmNotes = '';
 
-  // Seed sample initial tasks for smooth lookahead preview
-  const days = state.weekInfo.days;
+  const days = state.monthInfo.days;
+  const totalDays = state.monthInfo.daysInMonth;
+
+  const task1EndIdx = Math.min(9, totalDays - 1);
+  const task2StartIdx = Math.min(8, totalDays - 1);
+  const task2EndIdx = Math.min(21, totalDays - 1);
+
   state.mainTasks = [
     {
       id: 'MTASK-' + Date.now() + '-1',
-      name: 'งานตัดหัวเข็มและสกัดเปิดเหล็ก ฐานราก F1-F8',
+      name: 'งานตัดหัวเข็มและเทลีน ฐานราก F1-F16',
       category: 'งานฐานราก',
       categoryColor: 'cat-foundation',
       workArea: 'โซนทิศเหนือ (Gridline A-D)',
       startDayIndex: 0,
-      endDayIndex: 2,
+      endDayIndex: task1EndIdx,
       startDate: days[0].iso,
-      endDate: days[2].iso,
+      endDate: days[task1EndIdx].iso,
       subtasks: [
         {
           id: 'STASK-101',
           name: 'สกัดคอนกรีตหัวเข็มให้ได้ระดับ -1.50 ม.',
           workArea: 'โซน A',
           description: 'ใช้สกัดลมตัดหัวเข็ม ระวังอย่าให้เหล็กเสริมเสียหาย',
-          targetQty: '8 ต้น',
+          targetQty: '16 ต้น',
           plannedWorkers: 4,
           machinery: 'เครื่องสกัดลม 2 ตัว, รถขุด PC200',
           actualStatus: 'Pending',
@@ -309,7 +376,7 @@ function initDefaultPlan() {
           name: 'เทคอนกรีตหยาบรองก้นหลุม (Lean Concrete)',
           workArea: 'โซน A',
           description: 'หนา 10 ซม. ปาดเรียบได้ระดับ',
-          targetQty: '15 ตร.ม.',
+          targetQty: '25 ตร.ม.',
           plannedWorkers: 3,
           machinery: 'รถโม่คอนกรีต',
           actualStatus: 'Pending',
@@ -321,21 +388,21 @@ function initDefaultPlan() {
     },
     {
       id: 'MTASK-' + Date.now() + '-2',
-      name: 'งานเข้าแบบและผูกเหล็กเสริมฐานราก F1-F4',
+      name: 'งานเข้าแบบและผูกเหล็กเสริมฐานราก F1-F8',
       category: 'งานโครงสร้าง',
       categoryColor: 'cat-structure',
       workArea: 'โซนทิศเหนือ',
-      startDayIndex: 2,
-      endDayIndex: 4,
-      startDate: days[2].iso,
-      endDate: days[4].iso,
+      startDayIndex: task2StartIdx,
+      endDayIndex: task2EndIdx,
+      startDate: days[task2StartIdx].iso,
+      endDate: days[task2EndIdx].iso,
       subtasks: [
         {
           id: 'STASK-201',
-          name: 'ผูกเหล็กข้ออ้อย DB20 ฐานราก F1-F4',
+          name: 'ผูกเหล็กข้ออ้อย DB20 ฐานราก F1-F8',
           workArea: 'โซน A',
           description: 'ผูกเหล็กตะแกรงล่าง-บน พร้อมหนุนลูกปูน 7.5 ซม.',
-          targetQty: '4 หลุม',
+          targetQty: '8 หลุม',
           plannedWorkers: 5,
           machinery: 'เครื่องดัดเหล็ก, เครื่องตัดไฟเบอร์',
           actualStatus: 'Pending',
@@ -348,7 +415,7 @@ function initDefaultPlan() {
           name: 'ติดตั้งแบบหล่อข้างฐานรากและค้ำยัน',
           workArea: 'โซน A',
           description: 'แบบเหล็ก ทาน้ำยาถอดแบบ ค้ำยันแน่นหนา',
-          targetQty: '4 หลุม',
+          targetQty: '8 หลุม',
           plannedWorkers: 3,
           machinery: '-',
           actualStatus: 'Pending',
@@ -360,7 +427,6 @@ function initDefaultPlan() {
     }
   ];
 
-  // Auto-expand the first task
   state.expandedTasks.add(state.mainTasks[0].id);
 }
 
@@ -368,9 +434,9 @@ async function loadTasksForPlan(planId) {
   try {
     const tasks = await gasService.fetchDailyTasks(planId);
     if (tasks && tasks.length > 0) {
-      // Group tasks by category or parent_task_name into Gantt mainTasks
       const grouped = {};
-      const days = state.weekInfo.days;
+      const totalDays = state.monthInfo.daysInMonth;
+      const days = state.monthInfo.days;
 
       tasks.forEach((t, idx) => {
         const cat = t.category || 'งานโครงสร้าง';
@@ -384,9 +450,9 @@ async function loadTasksForPlan(planId) {
             categoryColor: getCategoryColorClass(cat),
             workArea: t.workArea || t.work_area || '',
             startDayIndex: 0,
-            endDayIndex: 6,
-            startDate: state.weekInfo.startIso,
-            endDate: state.weekInfo.endIso,
+            endDayIndex: Math.min(14, totalDays - 1),
+            startDate: state.monthInfo.startIso,
+            endDate: days[Math.min(14, totalDays - 1)].iso,
             subtasks: []
           };
         }
@@ -407,7 +473,6 @@ async function loadTasksForPlan(planId) {
       });
 
       state.mainTasks = Object.values(grouped);
-      // Auto-expand all
       state.mainTasks.forEach(m => state.expandedTasks.add(m.id));
       renderGanttTable();
       updateKPISummary();
@@ -432,14 +497,13 @@ function getCategoryColorClass(cat) {
 // ==========================================
 function renderPlanMetaUI() {
   const statusContainer = document.getElementById('plan-status-pill-container');
-  const objInput = document.getElementById('input-week-objective');
+  const objInput = document.getElementById('input-month-objective') || document.getElementById('input-week-objective');
   const pmBox = document.getElementById('pm-directive-box');
 
   if (objInput) {
-    objInput.value = state.weekObjective || '';
+    objInput.value = state.monthObjective || '';
   }
 
-  // Status Badge
   if (statusContainer) {
     const st = state.planStatus;
     let badgeClass = 'draft';
@@ -447,7 +511,7 @@ function renderPlanMetaUI() {
 
     if (st === 'Approved') {
       badgeClass = 'approved';
-      badgeText = '🟢 PM อนุมัติแล้ว (โฟร์แมนเริ่มงานได้)';
+      badgeText = '🟢 PM อนุมัติแล้ว (โฟร์แมนดึงงานได้)';
     } else if (st === 'Pending') {
       badgeClass = 'pending';
       badgeText = '🟡 รอ PM พิจารณาอนุมัติ';
@@ -459,7 +523,6 @@ function renderPlanMetaUI() {
     statusContainer.innerHTML = `<span class="gantt-status-pill ${badgeClass}">${badgeText}</span>`;
   }
 
-  // PM Directive Box
   if (pmBox) {
     if (state.pmNotes && state.pmNotes !== '-') {
       const isApproved = state.planStatus === 'Approved';
@@ -506,7 +569,8 @@ function updateKPISummary() {
     });
   });
 
-  const avgWorkers = Math.round(totalWorkers / 7);
+  const daysCount = state.monthInfo?.daysInMonth || 30;
+  const avgWorkers = Math.round(totalWorkers / Math.max(1, Math.min(daysCount, 30)));
   const avgProgress = totalSubtasks > 0 ? Math.round(progressSum / totalSubtasks) : 0;
 
   if (mainTasksEl) mainTasksEl.innerText = `${mainCount} รายการ`;
@@ -517,11 +581,13 @@ function updateKPISummary() {
 }
 
 // ==========================================
-// RENDER GANTT TABLE (Split Table with Drag/Drop)
+// RENDER GANTT TABLE (Split Table with Monthly Drag/Drop)
 // ==========================================
 function renderGanttTable() {
   const tbody = document.getElementById('gantt-table-body');
-  if (!tbody || !state.weekInfo) return;
+  if (!tbody || !state.monthInfo) return;
+
+  const totalDays = state.monthInfo.daysInMonth;
 
   if (state.mainTasks.length === 0) {
     tbody.innerHTML = `
@@ -529,8 +595,8 @@ function renderGanttTable() {
         <td colspan="2">
           <div class="gantt-empty-state">
             <div class="empty-icon">📊</div>
-            <h3>ยังไม่มีรายการงานหลักในสัปดาห์นี้</h3>
-            <p>กดปุ่ม "➕ เพิ่มรายการงานหลัก" ด้านบนเพื่อเริ่มกำหนดแผนงาน หรือกด "สัปดาห์นี้" เพื่อดูตัวอย่างงาน</p>
+            <h3>ยังไม่มีรายการงานหลักในเดือนนี้</h3>
+            <p>กดปุ่ม "➕ เพิ่มรายการงานหลัก" ด้านบนเพื่อเริ่มกำหนดแผนงานประจำเดือน</p>
             <button type="button" class="btn-gantt-primary" onclick="window.openAddMainTaskModal()" style="margin: 0 auto;">
               ➕ เพิ่มรายการงานหลักแรก
             </button>
@@ -546,23 +612,23 @@ function renderGanttTable() {
   state.mainTasks.forEach((m, mIdx) => {
     const isExpanded = state.expandedTasks.has(m.id);
     const subtasks = m.subtasks || [];
-    // Ensure valid indices within 0..6
+
+    // Ensure valid indices within 0 .. totalDays - 1
     let sIdx = Number(m.startDayIndex);
     let eIdx = Number(m.endDayIndex);
     if (isNaN(sIdx) || sIdx < 0) sIdx = 0;
-    if (isNaN(eIdx) || eIdx > 6) eIdx = 6;
+    if (isNaN(eIdx) || eIdx >= totalDays) eIdx = totalDays - 1;
     if (sIdx > eIdx) eIdx = sIdx;
     m.startDayIndex = sIdx;
     m.endDayIndex = eIdx;
 
     const durDays = (m.endDayIndex - m.startDayIndex) + 1;
-    const sDate = state.weekInfo.days[m.startDayIndex];
-    const eDate = state.weekInfo.days[m.endDayIndex];
+    const sDate = state.monthInfo.days[m.startDayIndex];
+    const eDate = state.monthInfo.days[m.endDayIndex];
 
-    const leftPct = (m.startDayIndex * 100) / 7;
-    const widthPct = (durDays * 100) / 7;
+    const leftPct = (m.startDayIndex * 100) / totalDays;
+    const widthPct = (durDays * 100) / totalDays;
 
-    // Compute subtasks average progress
     let taskProgressSum = 0;
     subtasks.forEach(st => taskProgressSum += Number(st.actualProgress || 0));
     const taskAvgProgress = subtasks.length > 0 ? Math.round(taskProgressSum / subtasks.length) : 0;
@@ -571,7 +637,7 @@ function renderGanttTable() {
     html += `
       <tr class="gantt-task-row" data-task-id="${m.id}" data-task-idx="${mIdx}">
         
-        <!-- Left Meta Cell -->
+        <!-- Left Meta Cell (Fixed 360px) -->
         <td class="gantt-meta-cell">
           <div class="task-meta-top">
             <button type="button" class="btn-toggle-task-subtasks" onclick="window.toggleSubtasksExpansion('${m.id}')" title="ย่อ/ขยายงานย่อย">
@@ -587,7 +653,7 @@ function renderGanttTable() {
           <div class="task-meta-bottom">
             <div style="display: flex; gap: 6px; align-items: center;">
               <span class="task-date-pill">
-                ${sDate.dayNameShort} ${sDate.dateNumber} - ${eDate.dayNameShort} ${eDate.dateNumber} (${durDays} วัน)
+                ${sDate.dateNumber} - ${eDate.dateNumber} ${sDate.monthShort} (${durDays} วัน)
               </span>
               <span class="task-subtasks-count-pill" onclick="window.toggleSubtasksExpansion('${m.id}')">
                 ⚡ ${subtasks.length} งานย่อย
@@ -608,22 +674,22 @@ function renderGanttTable() {
           </div>
         </td>
 
-        <!-- Right Timeline Cell with Interactive Gantt Bar -->
+        <!-- Right Timeline Cell with Interactive Gantt Bar (Full Month) -->
         <td class="gantt-timeline-cell">
           <div class="gantt-timeline-track" data-track-id="${m.id}">
             
-            <!-- 7 Background Day Columns for Guidelines -->
-            ${state.weekInfo.days.map(d => `
-              <div class="gantt-track-day-col ${d.isWeekend ? 'weekend' : ''} ${d.isToday ? 'today' : ''}" data-day-index="${d.dayIndex}" title="คลิกเพื่อย้ายงานมาที่วัน${d.dayNameShort}"></div>
+            <!-- Month Background Day Columns for Guidelines -->
+            ${state.monthInfo.days.map(d => `
+              <div class="gantt-track-day-col ${d.isWeekend ? 'weekend' : ''} ${d.isToday ? 'today' : ''}" data-day-index="${d.dayIndex}" title="คลิกเพื่อย้ายงานมาที่วันที่ ${d.dateNumber} ${d.monthShort}"></div>
             `).join('')}
 
-            <!-- The Draggable / Resizable Gantt Bar (Pixel-Perfect % Positioning) -->
+            <!-- The Draggable / Resizable Gantt Bar -->
             <div 
               class="gantt-bar-element ${m.categoryColor || 'cat-structure'}" 
               id="gantt-bar-${m.id}"
               data-task-id="${m.id}"
-              style="left: calc(${leftPct}% + 4px); width: calc(${widthPct}% - 8px);"
-              title="${escapeHtml(m.name)}: วัน${sDate.dayNameShort} ${sDate.dateNumber} ถึง วัน${eDate.dayNameShort} ${eDate.dateNumber} (${durDays} วัน)"
+              style="left: calc(${leftPct}% + 2px); width: calc(${widthPct}% - 4px);"
+              title="${escapeHtml(m.name)}: วันที่ ${sDate.dateNumber} ถึง วันที่ ${eDate.dateNumber} ${sDate.monthShort} (${durDays} วัน)"
             >
               <!-- Left Resize Handle -->
               <div class="gantt-bar-handle handle-left" data-handle="left" data-task-id="${m.id}" title="ลากปรับวันเริ่มต้น">◀</div>
@@ -646,69 +712,74 @@ function renderGanttTable() {
       </tr>
     `;
 
-    // 2. SUBTASKS ACCORDION ROW (Displayed directly below main task)
+    // 2. SUBTASKS ACCORDION ROW (Dateless Checklist)
     if (isExpanded) {
       html += `
         <tr class="subtasks-accordion-row" id="subtasks-row-${m.id}">
           <td colspan="2">
             <div class="subtasks-wrapper-box">
               <div class="subtasks-branch-line"></div>
-
+              
               <div class="subtasks-header-bar">
-                <div class="subtasks-title-hint">
-                  ⚡ งานย่อยสำหรับโฟร์แมนดำเนินการจริง (${subtasks.length} รายการ)
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="subtasks-title-hint">⚡ งานย่อยใต้รายการ "${escapeHtml(m.name)}" (${subtasks.length} งานย่อย)</span>
+                  <span class="subtasks-rule-pill">
+                    งานย่อยไม่ต้องระบุวันที่ — โฟร์แมนรายงานตามที่ทำได้จริงหน้างาน
+                  </span>
                 </div>
-                <span class="subtasks-rule-pill">
-                  💡 งานย่อยไม่มีวันที่บังคับ — โฟร์แมนจะรายงานตามที่ทำได้จริงหน้างาน
-                </span>
+                <button type="button" class="btn-mini-action" onclick="window.openAddSubtaskModal('${m.id}')" style="background: var(--accent-mint); color: #065f46; font-weight: 800;">
+                  ➕ เพิ่มงานย่อย
+                </button>
               </div>
 
               ${subtasks.length === 0 ? `
-                <div style="background: #ffffff; padding: 12px; border-radius: 6px; border: 1.5px dashed var(--border-subtle); text-align: center; color: var(--text-muted); font-size: 0.78rem;">
-                  ยังไม่มีงานย่อยในรายการนี้ — กดปุ่ม "+ เพิ่มงานย่อยในรายการนี้" ด้านล่างเพื่อแตกงานให้โฟร์แมน
+                <div style="padding: 12px; background: #ffffff; border: 1.5px dashed var(--border-subtle); border-radius: var(--radius-xs); text-align: center; color: var(--text-muted); font-size: 0.78rem;">
+                  ยังไม่มีงานย่อยในรายการนี้ กดปุ่ม "➕ เพิ่มงานย่อย" เพื่อระบุขั้นตอนการทำงาน
                 </div>
               ` : `
                 <div class="subtasks-cards-list">
                   ${subtasks.map((st, stIdx) => {
-                    const isDone = st.actualStatus === 'Completed' || Number(st.actualProgress) >= 100;
+                    const progress = Number(st.actualProgress || 0);
+                    const isCompleted = progress >= 100 || st.actualStatus === 'Completed';
+
                     return `
-                      <div class="subtask-card-item" data-subtask-id="${st.id}">
+                      <div class="subtask-item-card ${isCompleted ? 'completed' : ''}" data-subtask-id="${st.id}">
                         <div class="subtask-card-left">
-                          <span class="subtask-bullet">↳</span>
-                          <div>
-                            <div class="subtask-name-main">${escapeHtml(st.name)}</div>
-                            ${st.description ? `<div class="subtask-desc-detail">📝 ${escapeHtml(st.description)}</div>` : ''}
-                            <div class="subtask-tags-row">
-                              ${st.workArea ? `<span class="subtask-tag">📍 โซน: <strong>${escapeHtml(st.workArea)}</strong></span>` : ''}
-                              ${st.targetQty ? `<span class="subtask-tag">🎯 เป้าหมาย: <strong>${escapeHtml(st.targetQty)}</strong></span>` : ''}
-                              ${st.plannedWorkers ? `<span class="subtask-tag">👷 แผนคนงาน: <strong>${st.plannedWorkers} คน</strong></span>` : ''}
-                              ${st.machinery && st.machinery !== '-' ? `<span class="subtask-tag">🚜 เครื่องจักร: <strong>${escapeHtml(st.machinery)}</strong></span>` : ''}
+                          <span class="subtask-number-badge">${stIdx + 1}</span>
+                          <div class="subtask-info-group">
+                            <div class="subtask-name-line">
+                              <strong>${escapeHtml(st.name)}</strong>
+                              ${st.workArea ? `<span class="subtask-area-tag">📍 ${escapeHtml(st.workArea)}</span>` : ''}
+                            </div>
+                            ${st.description ? `<div class="subtask-desc-line">${escapeHtml(st.description)}</div>` : ''}
+                            <div class="subtask-specs-line">
+                              <span>🎯 เป้าหมาย: <strong>${escapeHtml(st.targetQty || '-')}</strong></span>
+                              <span>👷 แผนคน: <strong>${st.plannedWorkers || 0} คน</strong></span>
+                              <span>🚜 เครื่องจักร: <strong>${escapeHtml(st.machinery || '-')}</strong></span>
                             </div>
                           </div>
                         </div>
 
                         <div class="subtask-card-right">
-                          <div class="subtask-actual-status-box">
-                            <span class="actual-status-pill ${isDone ? 'done' : 'pending'}">
-                              ${isDone ? '✓ ทำเสร็จแล้ว' : (Number(st.actualProgress) > 0 ? `กำลังทำ ${st.actualProgress}%` : '⏳ รอโฟร์แมนรายงาน')}
-                            </span>
-                            ${st.actualDate ? `<div class="actual-reported-note">ทำจริงวันที่: ${st.actualDate}</div>` : ''}
-                            ${st.reportedBy ? `<div class="actual-reported-note">โดย: ${escapeHtml(st.reportedBy)}</div>` : ''}
+                          <div class="subtask-actual-progress-box">
+                            <span class="progress-label">ผลงานจริงโฟร์แมน</span>
+                            <div class="progress-bar-mini">
+                              <div class="progress-fill" style="width: ${progress}%;"></div>
+                            </div>
+                            <span class="progress-percent" style="color: ${isCompleted ? '#059669' : 'var(--text-heading)'};">${progress}%</span>
                           </div>
 
-                          <button type="button" class="btn-remove-subtask" onclick="window.deleteSubtask('${m.id}', '${st.id}')" title="ลบงานย่อยนี้">
-                            &times;
-                          </button>
+                          <div class="subtask-card-actions">
+                            <button type="button" class="btn-mini-action btn-mini-delete" onclick="window.deleteSubtask('${m.id}', '${st.id}')" title="ลบงานย่อย">
+                              🗑️
+                            </button>
+                          </div>
                         </div>
                       </div>
                     `;
                   }).join('')}
                 </div>
               `}
-
-              <button type="button" class="btn-add-subtask-under-task" onclick="window.openAddSubtaskModal('${m.id}')">
-                ➕ เพิ่มงานย่อยในรายการนี้
-              </button>
             </div>
           </td>
         </tr>
@@ -717,43 +788,40 @@ function renderGanttTable() {
   });
 
   tbody.innerHTML = html;
-
-  // Re-attach interactive drag & drop events to Gantt bars
-  initGanttDragAndResize();
+  attachGanttInteractiveEvents();
 }
 
 // ==========================================
-// INTERACTIVE GANTT DRAG & RESIZE ENGINE
+// MOUSE DRAG & RESIZE LOGIC (Monthly Full Timeline)
 // ==========================================
-function initGanttDragAndResize() {
-  const bars = document.querySelectorAll('.gantt-bar-element');
+function attachGanttInteractiveEvents() {
+  const totalDays = state.monthInfo?.daysInMonth || 30;
 
-  bars.forEach(bar => {
+  document.querySelectorAll('.gantt-bar-element').forEach(bar => {
     const taskId = bar.dataset.taskId;
     const task = state.mainTasks.find(t => t.id === taskId);
     if (!task) return;
 
     let dragType = null; // 'left' | 'right' | 'body'
     let startX = 0;
-    let initialStart = task.startDayIndex;
-    let initialEnd = task.endDayIndex;
+    let initialStart = 0;
+    let initialEnd = 0;
     let trackRect = null;
-    let track = null;
 
     const onMouseDown = (e) => {
-      // Determine if clicking handle or bar body
-      const handle = e.target.closest('.gantt-bar-handle');
-      if (handle) {
-        dragType = handle.dataset.handle; // 'left' or 'right'
+      if (e.target.dataset.handle === 'left') {
+        dragType = 'left';
+      } else if (e.target.dataset.handle === 'right') {
+        dragType = 'right';
       } else {
         dragType = 'body';
       }
 
       startX = e.clientX;
-      initialStart = task.startDayIndex;
-      initialEnd = task.endDayIndex;
+      initialStart = Number(task.startDayIndex);
+      initialEnd = Number(task.endDayIndex);
 
-      track = bar.closest('.gantt-timeline-track');
+      const track = bar.closest('.gantt-timeline-track');
       if (track) {
         trackRect = track.getBoundingClientRect();
       }
@@ -764,13 +832,14 @@ function initGanttDragAndResize() {
 
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
+      e.preventDefault();
       e.stopPropagation();
     };
 
     const onMouseMove = (e) => {
       if (!dragType || !trackRect) return;
 
-      const cellWidth = trackRect.width / 7;
+      const cellWidth = trackRect.width / totalDays;
       const deltaX = e.clientX - startX;
       const dayDelta = Math.round(deltaX / cellWidth);
 
@@ -778,9 +847,9 @@ function initGanttDragAndResize() {
       let newEnd = initialEnd;
 
       if (dragType === 'left') {
-        newStart = Math.min(initialEnd, Math.max(0, initialStart + dayDelta));
+        newStart = Math.min(task.endDayIndex, Math.max(0, initialStart + dayDelta));
       } else if (dragType === 'right') {
-        newEnd = Math.max(initialStart, Math.min(6, initialEnd + dayDelta));
+        newEnd = Math.max(task.startDayIndex, Math.min(totalDays - 1, initialEnd + dayDelta));
       } else if (dragType === 'body') {
         const duration = initialEnd - initialStart;
         newStart = initialStart + dayDelta;
@@ -790,30 +859,30 @@ function initGanttDragAndResize() {
           newStart = 0;
           newEnd = duration;
         }
-        if (newEnd > 6) {
-          newEnd = 6;
-          newStart = 6 - duration;
+        if (newEnd > totalDays - 1) {
+          newEnd = totalDays - 1;
+          newStart = (totalDays - 1) - duration;
         }
       }
 
-      // Live Percentage positioning matching the 7 columns perfectly
-      const leftPct = (newStart * 100) / 7;
-      const widthPct = ((newEnd - newStart + 1) * 100) / 7;
-      bar.style.left = `calc(${leftPct}% + 4px)`;
-      bar.style.width = `calc(${widthPct}% - 8px)`;
+      // Realtime visual positioning via percentages
+      const leftPct = (newStart * 100) / totalDays;
+      const widthPct = ((newEnd - newStart + 1) * 100) / totalDays;
+      bar.style.left = `calc(${leftPct}% + 2px)`;
+      bar.style.width = `calc(${widthPct}% - 4px)`;
 
       const durDays = (newEnd - newStart) + 1;
       const countLabel = bar.querySelector('.gantt-bar-days-count');
       if (countLabel) countLabel.innerText = `${durDays} วัน`;
 
       // Update date pill in row
-      const sDate = state.weekInfo.days[newStart];
-      const eDate = state.weekInfo.days[newEnd];
+      const sDate = state.monthInfo.days[newStart];
+      const eDate = state.monthInfo.days[newEnd];
       const row = bar.closest('.gantt-task-row');
       if (row) {
         const datePill = row.querySelector('.task-date-pill');
         if (datePill) {
-          datePill.innerText = `${sDate.dayNameShort} ${sDate.dateNumber} - ${eDate.dayNameShort} ${eDate.dateNumber} (${durDays} วัน)`;
+          datePill.innerText = `${sDate.dateNumber} - ${eDate.dateNumber} ${sDate.monthShort} (${durDays} วัน)`;
         }
       }
 
@@ -825,23 +894,12 @@ function initGanttDragAndResize() {
           th.classList.remove('drag-highlight');
         }
       });
-
-      // Live highlight track columns in this row
-      if (track) {
-        track.querySelectorAll('.gantt-track-day-col').forEach((col, idx) => {
-          if (idx >= newStart && idx <= newEnd) {
-            col.classList.add('drag-highlight');
-          } else {
-            col.classList.remove('drag-highlight');
-          }
-        });
-      }
     };
 
     const onMouseUp = (e) => {
       if (!dragType || !trackRect) return;
 
-      const cellWidth = trackRect.width / 7;
+      const cellWidth = trackRect.width / totalDays;
       const deltaX = e.clientX - startX;
       const dayDelta = Math.round(deltaX / cellWidth);
 
@@ -851,25 +909,21 @@ function initGanttDragAndResize() {
       if (dragType === 'left') {
         newStart = Math.min(task.endDayIndex, Math.max(0, initialStart + dayDelta));
       } else if (dragType === 'right') {
-        newEnd = Math.max(task.startDayIndex, Math.min(6, initialEnd + dayDelta));
+        newEnd = Math.max(task.startDayIndex, Math.min(totalDays - 1, initialEnd + dayDelta));
       } else if (dragType === 'body') {
         const duration = initialEnd - initialStart;
         newStart = initialStart + dayDelta;
         newEnd = newStart + duration;
         if (newStart < 0) { newStart = 0; newEnd = duration; }
-        if (newEnd > 6) { newEnd = 6; newStart = 6 - duration; }
+        if (newEnd > totalDays - 1) { newEnd = totalDays - 1; newStart = (totalDays - 1) - duration; }
       }
 
       task.startDayIndex = newStart;
       task.endDayIndex = newEnd;
+      task.startDate = state.monthInfo.days[task.startDayIndex].iso;
+      task.endDate = state.monthInfo.days[task.endDayIndex].iso;
 
-      // Finalize ISO dates
-      task.startDate = state.weekInfo.days[task.startDayIndex].iso;
-      task.endDate = state.weekInfo.days[task.endDayIndex].iso;
-
-      // Remove all highlight classes
       document.querySelectorAll('.drag-highlight').forEach(el => el.classList.remove('drag-highlight'));
-
       bar.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -878,17 +932,16 @@ function initGanttDragAndResize() {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
 
-      // Auto-save draft and re-render to ensure 100% synchronization
       autoSaveDraft();
       renderGanttTable();
       updateKPISummary();
-      showToast(`🗓️ ปรับวันที่: ${task.name} (${(task.endDayIndex - task.startDayIndex) + 1} วัน)`, 'info');
+      showToast(`🗓️ ปรับช่วงเวลา: ${task.name} (${(task.endDayIndex - task.startDayIndex) + 1} วัน)`, 'info');
     };
 
     bar.addEventListener('mousedown', onMouseDown);
   });
 
-  // Direct click on empty day columns to move or place task
+  // Direct click on empty day column to jump/move task
   document.querySelectorAll('.gantt-track-day-col').forEach(col => {
     col.addEventListener('click', (e) => {
       if (e.target.closest('.gantt-bar-element')) return;
@@ -902,19 +955,19 @@ function initGanttDragAndResize() {
       const dur = task.endDayIndex - task.startDayIndex;
       let newStart = dayIdx;
       let newEnd = dayIdx + dur;
-      if (newEnd > 6) {
-        newEnd = 6;
-        newStart = Math.max(0, 6 - dur);
+      if (newEnd > totalDays - 1) {
+        newEnd = totalDays - 1;
+        newStart = Math.max(0, (totalDays - 1) - dur);
       }
       task.startDayIndex = newStart;
       task.endDayIndex = newEnd;
-      task.startDate = state.weekInfo.days[newStart].iso;
-      task.endDate = state.weekInfo.days[newEnd].iso;
+      task.startDate = state.monthInfo.days[newStart].iso;
+      task.endDate = state.monthInfo.days[newEnd].iso;
 
       autoSaveDraft();
       renderGanttTable();
       updateKPISummary();
-      showToast(`🗓️ เลื่อนงาน "${task.name}" ไปที่วัน${state.weekInfo.days[newStart].dayNameShort}`, 'info');
+      showToast(`🗓️ เลื่อนงาน "${task.name}" ไปเริ่มวันที่ ${state.monthInfo.days[newStart].dateNumber}`, 'info');
     });
   });
 }
@@ -967,11 +1020,11 @@ window.openAddMainTaskModal = function() {
   document.getElementById('input-task-area').value = '';
   document.getElementById('input-task-category').value = 'งานฐานราก';
 
-  // Default dates: day 0 to day 3 of this week
-  const days = state.weekInfo.days;
+  const days = state.monthInfo.days;
+  const defaultEndIdx = Math.min(6, days.length - 1);
   document.getElementById('input-task-start-date').value = days[0].iso;
-  document.getElementById('input-task-end-date').value = days[3].iso;
-  updateModalDurationBadge(days[0].iso, days[3].iso);
+  document.getElementById('input-task-end-date').value = days[defaultEndIdx].iso;
+  updateModalDurationBadge(days[0].iso, days[defaultEndIdx].iso);
 
   renderModalSubtasksTempList();
   document.getElementById('modal-main-task').classList.add('active');
@@ -999,107 +1052,111 @@ window.openEditMainTaskModal = function(taskId) {
 
 function updateModalDurationBadge(sIso, eIso) {
   const badge = document.getElementById('modal-task-duration-badge');
-  if (!badge || !sIso || !eIso) return;
-  const d1 = new Date(sIso);
-  const d2 = new Date(eIso);
-  const diffDays = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+  if (!badge) return;
+  if (!sIso || !eIso) {
+    badge.innerText = '-';
+    return;
+  }
+  const s = new Date(sIso);
+  const e = new Date(eIso);
+  const diffDays = Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1);
   badge.innerText = `${diffDays} วัน`;
 }
 
 function renderModalSubtasksTempList() {
-  const listEl = document.getElementById('modal-task-subtasks-list');
-  const countEl = document.getElementById('modal-task-subtasks-count');
-  if (!listEl) return;
+  const container = document.getElementById('modal-task-subtasks-list');
+  const countBadge = document.getElementById('modal-task-subtasks-count');
+  if (!container) return;
 
-  if (countEl) countEl.innerText = `${state.modalSubtasksTemp.length} รายการ`;
+  if (countBadge) countBadge.innerText = `${state.modalSubtasksTemp.length} รายการ`;
 
   if (state.modalSubtasksTemp.length === 0) {
-    listEl.innerHTML = `<div style="text-align:center; padding:10px; color:var(--text-muted); font-size:0.75rem;">ยังไม่มีงานย่อย สามารถเพิ่มได้ด้านล่าง</div>`;
+    container.innerHTML = `
+      <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; padding: 8px; border: 1px dashed var(--border-subtle); border-radius: 4px;">
+        ยังไม่มีงานย่อยในรายการนี้ สามารถเพิ่มได้ด้านล่าง
+      </div>
+    `;
     return;
   }
 
-  listEl.innerHTML = state.modalSubtasksTemp.map((st, idx) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; border:1px solid var(--border-subtle); padding:6px 10px; border-radius:4px; font-size:0.75rem;">
+  container.innerHTML = state.modalSubtasksTemp.map((st, idx) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid var(--border-subtle); padding: 6px 10px; border-radius: 4px; font-size: 0.78rem;">
       <div>
-        <strong style="color:var(--text-heading);">${escapeHtml(st.name)}</strong>
-        ${st.targetQty ? `<span style="color:var(--text-muted);"> (${escapeHtml(st.targetQty)})</span>` : ''}
-        ${st.plannedWorkers ? `<span style="color:#059669;"> [${st.plannedWorkers} คน]</span>` : ''}
+        <strong>${idx + 1}. ${escapeHtml(st.name)}</strong>
+        <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 6px;">(${st.targetQty || '-'})</span>
+        ${st.plannedWorkers ? `<span style="font-size: 0.68rem; color: #0369a1; margin-left: 4px;">👷 ${st.plannedWorkers} คน</span>` : ''}
       </div>
-      <button type="button" onclick="window.removeModalSubtaskTemp(${idx})" style="background:none; border:none; color:var(--accent-coral); font-size:1rem; cursor:pointer;" title="ลบ">&times;</button>
+      <button type="button" class="btn-mini-action btn-mini-delete" onclick="window.removeTempModalSubtask(${idx})">ลบ</button>
     </div>
   `).join('');
 }
 
-window.removeModalSubtaskTemp = function(idx) {
+window.removeTempModalSubtask = function(idx) {
   state.modalSubtasksTemp.splice(idx, 1);
   renderModalSubtasksTempList();
 };
 
 // ==========================================
-// MODAL: ADD SINGLE SUBTASK UNDER TASK
+// MODAL: ADD SINGLE SUBTASK (Quick Drawer)
 // ==========================================
 window.openAddSubtaskModal = function(parentTaskId) {
-  const task = state.mainTasks.find(t => t.id === parentTaskId);
-  if (!task) return;
+  const parent = state.mainTasks.find(t => t.id === parentTaskId);
+  if (!parent) return;
 
   document.getElementById('input-subtask-parent-id').value = parentTaskId;
-  document.getElementById('subtask-parent-task-name').innerText = task.name;
+  document.getElementById('subtask-parent-task-name').innerText = parent.name;
   document.getElementById('input-quick-subtask-name').value = '';
-  document.getElementById('input-quick-subtask-area').value = task.workArea || '';
-  document.getElementById('input-quick-subtask-desc').value = '';
+  document.getElementById('input-quick-subtask-area').value = parent.workArea || '';
   document.getElementById('input-quick-subtask-qty').value = '';
+  document.getElementById('input-quick-subtask-desc').value = '';
   document.getElementById('input-quick-subtask-workers').value = '4';
   document.getElementById('input-quick-subtask-machinery').value = '';
 
   document.getElementById('modal-single-subtask').classList.add('active');
-  setTimeout(() => document.getElementById('input-quick-subtask-name')?.focus(), 100);
 };
 
 // ==========================================
-// EVENT BINDINGS
+// Toolbar, Stepper, & Modal Event Listeners
 // ==========================================
 function bindNavigationEvents() {
-  document.getElementById('btn-prev-week')?.addEventListener('click', () => {
-    state.currentWeekOffset--;
-    calculateWeekInfo(state.currentWeekOffset);
-    renderWeekInfoUI();
-  });
+  const btnPrev = document.getElementById('btn-prev-month') || document.getElementById('btn-prev-week');
+  const btnNext = document.getElementById('btn-next-month') || document.getElementById('btn-next-week');
+  const btnToday = document.getElementById('btn-today-month') || document.getElementById('btn-today-week');
 
-  document.getElementById('btn-next-week')?.addEventListener('click', () => {
-    state.currentWeekOffset++;
-    calculateWeekInfo(state.currentWeekOffset);
-    renderWeekInfoUI();
-  });
+  if (btnPrev) {
+    btnPrev.addEventListener('click', () => {
+      let m = state.currentMonth - 1;
+      let y = state.currentYear;
+      if (m < 0) {
+        m = 11;
+        y--;
+      }
+      calculateMonthInfo(y, m);
+      renderMonthInfoUI();
+    });
+  }
 
-  document.getElementById('btn-today-week')?.addEventListener('click', () => {
-    state.currentWeekOffset = 0;
-    calculateWeekInfo(0);
-    renderWeekInfoUI();
-  });
+  if (btnNext) {
+    btnNext.addEventListener('click', () => {
+      let m = state.currentMonth + 1;
+      let y = state.currentYear;
+      if (m > 11) {
+        m = 0;
+        y++;
+      }
+      calculateMonthInfo(y, m);
+      renderMonthInfoUI();
+    });
+  }
 
-  // Toggle all subtasks
-  document.getElementById('btn-toggle-all-subtasks')?.addEventListener('click', () => {
-    if (state.expandedTasks.size === state.mainTasks.length) {
-      state.expandedTasks.clear();
-    } else {
-      state.mainTasks.forEach(m => state.expandedTasks.add(m.id));
-    }
-    renderGanttTable();
-  });
-
-  // Objective input auto-save
-  document.getElementById('input-week-objective')?.addEventListener('input', (e) => {
-    state.weekObjective = e.target.value;
-    autoSaveDraft();
-  });
-
-  // Sync button
-  document.getElementById('btn-sync-plans')?.addEventListener('click', async () => {
-    showToast('🔄 กำลังซิงก์แผนงานจาก Google Sheets...', 'info');
-    await loadWeeklyPlans();
-    syncCurrentWeekPlan();
-    showToast('ซิงก์แผนงานสำเร็จ!', 'success');
-  });
+  if (btnToday) {
+    btnToday.addEventListener('click', () => {
+      const now = new Date();
+      calculateMonthInfo(now.getFullYear(), now.getMonth());
+      renderMonthInfoUI();
+      showToast('สลับมายังเดือนปัจจุบัน', 'info');
+    });
+  }
 }
 
 function bindToolbarActions() {
@@ -1109,21 +1166,45 @@ function bindToolbarActions() {
 
   document.getElementById('btn-save-draft')?.addEventListener('click', () => {
     autoSaveDraft();
-    showToast('💾 บันทึกแบบร่างสัปดาห์นี้ลงเครื่องเรียบร้อยแล้ว', 'success');
+    showToast('💾 บันทึกแบบร่างลงเครื่องสำเร็จ', 'success');
   });
 
   document.getElementById('btn-submit-to-pm')?.addEventListener('click', () => {
     openSubmitConfirmModal();
   });
+
+  document.getElementById('btn-sync-plans')?.addEventListener('click', async () => {
+    showToast('🔄 กำลังซิงก์ข้อมูลจาก Google Sheets...', 'info');
+    await syncUserProfile();
+    await loadWeeklyPlans();
+    showToast('ซิงก์ข้อมูลแผนงานสำเร็จ', 'success');
+  });
+
+  const objInput = document.getElementById('input-month-objective') || document.getElementById('input-week-objective');
+  if (objInput) {
+    objInput.addEventListener('input', (e) => {
+      state.monthObjective = e.target.value;
+      autoSaveDraft();
+    });
+  }
+
+  document.getElementById('btn-toggle-all-subtasks')?.addEventListener('click', () => {
+    if (state.expandedTasks.size === state.mainTasks.length) {
+      state.expandedTasks.clear();
+    } else {
+      state.mainTasks.forEach(m => state.expandedTasks.add(m.id));
+    }
+    renderGanttTable();
+  });
 }
 
 function bindModalEvents() {
-  // Task Modal Closes
+  // Modal Main Task
   const modalTask = document.getElementById('modal-main-task');
   document.getElementById('btn-close-task-modal')?.addEventListener('click', () => modalTask.classList.remove('active'));
   document.getElementById('btn-cancel-task-modal')?.addEventListener('click', () => modalTask.classList.remove('active'));
 
-  // Category Presets in Modal
+  // Quick category presets in modal
   document.querySelectorAll('.btn-cat-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.btn-cat-preset').forEach(b => b.classList.remove('active'));
@@ -1132,184 +1213,169 @@ function bindModalEvents() {
     });
   });
 
-  // Quick Duration Buttons
+  // Date changes in modal
+  const sInput = document.getElementById('input-task-start-date');
+  const eInput = document.getElementById('input-task-end-date');
+  if (sInput && eInput) {
+    const onDateChange = () => updateModalDurationBadge(sInput.value, eInput.value);
+    sInput.addEventListener('change', onDateChange);
+    eInput.addEventListener('change', onDateChange);
+  }
+
+  // Quick duration buttons in modal
   document.querySelectorAll('.btn-quick-dur').forEach(btn => {
     btn.addEventListener('click', () => {
-      const days = Number(btn.dataset.days) || 1;
-      const sVal = document.getElementById('input-task-start-date').value;
-      if (sVal) {
-        const d1 = new Date(sVal);
-        const d2 = new Date(d1);
-        d2.setDate(d1.getDate() + days - 1);
-        document.getElementById('input-task-end-date').value = toIsoDate(d2);
-        updateModalDurationBadge(sVal, toIsoDate(d2));
-      }
+      const daysToAdd = Number(btn.dataset.days) || 1;
+      const sVal = sInput.value || state.monthInfo.startIso;
+      const s = new Date(sVal);
+      const e = new Date(s);
+      e.setDate(s.getDate() + daysToAdd - 1);
+      eInput.value = toIsoDate(e);
+      updateModalDurationBadge(sInput.value, eInput.value);
     });
   });
 
-  document.getElementById('input-task-start-date')?.addEventListener('change', () => {
-    const s = document.getElementById('input-task-start-date').value;
-    const e = document.getElementById('input-task-end-date').value;
-    updateModalDurationBadge(s, e);
-  });
-
-  document.getElementById('input-task-end-date')?.addEventListener('change', () => {
-    const s = document.getElementById('input-task-start-date').value;
-    const e = document.getElementById('input-task-end-date').value;
-    updateModalDurationBadge(s, e);
-  });
-
-  // Add subtask inside Task Modal
+  // Add mini subtask inside modal
   document.getElementById('btn-add-subtask-in-modal')?.addEventListener('click', () => {
-    const name = document.getElementById('input-modal-new-subtask-name').value.trim();
-    const qty = document.getElementById('input-modal-new-subtask-qty').value.trim();
-    const workers = document.getElementById('input-modal-new-subtask-workers').value;
-    const mach = document.getElementById('input-modal-new-subtask-machinery').value.trim();
+    const nameEl = document.getElementById('input-modal-new-subtask-name');
+    const qtyEl = document.getElementById('input-modal-new-subtask-qty');
+    const workersEl = document.getElementById('input-modal-new-subtask-workers');
+    const machEl = document.getElementById('input-modal-new-subtask-machinery');
 
+    const name = nameEl.value.trim();
     if (!name) {
       showToast('กรุณาระบุชื่องานย่อย', 'warning');
-      document.getElementById('input-modal-new-subtask-name').focus();
+      nameEl.focus();
       return;
     }
 
     state.modalSubtasksTemp.push({
-      id: 'STASK-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      id: 'STASK-' + Date.now() + '-' + state.modalSubtasksTemp.length,
       name: name,
-      workArea: document.getElementById('input-task-area').value.trim(),
+      workArea: document.getElementById('input-task-area')?.value.trim() || '',
       description: '',
-      targetQty: qty,
-      plannedWorkers: Number(workers) || 0,
-      machinery: mach || '-',
+      targetQty: qtyEl.value.trim() || '-',
+      plannedWorkers: Number(workersEl.value) || 0,
+      machinery: machEl.value.trim() || '-',
       actualStatus: 'Pending',
-      actualProgress: 0,
-      actualDate: null
+      actualProgress: 0
     });
 
-    document.getElementById('input-modal-new-subtask-name').value = '';
-    document.getElementById('input-modal-new-subtask-qty').value = '';
+    nameEl.value = '';
+    qtyEl.value = '';
     renderModalSubtasksTempList();
   });
 
-  // Save Task Modal
+  // Save Main Task button in modal
   document.getElementById('btn-save-task-modal')?.addEventListener('click', () => {
     const name = document.getElementById('input-task-name').value.trim();
-    const area = document.getElementById('input-task-area').value.trim();
-    const cat = document.getElementById('input-task-category').value.trim() || 'งานโครงสร้าง';
-    const sDate = document.getElementById('input-task-start-date').value;
-    const eDate = document.getElementById('input-task-end-date').value;
-
     if (!name) {
       showToast('กรุณาระบุชื่องานหลัก', 'warning');
       document.getElementById('input-task-name').focus();
       return;
     }
-    if (!sDate || !eDate) {
-      showToast('กรุณาระบุวันเริ่มต้นและสิ้นสุดของงาน', 'warning');
-      return;
-    }
 
-    // Map sDate and eDate to 0..6 day indices relative to week
-    const days = state.weekInfo.days;
-    let sIdx = days.findIndex(d => d.iso === sDate);
-    let eIdx = days.findIndex(d => d.iso === eDate);
+    const cat = document.getElementById('input-task-category').value.trim() || 'งานโครงสร้าง';
+    const area = document.getElementById('input-task-area').value.trim();
+    const startDateIso = document.getElementById('input-task-start-date').value;
+    const endDateIso = document.getElementById('input-task-end-date').value;
 
-    if (sIdx === -1) sIdx = 0;
-    if (eIdx === -1) eIdx = 6;
+    const totalDays = state.monthInfo.daysInMonth;
+    let sIdx = state.monthInfo.days.findIndex(d => d.iso === startDateIso);
+    let eIdx = state.monthInfo.days.findIndex(d => d.iso === endDateIso);
+
+    if (sIdx < 0) sIdx = 0;
+    if (eIdx < 0) eIdx = Math.min(6, totalDays - 1);
     if (sIdx > eIdx) eIdx = sIdx;
 
     if (state.editingTaskId) {
-      // Edit existing
       const task = state.mainTasks.find(t => t.id === state.editingTaskId);
       if (task) {
         task.name = name;
-        task.workArea = area;
         task.category = cat;
         task.categoryColor = getCategoryColorClass(cat);
-        task.startDate = sDate;
-        task.endDate = eDate;
+        task.workArea = area;
         task.startDayIndex = sIdx;
         task.endDayIndex = eIdx;
+        task.startDate = state.monthInfo.days[sIdx].iso;
+        task.endDate = state.monthInfo.days[eIdx].iso;
         task.subtasks = state.modalSubtasksTemp;
       }
     } else {
-      // Create new
-      const newId = 'MTASK-' + Date.now();
-      state.mainTasks.push({
-        id: newId,
+      const newTask = {
+        id: 'MTASK-' + Date.now(),
         name: name,
-        workArea: area,
         category: cat,
         categoryColor: getCategoryColorClass(cat),
-        startDate: sDate,
-        endDate: eDate,
+        workArea: area,
         startDayIndex: sIdx,
         endDayIndex: eIdx,
+        startDate: state.monthInfo.days[sIdx].iso,
+        endDate: state.monthInfo.days[eIdx].iso,
         subtasks: state.modalSubtasksTemp
-      });
-      state.expandedTasks.add(newId);
+      };
+      state.mainTasks.push(newTask);
+      state.expandedTasks.add(newTask.id);
     }
 
     modalTask.classList.remove('active');
     autoSaveDraft();
     renderGanttTable();
     updateKPISummary();
-    showToast('บันทึกรายการงานหลักสำเร็จ!', 'success');
+    showToast('บันทึกรายการงานลงใน Gantt สำเร็จ', 'success');
   });
 
-  // Single Subtask Modal Closes
-  const modalSubtask = document.getElementById('modal-single-subtask');
-  document.getElementById('btn-close-subtask-modal')?.addEventListener('click', () => modalSubtask.classList.remove('active'));
-  document.getElementById('btn-cancel-subtask-modal')?.addEventListener('click', () => modalSubtask.classList.remove('active'));
+  // Modal Single Subtask (Quick Drawer)
+  const modalSub = document.getElementById('modal-single-subtask');
+  document.getElementById('btn-close-subtask-modal')?.addEventListener('click', () => modalSub.classList.remove('active'));
+  document.getElementById('btn-cancel-subtask-modal')?.addEventListener('click', () => modalSub.classList.remove('active'));
 
-  // Confirm Add Single Subtask
   document.getElementById('btn-confirm-add-subtask')?.addEventListener('click', () => {
     const parentId = document.getElementById('input-subtask-parent-id').value;
-    const name = document.getElementById('input-quick-subtask-name').value.trim();
-    const area = document.getElementById('input-quick-subtask-area').value.trim();
-    const desc = document.getElementById('input-quick-subtask-desc').value.trim();
-    const qty = document.getElementById('input-quick-subtask-qty').value.trim();
-    const workers = document.getElementById('input-quick-subtask-workers').value;
-    const mach = document.getElementById('input-quick-subtask-machinery').value.trim();
+    const parent = state.mainTasks.find(t => t.id === parentId);
+    if (!parent) return;
 
+    const name = document.getElementById('input-quick-subtask-name').value.trim();
     if (!name) {
       showToast('กรุณาระบุชื่องานย่อย', 'warning');
       document.getElementById('input-quick-subtask-name').focus();
       return;
     }
 
-    const mainTask = state.mainTasks.find(t => t.id === parentId);
-    if (!mainTask) return;
-
-    if (!mainTask.subtasks) mainTask.subtasks = [];
-
-    mainTask.subtasks.push({
-      id: 'STASK-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+    const newSubtask = {
+      id: 'STASK-' + Date.now(),
       name: name,
-      workArea: area || mainTask.workArea || '',
-      description: desc,
-      targetQty: qty,
-      plannedWorkers: Number(workers) || 0,
-      machinery: mach || '-',
+      workArea: document.getElementById('input-quick-subtask-area').value.trim(),
+      description: document.getElementById('input-quick-subtask-desc').value.trim(),
+      targetQty: document.getElementById('input-quick-subtask-qty').value.trim() || '-',
+      plannedWorkers: Number(document.getElementById('input-quick-subtask-workers').value) || 0,
+      machinery: document.getElementById('input-quick-subtask-machinery').value.trim() || '-',
       actualStatus: 'Pending',
       actualProgress: 0,
-      actualDate: null
-    });
+      actualDate: null,
+      reportedBy: null
+    };
 
+    if (!parent.subtasks) parent.subtasks = [];
+    parent.subtasks.push(newSubtask);
     state.expandedTasks.add(parentId);
-    modalSubtask.classList.remove('active');
+
+    modalSub.classList.remove('active');
     autoSaveDraft();
     renderGanttTable();
     updateKPISummary();
     showToast('เพิ่มงานย่อยลงในแผนเรียบร้อยแล้ว', 'success');
   });
 
-  // Project selector
   setupProjectModal();
 }
 
+// ==========================================
+// SUBMIT MONTHLY PLAN TO PM
+// ==========================================
 function openSubmitConfirmModal() {
   const modal = document.getElementById('modal-submit-confirm');
-  if (!modal || !state.weekInfo) return;
+  if (!modal || !state.monthInfo) return;
 
   if (state.mainTasks.length === 0) {
     showToast('กรุณาเพิ่มรายการงานหลักอย่างน้อย 1 รายการก่อนส่งแผนงาน', 'warning');
@@ -1325,14 +1391,18 @@ function openSubmitConfirmModal() {
     });
   });
 
-  const avgWorkers = Math.round(totalWorkers / 7);
+  const daysCount = state.monthInfo.daysInMonth;
+  const avgWorkers = Math.round(totalWorkers / Math.max(1, Math.min(daysCount, 30)));
 
-  document.getElementById('submit-confirm-week-label').innerText = state.weekInfo.label;
-  document.getElementById('submit-confirm-date-range').innerText = `${state.weekInfo.startIso} ถึง ${state.weekInfo.endIso}`;
+  const lbl = document.getElementById('submit-confirm-week-label');
+  const rng = document.getElementById('submit-confirm-date-range');
+  if (lbl) lbl.innerText = state.monthInfo.label;
+  if (rng) rng.innerText = `${state.monthInfo.startIso} ถึง ${state.monthInfo.endIso}`;
+
   document.getElementById('submit-summary-main-tasks').innerText = `${state.mainTasks.length} รายการ`;
   document.getElementById('submit-summary-subtasks').innerText = `${totalSubtasks} งานย่อย`;
   document.getElementById('submit-summary-workers').innerText = `${avgWorkers} คน/วัน`;
-  document.getElementById('submit-summary-project').innerText = state.project.name;
+  document.getElementById('submit-summary-project').innerText = `${state.project.name} (${state.subcontractor.name})`;
 
   modal.classList.add('active');
 
@@ -1359,18 +1429,16 @@ async function submitPlanToPM() {
     btnSubmit.innerText = '⏳ กำลังส่งให้ PM...';
   }
 
-  showToast('🚀 กำลังส่งแผนงานและงานย่อยให้ PM พิจารณา...', 'info');
+  showToast('🚀 กำลังส่งแผนงานประจำเดือนให้ PM พิจารณา...', 'info');
 
-  const planId = state.currentPlan?.planId || ('WPLAN-' + Date.now());
-  const foremanNote = document.getElementById('input-submit-note')?.value.trim() || 'ส่งแผนงานสัปดาห์จากระบบ Gantt Planner';
+  const planId = state.currentPlan?.planId || ('MPLAN-' + state.monthInfo.year + String(state.monthInfo.month + 1).padStart(2, '0') + '-' + Date.now().toString().slice(-4));
+  const foremanNote = document.getElementById('input-submit-note')?.value.trim() || 'ส่งแผนงานประจำเดือนจากระบบ Subcontractor Monthly Gantt Planner';
 
-  // Flatten subtasks for Plan_Daily_Tasks table in Google Sheets
   const dailyTasksPayload = [];
 
   state.mainTasks.forEach((m, mIdx) => {
     const subtasks = m.subtasks || [];
     if (subtasks.length === 0) {
-      // If a main task has no subtasks, emit the main task itself as a task
       dailyTasksPayload.push({
         task_id: m.id,
         plan_id: planId,
@@ -1392,7 +1460,7 @@ async function submitPlanToPM() {
           plan_id: planId,
           parent_task_id: m.id,
           parent_task_name: m.name,
-          date: m.startDate, // default planned date is main task start date
+          date: m.startDate, // Default anchor date
           day: m.category,
           company: state.subcontractor.name,
           category: m.category,
@@ -1413,10 +1481,11 @@ async function submitPlanToPM() {
     project_name: state.project.name,
     sub_id: state.subcontractor.id,
     company_name: state.subcontractor.name,
-    week_label: state.weekInfo.label,
-    start_date: state.weekInfo.startIso,
-    end_date: state.weekInfo.endIso,
-    weekly_objective: state.weekObjective || 'ดำเนินการตามแผนงานสัปดาห์',
+    week_label: state.monthInfo.label,
+    start_date: state.monthInfo.startIso,
+    end_date: state.monthInfo.endIso,
+    days_count: state.monthInfo.daysInMonth,
+    weekly_objective: state.monthObjective || 'ดำเนินการตามแผนงานประจำเดือน',
     foreman_note: foremanNote,
     daily_tasks: dailyTasksPayload,
     tasks: dailyTasksPayload
@@ -1425,7 +1494,7 @@ async function submitPlanToPM() {
   try {
     const res = await gasService.saveWeeklyPlan(payload);
     if (res && res.success) {
-      showToast('🎉 ส่งแผนงานสัปดาห์สำเร็จ! รอ PM กดอนุมัติเพื่อส่งต่องานให้โฟร์แมน', 'success');
+      showToast('🎉 ส่งแผนงานประจำเดือนสำเร็จ! รอ PM กดอนุมัติเพื่อส่งต่องานให้โฟร์แมน', 'success');
       state.planStatus = 'Pending';
       renderPlanMetaUI();
       await loadWeeklyPlans();
@@ -1443,10 +1512,10 @@ async function submitPlanToPM() {
 }
 
 function autoSaveDraft() {
-  if (!state.weekInfo) return;
-  const draftKey = `draft_plan_${state.project.id}_${state.weekInfo.startIso}`;
+  if (!state.monthInfo) return;
+  const draftKey = `draft_mplan_${state.project.id}_${state.monthInfo.year}_${state.monthInfo.month}_${state.subcontractor.name}`;
   const data = {
-    objective: state.weekObjective,
+    objective: state.monthObjective,
     mainTasks: state.mainTasks,
     updatedAt: new Date().toISOString()
   };
@@ -1482,7 +1551,6 @@ function setupViewTabs() {
     });
   }
 
-  // Filter chips in archive
   document.querySelectorAll('#archive-status-filter-chips .tag-chip').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#archive-status-filter-chips .tag-chip').forEach(b => b.classList.remove('active'));
@@ -1498,8 +1566,12 @@ async function loadWeeklyPlans() {
   if (!container) return;
 
   try {
-    const plans = await gasService.fetchWeeklyPlans(state.project.id);
-    state.weeklyPlans = plans || [];
+    const plans = await gasService.fetchWeeklyPlans(state.project.id, '', state.subcontractor.name);
+    // Extra safeguard: Only keep plans belonging to this contractor's company
+    state.monthlyPlans = (plans || []).filter(p => {
+      if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
+      return !p.company || p.company === '-' || p.company === state.subcontractor.name;
+    });
     renderArchivePlans();
   } catch (err) {
     console.warn('loadWeeklyPlans error:', err);
@@ -1510,7 +1582,7 @@ function renderArchivePlans() {
   const container = document.getElementById('weekly-plans-container');
   if (!container) return;
 
-  let filtered = state.weeklyPlans || [];
+  let filtered = state.monthlyPlans || [];
   if (state.archiveFilter !== 'all') {
     filtered = filtered.filter(p => p.status === state.archiveFilter || p.pmStatus === state.archiveFilter);
   }
@@ -1519,7 +1591,7 @@ function renderArchivePlans() {
     container.innerHTML = `
       <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted); border: 2px dashed var(--border-subtle); border-radius: var(--radius-sm);">
         <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">📋</div>
-        <strong style="font-size: 0.95rem;">ยังไม่มีแผนงานรายสัปดาห์ในหมวดหมู่นี้</strong>
+        <strong style="font-size: 0.95rem;">ยังไม่มีแผนงานในหมวดหมู่นี้สำหรับ ${escapeHtml(state.subcontractor.name || '')}</strong>
       </div>
     `;
     return;
@@ -1537,7 +1609,7 @@ function renderArchivePlans() {
           <div>
             <strong style="font-size:0.95rem; color:var(--text-heading);">${escapeHtml(p.weekLabel || p.planId)}</strong>
             <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">
-              🏢 ผู้รับเหมา: <strong>${escapeHtml(p.company || '-')}</strong> | ช่วงเวลา: <strong>${p.startDate} ถึง ${p.endDate}</strong>
+              🏢 บริษัท: <strong>${escapeHtml(p.company || '-')}</strong> | ช่วงเวลา: <strong>${p.startDate} ถึง ${p.endDate}</strong>
             </div>
           </div>
           <span class="gantt-status-pill ${statusClass}">${statusText}</span>
@@ -1558,7 +1630,7 @@ function renderArchivePlans() {
 }
 
 // ==========================================
-// Project Selector
+// Project Selector Modal
 // ==========================================
 function setupProjectModal() {
   const modal = document.getElementById('modal-project-selector');
@@ -1596,7 +1668,7 @@ window.selectProject = function(id, name) {
   renderProjectInfo();
   document.getElementById('modal-project-selector')?.classList.remove('active');
   showToast(`สลับโครงการเป็น: ${name}`, 'info');
-  calculateWeekInfo(state.currentWeekOffset);
+  calculateMonthInfo(state.currentYear, state.currentMonth);
   loadWeeklyPlans();
 };
 
