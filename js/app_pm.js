@@ -60,11 +60,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupRealtimeSync();
 
   document.getElementById('btn-sync-pm-all')?.addEventListener('click', async () => {
-    showToast('🔄 กำลังซิงก์ข้อมูลทั้งหมดจาก Google Sheets...', 'info');
+    showToast('🔄 กำลังล้างแคชและซิงก์ข้อมูลทั้งหมดจาก Google Sheets & Firebase...', 'info');
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('cpm_cache_') || key.startsWith('site_morning_plan_') || key.startsWith('cpm_site_reports_history') || key.startsWith('cpm_offline_reports_queue'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    state.dailyReports = [];
+    state.weeklyPlans = [];
+    renderDailyReportsTable();
+    renderApprovalPlans();
+    updateBadges();
+    updateExecutiveKPIs();
     await loadWeeklyPlans();
     await loadDailyReports();
     showToast('ซิงก์ข้อมูลโครงการสำเร็จ!', 'success');
   });
+
+  window.clearSiteCache = function() {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('cpm_cache_') || key.startsWith('site_morning_plan_') || key.startsWith('cpm_site_reports_history') || key.startsWith('cpm_offline_reports_queue') || key.startsWith('draft_mplan_') || key.startsWith('wplan_draft_'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    state.dailyReports = [];
+    state.weeklyPlans = [];
+    renderDailyReportsTable();
+    renderApprovalPlans();
+    updateBadges();
+    updateExecutiveKPIs();
+    showToast('🧹 ล้างแคชในเครื่องทั้งหมดเรียบร้อยแล้ว', 'success');
+    setTimeout(() => window.location.reload(), 400);
+  };
 
   // Modal PDF Actions
   document.getElementById('btn-modal-download-pdf')?.addEventListener('click', async () => {
@@ -1458,8 +1491,21 @@ function broadcastSync(type, details = {}) {
 function setupRealtimeSync() {
   // 1. Firebase Real-Time Firestore Listener (cross-device: desktop <-> mobile)
   if (firebaseService.isConfigured()) {
+    // Listen for direct collection changes
+    if (state.project.id && state.project.id !== '-') {
+      firebaseService.listenDailyReports(state.project.id, (reportsList) => {
+        console.log('[PMRealtime] Daily reports real-time snapshot:', reportsList?.length || 0);
+        state.dailyReports = reportsList || [];
+        const badge = document.getElementById('badge-total-reports');
+        if (badge) badge.innerText = state.dailyReports.length;
+        if (state.activeTab === 'view-pm-reports') {
+          renderDailyReportsTable();
+        }
+      });
+    }
+
     firebaseService.listenEvents(async (type, payload) => {
-      if (type === 'DAILY_REPORT_SUBMITTED' || type === 'PLAN_SUBMITTED' || type === 'PLAN_APPROVED' || type === 'REFRESH_ALL') {
+      if (type === 'DAILY_REPORT_SUBMITTED' || type === 'PLAN_SUBMITTED' || type === 'PLAN_APPROVED' || type === 'REFRESH_ALL' || type === 'DATABASE_CLEARED') {
         console.log('[PMSync] Firebase realtime event received:', type, payload);
         triggerSyncFlash();
         if (type === 'DAILY_REPORT_SUBMITTED') {

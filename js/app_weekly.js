@@ -1167,6 +1167,23 @@ function bindToolbarActions() {
     showToast('ซิงก์ข้อมูลแผนงานสำเร็จ', 'success');
   });
 
+  window.clearSiteCache = function() {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('cpm_cache_') || key.startsWith('site_morning_plan_') || key.startsWith('cpm_site_reports_history') || key.startsWith('cpm_offline_reports_queue') || key.startsWith('draft_mplan_') || key.startsWith('wplan_draft_'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    initDefaultPlan();
+    renderPlanMetaUI();
+    renderGanttTable();
+    updateKPISummary();
+    showToast('🧹 ล้างแคชในเครื่องทั้งหมดเรียบร้อยแล้ว', 'success');
+    setTimeout(() => window.location.reload(), 400);
+  };
+
   const objInput = document.getElementById('input-month-objective') || document.getElementById('input-week-objective');
   if (objInput) {
     objInput.addEventListener('input', (e) => {

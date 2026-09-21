@@ -264,7 +264,7 @@ async function loadApprovedTasksForToday() {
   if (firebaseService.isConfigured()) {
     try {
       const fbTasks = await firebaseService.getApprovedTasks(state.reportDate, state.project.id);
-      if (fbTasks && fbTasks.length > 0) {
+      if (Array.isArray(fbTasks)) {
         const mySub = state.subcontractor.name;
         const filtered = (mySub && mySub !== '-') 
           ? fbTasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
@@ -273,6 +273,10 @@ async function loadApprovedTasksForToday() {
           applyApprovedTasks(filtered);
           try { localStorage.setItem(cacheKey, JSON.stringify(filtered)); } catch(e) {}
           return; // ดึงจาก Firestore สำเร็จแล้ว ไม่ต้องรอ GAS
+        } else {
+          // ฐานข้อมูลใน Firestore ว่างเปล่า (หรือถูกเคลียร์) -> ล้างแคชและอัปเดตสถานะเป็นไม่มีงานทันที
+          try { localStorage.removeItem(cacheKey); } catch(e) {}
+          applyApprovedTasks([]);
         }
       }
     } catch (e) {
@@ -283,9 +287,14 @@ async function loadApprovedTasksForToday() {
   // 4. Background GAS Fetch (fallback & master sync)
   if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
     gasService.fetchApprovedTasksForDate(state.reportDate, state.subcontractor.name, state.project.id).then(gasTasks => {
-      if (gasTasks && gasTasks.length > 0) {
-        applyApprovedTasks(gasTasks);
-        try { localStorage.setItem(cacheKey, JSON.stringify(gasTasks)); } catch(e) {}
+      if (Array.isArray(gasTasks)) {
+        if (gasTasks.length > 0) {
+          applyApprovedTasks(gasTasks);
+          try { localStorage.setItem(cacheKey, JSON.stringify(gasTasks)); } catch(e) {}
+        } else {
+          try { localStorage.removeItem(cacheKey); } catch(e) {}
+          applyApprovedTasks([]);
+        }
       }
     }).catch(e => console.warn('[Foreman] GAS fetchApprovedTasks error:', e));
   }
@@ -1064,11 +1073,48 @@ function renderShiftUI() {
   renderDynamicTasks();
 }
 
+function clearTodayReportState() {
+  state.existingMorningReport = null;
+  state.existingEveningReport = null;
+  state.photos = [];
+  state.eveningPhotos = [];
+  state.workforce = {
+    foreman: 1,
+    skilled_workers: 0,
+    general_labor: 0,
+    safety_officer: 0
+  };
+  state.weather = {
+    type: 'sunny',
+    text: '☀️ ท้องฟ้าแจ่มใส แดดจัดทั้งวัน',
+    rainDelayHours: 0
+  };
+  state.machinery = [];
+  state.issues = [];
+
+  const cacheKey = `cpm_cache_reports_${state.project.id}_${state.reportDate}`;
+  try { localStorage.removeItem(cacheKey); } catch(e) {}
+
+  renderWeather();
+  renderWorkforce();
+  renderPhotos();
+  renderMachinery();
+  renderIssues();
+  renderShiftUI();
+}
+
 function applyExistingReports(list) {
-  if (!list || list.length === 0) return;
   const today = state.reportDate;
   const mySub = state.subcontractor.name;
   const myUid = state.lineUser.uid;
+
+  // หากฐานข้อมูลว่างเปล่า (เช่น เคลียร์ Database) ให้ล้างสถานะหน้าจอทั้งหมดทันที
+  if (!Array.isArray(list) || list.length === 0) {
+    if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
+      clearTodayReportState();
+    }
+    return;
+  }
 
   // Find morning report for today (or already completed report)
   const mReport = list.find(r => {
@@ -1082,11 +1128,12 @@ function applyExistingReports(list) {
     return rDate === today && isMatchUser && isMorn;
   }) || null;
 
-  if (!mReport && state.existingMorningReport) {
-    mReport = state.existingMorningReport;
-  }
-
-  if (mReport) {
+  if (!mReport) {
+    if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
+      state.existingMorningReport = null;
+      state.photos = [];
+    }
+  } else {
     state.existingMorningReport = mReport;
     if (mReport.foreman_count !== undefined) {
       state.workforce.foreman = Number(mReport.foreman_count || 1);
@@ -1134,23 +1181,11 @@ function applyExistingReports(list) {
     }
 
     // Hydrate morning photos if available
-    if (state.photos.length === 0) {
-      const rawM = mReport.morning_photos || mReport.photos || mReport.photoUrls || mReport['ลิงก์รูปภาพหน้างาน (Drive)'];
-      if (Array.isArray(rawM)) {
-        state.photos = rawM.map((p, i) => typeof p === 'string' ? { id: 'PH-M-'+i, url: p, timestamp: '🌅 เปิดงานเช้า' } : p).filter(p => p && p.url);
-      } else if (typeof rawM === 'string' && rawM.trim()) {
-        state.photos = rawM.split(',').map((u, i) => ({ id: 'PH-M-'+i, url: u.trim(), timestamp: '🌅 เปิดงานเช้า' })).filter(p => p.url);
-      }
-    }
-
-    // Hydrate evening photos if morning report was completed with evening photos
-    if (state.eveningPhotos.length === 0 && mReport.evening_photos) {
-      const rawE = mReport.evening_photos;
-      if (Array.isArray(rawE)) {
-        state.eveningPhotos = rawE.map((p, i) => typeof p === 'string' ? { id: 'PH-E-'+i, url: p, timestamp: '🌆 ปิดงาน' } : p).filter(p => p && p.url);
-      } else if (typeof rawE === 'string' && rawE.trim()) {
-        state.eveningPhotos = rawE.split(',').map((u, i) => ({ id: 'PH-E-'+i, url: u.trim(), timestamp: '🌆 ปิดงาน' })).filter(p => p.url);
-      }
+    const rawM = mReport.morning_photos || mReport.photos || mReport.photoUrls || mReport['ลิงก์รูปภาพหน้างาน (Drive)'];
+    if (Array.isArray(rawM)) {
+      state.photos = rawM.map((p, i) => typeof p === 'string' ? { id: 'PH-M-'+i, url: p, timestamp: '🌅 เปิดงานเช้า' } : p).filter(p => p && p.url);
+    } else if (typeof rawM === 'string' && rawM.trim()) {
+      state.photos = rawM.split(',').map((u, i) => ({ id: 'PH-M-'+i, url: u.trim(), timestamp: '🌅 เปิดงานเช้า' })).filter(p => p.url);
     }
   }
 
@@ -1166,19 +1201,18 @@ function applyExistingReports(list) {
     return rDate === today && isMatchUser && isEve;
   }) || null;
 
-  if (!eReport && state.existingEveningReport) {
-    eReport = state.existingEveningReport;
-  }
-
-  if (eReport) {
+  if (!eReport) {
+    if (!state.existingEveningReport || !state.existingEveningReport._bgSyncing) {
+      state.existingEveningReport = null;
+      state.eveningPhotos = [];
+    }
+  } else {
     state.existingEveningReport = eReport;
-    if (state.eveningPhotos.length === 0) {
-      const rawE = eReport.evening_photos || (eReport !== mReport ? (eReport.photos || eReport.photoUrls || eReport['ลิงก์รูปภาพหน้างาน (Drive)']) : null);
-      if (Array.isArray(rawE)) {
-        state.eveningPhotos = rawE.map((p, i) => typeof p === 'string' ? { id: 'PH-E-'+i, url: p, timestamp: '🌆 ปิดงาน' } : p).filter(p => p && p.url);
-      } else if (typeof rawE === 'string' && rawE.trim()) {
-        state.eveningPhotos = rawE.split(',').map((u, i) => ({ id: 'PH-E-'+i, url: u.trim(), timestamp: '🌆 ปิดงาน' })).filter(p => p.url);
-      }
+    const rawE = eReport.evening_photos || (eReport !== mReport ? (eReport.photos || eReport.photoUrls || eReport['ลิงก์รูปภาพหน้างาน (Drive)']) : null);
+    if (Array.isArray(rawE)) {
+      state.eveningPhotos = rawE.map((p, i) => typeof p === 'string' ? { id: 'PH-E-'+i, url: p, timestamp: '🌆 ปิดงาน' } : p).filter(p => p && p.url);
+    } else if (typeof rawE === 'string' && rawE.trim()) {
+      state.eveningPhotos = rawE.split(',').map((u, i) => ({ id: 'PH-E-'+i, url: u.trim(), timestamp: '🌆 ปิดงาน' })).filter(p => p.url);
     }
   }
 
@@ -1190,7 +1224,7 @@ async function checkExistingReportForToday() {
   if (!state.project.id || state.project.id === '-') return;
   const cacheKey = `cpm_cache_reports_${state.project.id}_${state.reportDate}`;
 
-  // 1. Instant Cache Load (0ms)
+  // 1. Instant Cache Load (0ms) - optimistic first paint
   try {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
@@ -1205,11 +1239,18 @@ async function checkExistingReportForToday() {
   if (firebaseService.isConfigured()) {
     try {
       const fbList = await firebaseService.getDailyReports(state.project.id);
-      if (fbList && fbList.length > 0) {
-        applyExistingReports(fbList);
-        try { localStorage.setItem(cacheKey, JSON.stringify(fbList)); } catch(e) {}
-        const hasToday = fbList.some(r => (r.report_date || r['วันที่รายงาน (Date)']) === state.reportDate);
-        if (hasToday) return; // พบรายงานวันนี้จาก Firestore แล้ว ไม่ต้องรอ GAS
+      if (Array.isArray(fbList)) {
+        if (fbList.length > 0) {
+          applyExistingReports(fbList);
+          try { localStorage.setItem(cacheKey, JSON.stringify(fbList)); } catch(e) {}
+          const hasToday = fbList.some(r => (r.report_date || r['วันที่รายงาน (Date)']) === state.reportDate);
+          if (hasToday) return; // พบรายงานวันนี้จาก Firestore แล้ว ไม่ต้องรอ GAS
+        } else {
+          // Firestore ว่างเปล่า (เคลียร์ DB แล้ว) -> เคลียร์รายงานหน้าจอทันที
+          if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
+            clearTodayReportState();
+          }
+        }
       }
     } catch (e) {
       console.warn('[Foreman] Firebase getDailyReports error:', e);
@@ -1219,9 +1260,15 @@ async function checkExistingReportForToday() {
   // 3. Background GAS fetch (fallback)
   if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
     gasService.fetchDailyReports(state.project.id).then(gasList => {
-      if (gasList && gasList.length > 0) {
-        applyExistingReports(gasList);
-        try { localStorage.setItem(cacheKey, JSON.stringify(gasList)); } catch(e) {}
+      if (Array.isArray(gasList)) {
+        if (gasList.length > 0) {
+          applyExistingReports(gasList);
+          try { localStorage.setItem(cacheKey, JSON.stringify(gasList)); } catch(e) {}
+        } else {
+          if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
+            clearTodayReportState();
+          }
+        }
       }
     }).catch(e => console.warn('[Foreman] GAS fetchDailyReports error:', e));
   }
@@ -1895,11 +1942,42 @@ function setupModals() {
   }
 
   document.getElementById('btn-sync-profile')?.addEventListener('click', async () => {
+    showToast('🔄 กำลังล้างแคชและซิงก์ข้อมูลสดจากฐานข้อมูล...', 'info');
+    
+    // ล้างแคชใน LocalStorage ทั้งหมดที่เกี่ยวกับรายงานและรายการงาน
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('cpm_cache_') || key.startsWith('site_morning_plan_') || key.startsWith('cpm_site_reports_history') || key.startsWith('cpm_offline_reports_queue'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
+    clearTodayReportState();
+    applyApprovedTasks([]);
+
     await syncUserProfileFromGAS();
     await loadApprovedTasksForToday();
-    showToast('ซิงก์ข้อมูลสำเร็จ', 'success');
+    await checkExistingReportForToday();
+    showToast('✨ ล้างแคชหน้าจอและซิงก์ข้อมูลสดเรียบร้อยแล้ว', 'success');
   });
 }
+
+window.clearSiteCache = function() {
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('cpm_cache_') || key.startsWith('site_morning_plan_') || key.startsWith('cpm_site_reports_history') || key.startsWith('cpm_offline_reports_queue') || key.startsWith('draft_mplan_') || key.startsWith('wplan_draft_'))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach(k => localStorage.removeItem(k));
+  clearTodayReportState();
+  applyApprovedTasks([]);
+  showToast('🧹 ล้างแคชในเครื่องทั้งหมดเรียบร้อยแล้ว', 'success');
+  setTimeout(() => window.location.reload(), 400);
+};
 
 function renderProjectsModalList() {
   const container = document.getElementById('projects-list-container');
@@ -1989,13 +2067,35 @@ function broadcastForemanSync(type, details = {}) {
 }
 
 function setupForemanRealtimeSync() {
-  // 1. Firebase Real-Time Firestore Listener (cross-device: mobile <-> desktop)
-  if (firebaseService.isConfigured()) {
+  // 1. Firebase Real-Time Firestore Listeners (cross-device: mobile <-> desktop)
+  if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
+    // A. Listen for Daily Reports collection changes (including deletions/clears in real-time)
+    firebaseService.listenDailyReports(state.project.id, (reportsList) => {
+      console.log('[ForemanLiveSync] Daily reports real-time snapshot:', reportsList?.length || 0);
+      applyExistingReports(reportsList || []);
+    });
+
+    // B. Listen for Approved Tasks changes in real-time
+    firebaseService.listenApprovedTasks(state.reportDate, state.project.id, (tasks) => {
+      console.log('[ForemanLiveSync] Approved tasks real-time snapshot:', tasks?.length || 0);
+      const mySub = state.subcontractor.name;
+      const filtered = (Array.isArray(tasks) && mySub && mySub !== '-') 
+        ? tasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
+        : (tasks || []);
+      applyApprovedTasks(filtered);
+    });
+
+    // C. Listen for broadcast events
     firebaseService.listenEvents(async (type, payload) => {
-      if (type === 'PLAN_APPROVED' || type === 'PLAN_SUBMITTED' || type === 'REFRESH_ALL') {
+      if (type === 'PLAN_APPROVED' || type === 'PLAN_SUBMITTED' || type === 'REFRESH_ALL' || type === 'DATABASE_CLEARED') {
         console.log('[ForemanLiveSync] Firebase realtime event received:', type, payload);
-        await loadApprovedTasksForToday();
-        showToast('⚡ มีการอัปเดตแผนงานจาก PM (Firebase Realtime)! อัปเดตรายการงานแล้ว', 'info');
+        if (type === 'DATABASE_CLEARED') {
+          clearTodayReportState();
+          applyApprovedTasks([]);
+        } else {
+          await loadApprovedTasksForToday();
+          await checkExistingReportForToday();
+        }
       }
     });
   }

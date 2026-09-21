@@ -151,9 +151,9 @@ export const firebaseService = {
       if (projectId && projectId !== '-' && projectId !== 'all') {
         const filtered = reports.filter(r => {
           const pid = r.project_id || r.projectId;
-          return !pid || pid === '-' || pid === projectId;
+          return pid === projectId;
         });
-        return filtered.length > 0 ? filtered : reports;
+        return filtered;
       }
       return reports;
     } catch (err) {
@@ -181,9 +181,9 @@ export const firebaseService = {
         if (projectId && projectId !== '-' && projectId !== 'all') {
           const filtered = reports.filter(r => {
             const pid = r.project_id || r.projectId;
-            return !pid || pid === '-' || pid === projectId;
+            return pid === projectId;
           });
-          callback(filtered.length > 0 ? filtered : reports);
+          callback(filtered);
         } else {
           callback(reports);
         }
