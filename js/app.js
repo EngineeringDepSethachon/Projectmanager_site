@@ -1344,25 +1344,24 @@ async function submitReport() {
     console.warn('Storage save:', err);
   }
 
-  // 3. Post ไปยัง Google Apps Script (Web App)
-  let result = null;
-  if (gasService.isConfigured()) {
-    result = await gasService.sendReport(payload);
-  }
-
+  // 3. แสดงผลหน้าจอทันที (Optimistic UI)
+  if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
   if (btn) {
     btn.disabled = false;
-    renderShiftUI();
   }
+  renderShiftUI();
+  showToast(`✅ บันทึกรายงาน ${shiftLabel} (รหัส ${reportId}) เรียบร้อยแล้ว! (กำลังบันทึกข้อมูลเบื้องหลัง)`, 'success');
 
-  if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-
-  if (result && result.success) {
-    showToast(`✅ บันทึกรายงาน ${shiftLabel} (รหัส ${reportId}) ลง Google Sheets & ส่ง LINE สำเร็จ!`, 'success');
-  } else if (!gasService.isConfigured()) {
-    showToast(`💾 บันทึกรายงาน ${shiftLabel} ในเครื่องเรียบร้อย (ยังไม่ได้ตั้งค่า Google Apps Script)`, 'info');
-  } else {
-    showToast(`⚠️ ส่งข้อมูลแล้ว: ${result?.message || 'โปรดตรวจสอบสิทธิ์ชีต'}`, 'info');
+  // 4. Background Sync ไปยัง Google Apps Script (Web App) โดยไม่บล็อกหน้าจอ
+  if (gasService.isConfigured()) {
+    gasService.sendReport(payload).then(result => {
+      if (result && result.success) {
+        console.log(`[BackgroundSync] GAS sync completed for ${reportId}`);
+        showToast(`☁️ บันทึกลง Google Sheets & ส่ง LINE สำเร็จ! (${reportId})`, 'success');
+      }
+    }).catch(err => {
+      console.warn('[BackgroundSync] GAS error:', err);
+    });
   }
 }
 

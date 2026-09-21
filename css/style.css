@@ -5799,6 +5799,82 @@ th.pm-master-meta-cell {
   color: #ffffff;
   font-size: 0.65rem;
 }
+/* ==========================================================================
+   Floating Background Sync Status Pill (Optimistic UI & Non-blocking)
+   ========================================================================== */
+.bg-sync-floating-pill {
+  position: fixed;
+  bottom: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 30px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  max-width: 90%;
+  white-space: nowrap;
+  animation: bgPillSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+@keyframes bgPillSlideUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 15px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.bg-sync-floating-pill.syncing {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1.5px solid #38bdf8;
+}
+
+.bg-sync-floating-pill.success {
+  background: #064e3b;
+  color: #ecfdf5;
+  border: 1.5px solid #10b981;
+}
+
+.bg-sync-floating-pill.warning {
+  background: #78350f;
+  color: #fef3c7;
+  border: 1.5px solid #f59e0b;
+}
+
+.bg-sync-floating-pill.offline {
+  background: #1f2937;
+  color: #f3f4f6;
+  border: 1.5px solid #6b7280;
+}
+
+.bg-sync-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: bgSpinMini 0.8s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes bgSpinMini {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 
 
 

@@ -909,6 +909,9 @@ function renderShiftUI() {
                 &nbsp;|&nbsp; 📋 รหัส: <strong>${escapeHtml(String(em.id || '-'))}</strong>
               </div>
               <div style="font-size:0.72rem; color:#6b7280; margin-top:4px;">ท่านสามารถแก้ไขข้อมูลแล้วกดปุ่มอัปเดต หรือกดสลับไปรายงานปิดงานรอบเย็น</div>
+              <div id="morning-sync-cloud-status" style="font-size:0.72rem; color:#047857; margin-top:3px; font-weight:600;">
+                ☁️ สถานะคลาวด์: <span id="cloud-sync-text">${em._bgSyncing ? 'กำลังบันทึกข้อมูลเบื้องหลัง...' : 'บันทึกในระบบเรียบร้อย'}</span>
+              </div>
             </div>
             <div style="display:flex; flex-direction:column; gap:5px; flex-shrink:0;">
               <button type="button" onclick="window.switchShiftTab('evening')" style="background:#059669; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.75rem; font-weight:700; cursor:pointer; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.1);">🌆 ไปปิดงานรอบเย็น 👉</button>
@@ -1018,11 +1021,14 @@ function renderShiftUI() {
             syncBanner.className = 'shift-sync-status-banner morning-edit';
             syncBanner.style.display = 'flex';
             syncBanner.innerHTML = `
-              <div>
-                <strong>ℹ️ คุณได้ส่งรายงานปิดงานแล้ว (${escapeHtml(state.existingEveningReport.id)})</strong><br>
+              <div style="flex:1;">
+                <strong style="color: #065f46; font-size: 0.88rem;">✅ คุณได้ส่งรายงานปิดงานแล้ว (${escapeHtml(state.existingEveningReport.id)})</strong><br>
                 <span style="font-size: 0.72rem; opacity: 0.9;">ท่านสามารถปรับปรุง % ผลงานจริง แล้วกดบันทึกการแก้ไขได้</span>
+                <div id="evening-sync-cloud-status" style="font-size:0.72rem; color:#047857; margin-top:3px; font-weight:600;">
+                  ☁️ สถานะคลาวด์: <span id="cloud-sync-text-evening">${state.existingEveningReport._bgSyncing ? 'กำลังบันทึกข้อมูลเบื้องหลัง...' : 'บันทึกในระบบเรียบร้อย'}</span>
+                </div>
               </div>
-              <span style="font-size: 0.72rem; font-weight: 700; background: #059669; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+              <span style="font-size: 0.72rem; font-weight: 700; background: #059669; color: #fff; padding: 3px 8px; border-radius: 4px; white-space: nowrap;">ส่งแล้ว</span>
             `;
           }
           if (submitBtn) {
@@ -1075,6 +1081,10 @@ function applyExistingReports(list) {
     const isMorn = isCompleted || rShift.includes('เช้า') || String(r.id || '').startsWith('MORN');
     return rDate === today && isMatchUser && isMorn;
   }) || null;
+
+  if (!mReport && state.existingMorningReport) {
+    mReport = state.existingMorningReport;
+  }
 
   if (mReport) {
     state.existingMorningReport = mReport;
@@ -1155,6 +1165,10 @@ function applyExistingReports(list) {
     const isEve = isCompleted || rShift.includes('เย็น') || rShift.includes('จบงาน') || String(r.id || '').startsWith('EVEN');
     return rDate === today && isMatchUser && isEve;
   }) || null;
+
+  if (!eReport && state.existingEveningReport) {
+    eReport = state.existingEveningReport;
+  }
 
   if (eReport) {
     state.existingEveningReport = eReport;
@@ -1530,13 +1544,141 @@ function handleFileUpload(shift, e) {
 }
 
 // ==========================================
-// Submit Daily Report (Closed-Loop Sync)
+// Cache & Background Sync Helpers
+// ==========================================
+function saveReportToLocalCache(payload) {
+  try {
+    const cacheKey = `cpm_cache_reports_${payload.project_id}_${payload.report_date}`;
+    let list = [];
+    try {
+      const stored = localStorage.getItem(cacheKey);
+      if (stored) list = JSON.parse(stored) || [];
+    } catch(e) {}
+    const idx = list.findIndex(r => r.id === payload.id);
+    if (idx > -1) {
+      list[idx] = { ...list[idx], ...payload };
+    } else {
+      list.unshift(payload);
+    }
+    localStorage.setItem(cacheKey, JSON.stringify(list));
+  } catch(e) {
+    console.warn('[Cache] saveReportToLocalCache error:', e);
+  }
+}
+
+function enqueueOfflineReport(payload) {
+  try {
+    const queue = JSON.parse(localStorage.getItem('cpm_offline_reports_queue') || '[]');
+    const idx = queue.findIndex(r => r.id === payload.id);
+    if (idx > -1) {
+      queue[idx] = payload;
+    } else {
+      queue.push(payload);
+    }
+    localStorage.setItem('cpm_offline_reports_queue', JSON.stringify(queue));
+  } catch(e) {
+    console.warn('[OfflineQueue] enqueue error:', e);
+  }
+}
+
+async function processOfflineReportsQueue() {
+  if (!navigator.onLine || !gasService.isConfigured()) return;
+  let queue = [];
+  try {
+    queue = JSON.parse(localStorage.getItem('cpm_offline_reports_queue') || '[]');
+  } catch(e) { return; }
+  if (!queue || queue.length === 0) return;
+
+  console.log(`[OfflineQueue] Syncing ${queue.length} pending report(s)...`);
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const res = await gasService.sendReport(item);
+      if (!res || !res.success) {
+        remaining.push(item);
+      }
+    } catch(err) {
+      remaining.push(item);
+    }
+  }
+  localStorage.setItem('cpm_offline_reports_queue', JSON.stringify(remaining));
+  if (remaining.length === 0) {
+    showBackgroundSyncStatus('success', '☁️ ส่งรายงานที่ค้างในระบบเข้า Google Sheets ครบถ้วนแล้ว', 3000);
+  }
+}
+
+let bgSyncTimer = null;
+function showBackgroundSyncStatus(status, htmlMsg, autoHideMs = 3500) {
+  const pill = document.getElementById('bg-sync-floating-pill');
+  if (!pill) return;
+
+  clearTimeout(bgSyncTimer);
+  pill.className = `bg-sync-floating-pill ${status}`;
+  pill.innerHTML = htmlMsg;
+  pill.style.display = 'inline-flex';
+  pill.style.opacity = '1';
+
+  if (autoHideMs > 0) {
+    bgSyncTimer = setTimeout(() => {
+      pill.style.opacity = '0';
+      setTimeout(() => {
+        if (pill.style.opacity === '0') pill.style.display = 'none';
+      }, 300);
+    }, autoHideMs);
+  }
+}
+
+function updateSyncBannerComplete(reportId) {
+  const cloudTextM = document.getElementById('cloud-sync-text');
+  if (cloudTextM) cloudTextM.innerText = '☁️ ซิงค์ Google Sheets และส่ง LINE สำเร็จแล้ว';
+  const cloudTextE = document.getElementById('cloud-sync-text-evening');
+  if (cloudTextE) cloudTextE.innerText = '☁️ ซิงค์ Google Sheets และส่ง LINE สำเร็จแล้ว';
+}
+
+async function runBackgroundReportSync(payload, shiftLabel, reportId) {
+  // 1. Ultra-fast Firebase Firestore sync (<100ms)
+  if (firebaseService.isConfigured()) {
+    try {
+      await firebaseService.saveDailyReport(payload);
+      console.log('[BackgroundSync] Firestore saved successfully for', reportId);
+    } catch (err) {
+      console.warn('[BackgroundSync] Firestore error:', err);
+    }
+  }
+
+  // 2. Google Apps Script Sync (asynchronous, never blocks foreman UI)
+  if (gasService.isConfigured()) {
+    try {
+      const result = await gasService.sendReport(payload);
+      if (result && result.success) {
+        console.log('[BackgroundSync] GAS sendReport succeeded for', reportId);
+        showBackgroundSyncStatus('success', `☁️ บันทึกลง Google Sheets เรียบร้อยแล้ว (รหัส ${reportId})`, 3500);
+        updateSyncBannerComplete(reportId);
+      } else {
+        console.warn('[BackgroundSync] GAS response not success:', result);
+        showBackgroundSyncStatus('warning', `⚠️ บันทึกในระบบแล้ว (${result?.message || 'รอซิงค์ชีต'})`, 4000);
+      }
+    } catch (err) {
+      console.error('[BackgroundSync] GAS network error:', err);
+      enqueueOfflineReport(payload);
+      showBackgroundSyncStatus('offline', '📦 บันทึกในเครื่องแล้ว (จะส่งชีตอัตโนมัติเมื่อต่อเน็ต)', 4000);
+    }
+  } else {
+    showBackgroundSyncStatus('success', `💾 บันทึกรายงานในระบบแล้ว (รหัส ${reportId})`, 3000);
+  }
+}
+
+// ==========================================
+// Submit Daily Report (Instant Optimistic Commit + Background Sync)
 // ==========================================
 async function submitDailyReport() {
   const btn = document.getElementById('btn-submit-daily-report');
   const isMorning = state.activeShift === 'morning';
   const shiftCode = isMorning ? 'morning' : 'evening';
   const shiftLabel = isMorning ? 'เปิดงานตอนเช้า' : 'รายงานปิดงาน';
+
+  // ป้องกันการกดย้ำซ้ำซ้อน (Debounce 1.2s)
+  if (state._isSubmitting) return;
 
   // ตรวจสอบกฎเหล็ก: รายงานปิดงานต้องรายงานต่อจากรายงานตอนเช้า
   if (!isMorning && !state.existingMorningReport) {
@@ -1552,14 +1694,12 @@ async function submitDailyReport() {
     if (!proceed) return;
   }
 
+  state._isSubmitting = true;
+  setTimeout(() => { state._isSubmitting = false; }, 1200);
+
   const isEditMorning = isMorning && !!state.existingMorningReport;
   const isEditEvening = !isMorning && !!state.existingEveningReport;
   const isEdit = isEditMorning || isEditEvening;
-
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<span>⏳ กำลัง${isEdit ? 'อัปเดตการแก้ไข' : 'บันทึก'}รายงานรอบ ${shiftLabel}...</span>`;
-  }
 
   const customIssues = document.getElementById('custom-issue-text')?.value || '';
   const finalIssues = [...state.issues];
@@ -1620,53 +1760,56 @@ async function submitDailyReport() {
     task_summary: isMorning 
       ? currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.progress || 0}%)`).join(' | ')
       : currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.planned_progress || 0}% -> จริง: ${t.progress || 0}%)`).join(' | '),
-    status: isMorning ? 'morning_opened' : 'day_completed'
+    status: isMorning ? 'morning_opened' : 'day_completed',
+    _bgSyncing: true
   };
 
-  // Real-time Firestore sync (<100ms cross-device)
-  if (firebaseService.isConfigured()) {
-    firebaseService.saveDailyReport(payload).catch(err => {
-      console.warn('[Firebase] saveDailyReport error:', err);
-    });
+  // ==========================================
+  // ⚡ 1. OPTIMISTIC INSTANT COMMIT (<50ms)
+  // ==========================================
+  if (navigator.vibrate) {
+    try { navigator.vibrate([60, 40, 60]); } catch(e) {}
   }
 
-  let result = null;
-  if (gasService.isConfigured()) {
-    result = await gasService.sendReport(payload);
-  }
-
-  if (btn) {
-    btn.disabled = false;
-  }
-
-  if (result && result.success) {
-    const actionWord = isEdit ? 'อัปเดตการแก้ไข' : 'บันทึก';
-    showToast(`✅ ${actionWord}รายงาน ${shiftLabel} (รหัส ${reportId}) ลง Google Sheets สำเร็จ!`, 'success');
-    
-    // อัปเดตสถานะ local state
-    if (isMorning) {
-      state.existingMorningReport = {
-        ...payload,
-        id: reportId,
-        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (${t.progress||0}%)`).join(' | ')
-      };
-    } else {
-      state.existingEveningReport = {
-        ...payload,
-        id: reportId,
-        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.planned_progress||0}% -> จริง: ${t.progress||0}%)`).join(' | ')
-      };
-      if (state.existingMorningReport) {
-        state.existingMorningReport.status = 'day_completed';
-        state.existingMorningReport.shift_label = 'รายงานประจำวัน (เช้า-จบงานครบถ้วน)';
-      }
-    }
-    renderShiftUI();
-    broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });
+  // อัปเดต state ในเครื่องทันที
+  if (isMorning) {
+    state.existingMorningReport = {
+      ...payload,
+      id: reportId,
+      task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (${t.progress||0}%)`).join(' | ')
+    };
   } else {
-    showToast(`⚠️ ส่งข้อมูลแล้ว: ${result?.message || 'โปรดตรวจสอบ'}`, 'info');
-    broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });
+    state.existingEveningReport = {
+      ...payload,
+      id: reportId,
+      task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name}${!t.from_plan ? ' [รายงานเพิ่มเติม]' : ''} (เป้า: ${t.planned_progress||0}% -> จริง: ${t.progress||0}%)`).join(' | ')
+    };
+    if (state.existingMorningReport) {
+      state.existingMorningReport.status = 'day_completed';
+      state.existingMorningReport.shift_label = 'รายงานประจำวัน (เช้า-จบงานครบถ้วน)';
+    }
   }
+
+  // บันทึกลง Local Cache ทันที (รีเฟรชหน้าก็ไม่หาย)
+  saveReportToLocalCache(payload);
+
+  // สลับสถานะ UI บนหน้าจอเป็น "ส่งแล้ว" ทันที ไม่ต้องรอเน็ต
+  renderShiftUI();
+
+  // แสดง Toast แจ้งเตือนผู้ใช้ทันที
+  const actionWord = isEdit ? 'อัปเดตการแก้ไข' : 'ส่ง';
+  showToast(`✅ ${actionWord}รายงาน${shiftLabel} (รหัส ${reportId}) เรียบร้อยแล้ว!`, 'success');
+
+  // แจ้งเตือนข้ามแท็บและ PM ทันที (Realtime sync)
+  broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });
+
+  // แสดงแถบ Floating Sync Pill แจ้งกำลังประมวลผลเบื้องหลัง
+  showBackgroundSyncStatus('syncing', '<span class="bg-sync-spinner"></span> กำลังบันทึกข้อมูลเข้า Google Sheets และคลาวด์เบื้องหลัง...', 0);
+
+  // ==========================================
+  // ⚡ 2. NON-BLOCKING BACKGROUND WORKER
+  // ==========================================
+  runBackgroundReportSync(payload, shiftLabel, reportId);
 }
 
 // ==========================================
@@ -1890,5 +2033,14 @@ function setupForemanRealtimeSync() {
       await loadApprovedTasksForToday();
     }
   }, 15000);
+
+  // 5. Auto retry pending offline reports queue
+  window.addEventListener('online', () => {
+    processOfflineReportsQueue();
+  });
+  setInterval(() => {
+    processOfflineReportsQueue();
+  }, 60000);
+  processOfflineReportsQueue();
 }
 
