@@ -327,104 +327,130 @@ function renderDynamicTasks() {
     return;
   }
 
-  container.innerHTML = tasks.map((t, idx) => `
-    <div class="dynamic-task-card ${isMorning ? 'plan-card' : 'actual-card'}" data-task-id="${t.id}">
-      <div class="dynamic-task-top">
-        <div class="task-tag-group">
-          <span class="task-index-badge">งานที่ ${idx + 1}</span>
-          <span class="shift-phase-badge ${isMorning ? 'plan' : 'actual'}">
-            ${isMorning ? '🎯 คาดการณ์' : '⚡ ผลงานจริง'}
-          </span>
-          ${t.from_plan ? `
-            <span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">
-              🎯 ตามแผน: ${escapeHtml(t.company || 'สัปดาห์')}
-            </span>
-          ` : `
-            <span class="task-plan-badge" style="background:#fffbeb; color:#b45309; border:1px solid #f59e0b; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">
-              ⚡ นอกแผน
-            </span>
-          `}
+  container.innerHTML = tasks.map((t, idx) => {
+    // ============ MORNING CARD ============
+    if (isMorning) {
+      return `
+        <div class="dynamic-task-card plan-card" data-task-id="${t.id}">
+          <div class="dynamic-task-top">
+            <div class="task-tag-group">
+              <span class="task-index-badge">งานที่ ${idx + 1}</span>
+              <span class="shift-phase-badge plan">🎯 คาดการณ์</span>
+              ${t.from_plan ? `
+                <span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">🎯 ตามแผน</span>
+              ` : `
+                <span class="task-plan-badge" style="background:#fffbeb; color:#b45309; border:1px solid #f59e0b; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">⚡ นอกแผน</span>
+              `}
+            </div>
+            ${!t.from_plan ? `<button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">🗑️ ลบ</button>` : ''}
+          </div>
+          <div style="margin-bottom: 0.4rem;">
+            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 2px;">ชื่องานตามแผน:</label>
+            <div style="font-size: 0.88rem; font-weight: 800; color: var(--text-heading);">${escapeHtml(t.name)}</div>
+            ${t.workArea ? `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">📍 ${escapeHtml(t.workArea)}</div>` : ''}
+          </div>
+          ${t.description ? `<div style="font-size: 0.74rem; color: var(--text-main); background: #f8fafc; padding: 4px 8px; border-radius: 4px; margin-bottom: 0.5rem; border: 1px solid var(--border-subtle);">📝 ${escapeHtml(t.description)}</div>` : ''}
+          <div class="task-metrics-grid">
+            <div>
+              <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">เป้าหมายปริมาณงาน:</label>
+              <input type="text" class="form-input" style="font-size: 0.78rem;" value="${escapeHtml(t.quantity || '')}" placeholder="เช่น 8 ต้น, 35 ตร.ม." oninput="window.updateTaskField('${t.id}', 'quantity', this.value)">
+            </div>
+            <div>
+              <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">เป้าหมายความคืบหน้า (%):</label>
+              <div class="progress-control-block">
+                <div class="progress-input-wrapper">
+                  <input type="number" class="form-input progress-num-input" min="0" max="100" inputmode="numeric" value="${t.progress !== undefined ? t.progress : 0}" placeholder="0" onfocus="this.select()" oninput="window.updateTaskField('${t.id}', 'progress', this.value, this)">
+                  <span class="progress-unit-badge">%</span>
+                </div>
+                <div class="progress-pills-row">
+                  ${[25, 50, 75, 100].map(pct => `<button type="button" data-pct="${pct}" class="pill-pct morning ${Number(t.progress) === pct ? 'active' : ''}" onclick="window.updateTaskProgress('${t.id}', ${pct})">${pct}%</button>`).join('')}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        ${!t.from_plan ? `
-          <button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">
-            🗑️ ลบ
-          </button>
-        ` : ''}
-      </div>
+      `;
+    }
 
-      <!-- Task Title & Area -->
-      <div style="margin-bottom: 0.4rem;">
-        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 2px;">ชื่องานตามแผน:</label>
-        <div style="font-size: 0.88rem; font-weight: 800; color: var(--text-heading);">${escapeHtml(t.name)}</div>
-        ${t.workArea ? `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">📍 โซนพื้นที่: <strong>${escapeHtml(t.workArea)}</strong></div>` : ''}
-      </div>
+    // ============ EVENING COMPARISON CARD ============
+    const planPct = t.planned_progress !== undefined ? t.planned_progress : 0;
+    const planQty = t.planned_quantity || t.quantity || '';
+    const actualPct = t.progress !== undefined ? t.progress : 0;
+    const diff = actualPct - planPct;
+    const diffColor = diff >= 0 ? '#059669' : '#dc2626';
+    const diffSign = diff >= 0 ? '+' : '';
+    const statusIcon = actualPct >= 100 ? '✅' : actualPct >= planPct ? '🟢' : actualPct >= planPct * 0.8 ? '🟡' : '🔴';
 
-      <!-- Description -->
-      ${t.description ? `
-        <div style="font-size: 0.74rem; color: var(--text-main); background: #f8fafc; padding: 4px 8px; border-radius: 4px; margin-bottom: 0.5rem; border: 1px solid var(--border-subtle);">
-          📝 ${escapeHtml(t.description)}
-        </div>
-      ` : ''}
-
-      <!-- Target vs Actual Metrics -->
-      ${!isMorning ? `
-        <div class="task-baseline-goal-box">
-          <span>🎯 <strong>เป้าหมายรอบเช้า:</strong> ${escapeHtml(t.planned_quantity || t.quantity || 'ตามแผน')}</span>
-          <span style="font-weight:700; color:#1d4ed8;">เป้าคาดการณ์เช้า: ${t.planned_progress !== undefined ? t.planned_progress : (t.progress !== undefined ? t.progress : 0)}%</span>
-        </div>
-      ` : ''}
-
-      <div class="task-metrics-grid">
-        <div>
-          <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
-            ${isMorning ? 'เป้าหมายปริมาณงาน:' : 'ปริมาณงานจริงที่ทำได้ (Actual Qty):'}
-          </label>
-          <input 
-            type="text" 
-            class="form-input" 
-            style="font-size: 0.78rem;" 
-            value="${escapeHtml(t.quantity || '')}" 
-            placeholder="${isMorning ? 'เช่น 8 ต้น, 35 ตร.ม.' : 'ระบุปริมาณที่ทำได้จริง'}" 
-            oninput="window.updateTaskField('${t.id}', 'quantity', this.value)"
-          >
+    return `
+      <div class="dynamic-task-card evening-compare-card" data-task-id="${t.id}">
+        <!-- Header -->
+        <div class="dynamic-task-top">
+          <div class="task-tag-group">
+            <span class="task-index-badge">งานที่ ${idx + 1}</span>
+            <span class="shift-phase-badge actual">${statusIcon} ยืนยันผลงาน</span>
+            ${t.from_plan ? `
+              <span class="task-plan-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">🎯 ตามแผน</span>
+            ` : `
+              <span class="task-plan-badge" style="background:#fffbeb; color:#b45309; border:1px solid #f59e0b; font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:4px;">⚡ นอกแผน</span>
+            `}
+          </div>
+          ${!t.from_plan ? `<button type="button" class="btn-delete-task" onclick="window.removeDynamicTask('${t.id}')">🗑️ ลบ</button>` : ''}
         </div>
 
-        <div>
-          <label style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; display: block;">
-            ${isMorning ? 'เป้าหมายความคืบหน้า (%):' : 'ผลงานจริงสะสม (% Actual):'}
-          </label>
+        <!-- Task Name -->
+        <div style="font-size: 0.9rem; font-weight: 800; color: var(--text-heading); margin-bottom: 0.5rem;">
+          ${escapeHtml(t.name)}
+          ${t.workArea ? `<span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:6px;">📍 ${escapeHtml(t.workArea)}</span>` : ''}
+        </div>
+
+        <!-- Comparison Row: เช้า vs เย็น -->
+        <div class="evening-compare-grid">
+          <!-- เช้า (คาดการณ์) -->
+          <div class="compare-col morning-col">
+            <div class="compare-col-label">🌅 เช้า (คาดการณ์)</div>
+            <div class="compare-qty-val">${escapeHtml(planQty) || '<span style="color:#9ca3af">-</span>'}</div>
+            <div class="compare-pct-big morning-pct">${planPct}<span style="font-size:0.7rem">%</span></div>
+            <div class="compare-progress-bar">
+              <div class="compare-bar-fill morning-fill" style="width: ${Math.min(planPct,100)}%"></div>
+            </div>
+          </div>
+
+          <!-- Arrow -->
+          <div class="compare-arrow">→</div>
+
+          <!-- เย็น (ยืนยันจริง) -->
+          <div class="compare-col evening-col">
+            <div class="compare-col-label">🌆 เย็น (ยืนยัน)</div>
+            <div class="compare-qty-val">
+              <input type="text" class="form-input compare-qty-input" value="${escapeHtml(String(actualPct !== planPct ? t.quantity || planQty : planQty))}" placeholder="ปริมาณจริง" oninput="window.updateTaskField('${t.id}', 'quantity', this.value)" style="font-size:0.78rem; margin-bottom:4px;">
+            </div>
+            <div class="compare-pct-big evening-pct" id="compare-pct-${t.id}">${actualPct}<span style="font-size:0.7rem">%</span></div>
+            <div class="compare-progress-bar">
+              <div class="compare-bar-fill evening-fill" id="compare-bar-${t.id}" style="width: ${Math.min(actualPct,100)}%"></div>
+            </div>
+            <!-- Diff badge -->
+            <div style="font-size:0.72rem; font-weight:700; color:${diffColor}; margin-top:4px; text-align:center;">
+              ${diff !== 0 ? `${diffSign}${diff}% จากเป้า` : '= ตรงเป้าหมาย'}
+            </div>
+          </div>
+        </div>
+
+        <!-- % Pills ปรับค่าจริง -->
+        <div style="margin-top:0.5rem;">
+          <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">ยืนยัน % ผลงานจริงสะสม:</label>
           <div class="progress-control-block">
             <div class="progress-input-wrapper">
-              <input 
-                type="number" 
-                class="form-input progress-num-input" 
-                min="0" 
-                max="100" 
-                inputmode="numeric"
-                value="${t.progress !== undefined ? t.progress : 0}" 
-                placeholder="0" 
-                onfocus="this.select()"
-                oninput="window.updateTaskField('${t.id}', 'progress', this.value, this)"
-              >
+              <input type="number" class="form-input progress-num-input" min="0" max="100" inputmode="numeric" value="${actualPct}" placeholder="0" onfocus="this.select()" oninput="window.updateEveningCompare('${t.id}', this.value, this)">
               <span class="progress-unit-badge">%</span>
             </div>
             <div class="progress-pills-row">
-              ${[25, 50, 75, 100].map(pct => `
-                <button 
-                  type="button" 
-                  data-pct="${pct}" 
-                  class="pill-pct ${isMorning ? 'morning' : ''} ${Number(t.progress) === pct ? 'active' : ''}" 
-                  onclick="window.updateTaskProgress('${t.id}', ${pct})"
-                >
-                  ${pct}%
-                </button>
-              `).join('')}
+              ${[25, 50, 75, 100].map(pct => `<button type="button" data-pct="${pct}" class="pill-pct ${Number(actualPct) === pct ? 'active' : ''}" onclick="window.updateEveningCompare('${t.id}', ${pct}, null)">${pct}%</button>`).join('')}
             </div>
           </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // Global Tasks Handlers
@@ -483,6 +509,49 @@ window.removeDynamicTask = function(id) {
     list.splice(idx, 1);
     renderDynamicTasks();
     showToast('ลบงานนอกแผนแล้ว', 'info');
+  }
+};
+
+// อัปเดต % ผลงานจริงใน Evening Compare Card (realtime bar + pct display)
+window.updateEveningCompare = function(id, value, inputEl) {
+  const list = getActiveTasksList();
+  const task = list.find(t => t.id === id);
+  if (!task) return;
+
+  let num = value === '' ? 0 : parseInt(value, 10);
+  if (isNaN(num)) num = 0;
+  if (num < 0) num = 0;
+  if (num > 100) { num = 100; if (inputEl) inputEl.value = 100; }
+  task.progress = num;
+
+  // อัปเดต UI ของ card โดยตรง (ไม่ re-render ทั้งหมด)
+  const card = document.querySelector(`[data-task-id="${id}"]`);
+  if (card) {
+    // pill active state
+    card.querySelectorAll('.pill-pct').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.pct, 10) === num);
+    });
+    // number input sync
+    if (inputEl === null) {
+      const inp = card.querySelector('.progress-num-input');
+      if (inp) inp.value = num;
+    }
+    // progress bar
+    const bar = card.querySelector(`#compare-bar-${id}`);
+    if (bar) bar.style.width = Math.min(num, 100) + '%';
+    // pct display
+    const pctEl = card.querySelector(`#compare-pct-${id}`);
+    if (pctEl) pctEl.innerHTML = `${num}<span style="font-size:0.7rem">%</span>`;
+    // diff badge — recalculate
+    const planPct = task.planned_progress !== undefined ? task.planned_progress : 0;
+    const diff = num - planPct;
+    const diffColor = diff >= 0 ? '#059669' : '#dc2626';
+    const diffSign = diff >= 0 ? '+' : '';
+    const diffEl = card.querySelector('.evening-col > div:last-child');
+    if (diffEl) {
+      diffEl.style.color = diffColor;
+      diffEl.innerText = diff !== 0 ? `${diffSign}${diff}% จากเป้า` : '= ตรงเป้าหมาย';
+    }
   }
 };
 
@@ -716,6 +785,14 @@ function renderShiftUI() {
       const baseContainer = document.getElementById('morning-baseline-card-container');
       if (baseContainer) baseContainer.style.display = 'none';
 
+      // Reset photo section labels กลับเป็นรอบเช้า
+      const photoTitle = document.getElementById('photo-section-title');
+      const camTitle = document.getElementById('camera-trigger-title');
+      const camDesc = document.getElementById('camera-trigger-desc');
+      if (photoTitle) photoTitle.innerText = 'ภาพถ่ายแถวเปิดงาน / Safety Talk';
+      if (camTitle) camTitle.innerText = 'แตะถ่ายรูปแถวคนงาน หรือประชุม Safety';
+      if (camDesc) camDesc.innerText = 'ประทับเวลาเปิดงานรอบเช้า และ LINE UID';
+
       if (state.existingMorningReport) {
         // รายงานเช้าส่งแล้ว → แสดง "สำเร็จ" พร้อมปุ่มแก้ไข
         const em = state.existingMorningReport;
@@ -804,9 +881,17 @@ function renderShiftUI() {
 
         renderMorningBaselineCard();
 
+        // อัปเดต photo section สำหรับรอบเย็น
+        const photoTitle = document.getElementById('photo-section-title');
+        const camTitle = document.getElementById('camera-trigger-title');
+        const camDesc = document.getElementById('camera-trigger-desc');
+        if (photoTitle) photoTitle.innerText = 'ภาพถ่ายผลงานหน้างานตอนปิดงาน';
+        if (camTitle) camTitle.innerText = 'แตะถ่ายรูปผลงานหน้างาน / ความคืบหน้างาน';
+        if (camDesc) camDesc.innerText = 'ประทับเวลาปิดงาน — ภาพจะรวมในรายงานประจำวันฉบับสมบูรณ์';
+
         if (photoMergeHint) {
           photoMergeHint.style.display = 'block';
-          photoMergeHint.innerHTML = '🔗 <strong>ระบบรวมภาพอัตโนมัติ:</strong> ภาพถ่ายผลงานจริงปิดงานนี้จะถูกนำไปรวมกับภาพถ่ายแถวคนงานรอบเช้าเป็นเอกสารรายงานประจำวันฉบับสมบูรณ์ชุดเดียวกัน';
+          photoMergeHint.innerHTML = '🔗 <strong>ระบบรวมภาพอัตโนมัติ:</strong> ภาพถ่ายผลงานปิดงานนี้จะถูกนำไปรวมกับภาพแถวเปิดงานตอนเช้า เป็นรายงานประจำวันฉบับสมบูรณ์';
         }
 
         if (state.existingEveningReport) {
