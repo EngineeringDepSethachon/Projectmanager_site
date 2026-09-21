@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // โหลดงานย่อยที่ PM อนุมัติล่วงหน้าสำหรับวันนี้
   await loadApprovedTasksForToday();
+  setupForemanRealtimeSync();
 });
 
 // ==========================================
@@ -862,8 +863,10 @@ async function submitDailyReport() {
 
   if (result && result.success) {
     showToast(`✅ บันทึกรายงาน ${shiftLabel} (รหัส ${reportId}) ลง Google Sheets สำเร็จ!`, 'success');
+    broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });
   } else {
     showToast(`⚠️ ส่งข้อมูลแล้ว: ${result?.message || 'โปรดตรวจสอบ'}`, 'info');
+    broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });
   }
 }
 
@@ -1007,3 +1010,65 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// ==========================================
+// Real-Time Cross-Window & Background Sync
+// ==========================================
+function broadcastForemanSync(type, details = {}) {
+  try {
+    const channel = new BroadcastChannel('cpm_site_sync');
+    channel.postMessage({
+      type: type,
+      projectId: state.project.id,
+      timestamp: Date.now(),
+      ...details
+    });
+    channel.close();
+  } catch (e) {}
+
+  try {
+    localStorage.setItem('cpm_sync_trigger', JSON.stringify({
+      type: type,
+      projectId: state.project.id,
+      time: Date.now(),
+      ...details
+    }));
+  } catch (e) {}
+}
+
+function setupForemanRealtimeSync() {
+  // Listen for PM approval or plan update to reload approved tasks automatically
+  try {
+    const channel = new BroadcastChannel('cpm_site_sync');
+    channel.onmessage = async (event) => {
+      const data = event.data;
+      if (data && (data.type === 'PLAN_APPROVED' || data.type === 'PLAN_SUBMITTED' || data.type === 'REFRESH_ALL')) {
+        console.log('[ForemanLiveSync] Broadcast received:', data.type);
+        await loadApprovedTasksForToday();
+        showToast('⚡ มีการอัปเดตสถานะแผนงานจาก PM! ปรับปรุงรายการงานให้อัตโนมัติ', 'info');
+      }
+    };
+  } catch (e) {
+    console.warn('[ForemanLiveSync] BroadcastChannel error:', e);
+  }
+
+  // Storage listener fallback
+  window.addEventListener('storage', async (e) => {
+    if (e.key === 'cpm_sync_trigger' && e.newValue) {
+      try {
+        const data = JSON.parse(e.newValue);
+        if (data.type === 'PLAN_APPROVED' || data.type === 'PLAN_SUBMITTED') {
+          await loadApprovedTasksForToday();
+        }
+      } catch(err) {}
+    }
+  });
+
+  // Background auto-polling every 15s to keep approved tasks up-to-date
+  setInterval(async () => {
+    if (!document.hidden) {
+      await loadApprovedTasksForToday();
+    }
+  }, 15000);
+}
+

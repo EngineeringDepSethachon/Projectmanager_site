@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadProjects();
   await loadWeeklyPlans();
   await loadDailyReports();
+  setupRealtimeSync();
 
   document.getElementById('btn-sync-pm-all')?.addEventListener('click', async () => {
     showToast('🔄 กำลังซิงก์ข้อมูลทั้งหมดจาก Google Sheets...', 'info');
@@ -194,7 +195,7 @@ function setupSubNavTabs() {
 // ==========================================
 // 1. Approval Center (ศูนย์อนุมัติแผนงาน)
 // ==========================================
-async function loadWeeklyPlans() {
+async function loadWeeklyPlans(isSilent = false) {
   try {
     const plans = await gasService.fetchWeeklyPlans(state.project.id);
     // Explicitly filter out any dummy mock seed data
@@ -206,7 +207,7 @@ async function loadWeeklyPlans() {
       renderMasterMonthlyGantt();
     }
   } catch (err) {
-    console.warn('loadWeeklyPlans error:', err);
+    if (!isSilent) console.warn('loadWeeklyPlans error:', err);
   }
 }
 
@@ -677,6 +678,7 @@ window.handlePMDecision = async function(planId, decision, overrideNotes = null)
     );
     if (res && res.success) {
       showToast(`✅ บันทึกผล: ${decisionText} สำเร็จ! งานย่อยพร้อมให้โฟร์แมนดึงไปทำงานแล้ว`, 'success');
+      broadcastSync('PLAN_APPROVED', { planId, decision });
       await loadWeeklyPlans();
     } else {
       showToast(`⚠️ บันทึกไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบสิทธิ์'}`, 'warning');
@@ -925,17 +927,21 @@ function renderMasterMonthlyGantt() {
 // ==========================================
 // 3. Daily Reports Archive (คลังรายงานประจำวันย้อนหลัง)
 // ==========================================
-async function loadDailyReports() {
+async function loadDailyReports(isSilent = false) {
   try {
     const list = await gasService.fetchDailyReports(state.project.id);
+    const prevCount = (state.dailyReports || []).length;
     state.dailyReports = list || [];
     const badge = document.getElementById('badge-total-reports');
     if (badge) badge.innerText = state.dailyReports.length;
     if (state.activeTab === 'view-pm-reports') {
       renderDailyReportsTable();
     }
+    if (isSilent && state.dailyReports.length > prevCount) {
+      showToast(`⚡ มีรายงานใหม่เข้ามาจากหน้างาน! (${state.dailyReports.length - prevCount} ฉบับ)`, 'info');
+    }
   } catch (err) {
-    console.warn('loadDailyReports error:', err);
+    if (!isSilent) console.warn('loadDailyReports error:', err);
   }
 }
 
@@ -948,7 +954,7 @@ function renderDailyReportsTable() {
 
   if (state.reportFilterShift !== 'all') {
     filtered = filtered.filter(r => {
-      const shift = String(r.shiftLabel || r.Shift || r['กะการทำงาน'] || '').toLowerCase();
+      const shift = String(r.shift_label || r['รอบกะ (Shift: เช้า/จบงาน)'] || r['กะการทำงาน'] || '').toLowerCase();
       if (state.reportFilterShift === 'morning') return shift.includes('เช้า') || shift.includes('morning');
       if (state.reportFilterShift === 'evening') return shift.includes('เย็น') || shift.includes('evening') || shift.includes('จบงาน');
       return true;
@@ -975,22 +981,25 @@ function renderDailyReportsTable() {
   container.innerHTML = `
     <div class="reports-cards-grid">
       ${filtered.map((r, idx) => {
-        const reportId = r.id || r['รหัสรายงาน'] || `RPT-${idx}`;
-        const date = r.report_date || r['วันที่'] || '-';
-        const shift = r.shift_label || r['กะการทำงาน'] || '-';
+        const reportId = r.id || r['รหัสรายงาน (Report ID)'] || r['รหัสรายงาน'] || `RPT-${idx}`;
+        const date = r.report_date || r['วันที่รายงาน (Date)'] || r['วันที่'] || '-';
+        const shift = r.shift_label || r['รอบกะ (Shift: เช้า/จบงาน)'] || r['กะการทำงาน'] || '-';
         const isMorning = String(shift).includes('เช้า');
-        const foreman = r.foreman_name || r['ผู้รายงาน'] || '-';
-        const comp = r.sub_name || r['บริษัท'] || '-';
-        const totalWf = r.totalWorkforce || r['กำลังพลรวม'] || '-';
+        const foreman = r.foreman_name || r['ชื่อโฟร์แมน'] || r['ผู้รายงาน'] || '-';
+        const comp = r.sub_name || r.company || r['บริษัทผู้รับเหมา'] || r['บริษัท'] || '-';
+        const totalWf = (r.totalWorkforce !== undefined && r.totalWorkforce !== null && r.totalWorkforce !== '') 
+          ? r.totalWorkforce 
+          : (r['ยอดคนงานรวม (คน)'] !== undefined ? r['ยอดคนงานรวม (คน)'] : (r['กำลังพลรวม'] || '-'));
         const weather = r.weather || r['สภาพอากาศ'] || '-';
-        const tasks = r.task_summary || r['สรุปงาน'] || '-';
-        const photoList = r.photoUrls ? r.photoUrls.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const tasks = r.task_summary || r['สรุปรายการงาน / เป้าหมาย'] || r['สรุปงาน'] || '-';
+        const photoRaw = r.photoUrls || r['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
+        const photoList = photoRaw ? String(photoRaw).split(',').map(s => s.trim()).filter(Boolean) : [];
 
         return `
           <div class="daily-report-card">
             <div>
               <div class="report-card-top">
-                <span class="report-date-badge">📅 ${date}</span>
+                <span class="report-date-badge">📅 ${escapeHtml(date)}</span>
                 <span class="report-shift-tag ${isMorning ? 'morning' : 'evening'}">
                   ${isMorning ? '🌅 รอบเช้า (เปิดงาน)' : '🌆 รอบเย็น (จบงาน)'}
                 </span>
@@ -998,7 +1007,7 @@ function renderDailyReportsTable() {
 
               <div class="report-meta-info">
                 <div>🏢 บริษัท: <strong>${escapeHtml(comp)}</strong></div>
-                <div>👤 ผู้รายงาน: <strong>${escapeHtml(foreman)}</strong> | 👷 ยอดคน: <strong>${totalWf}</strong> คน</div>
+                <div>👤 ผู้รายงาน: <strong>${escapeHtml(foreman)}</strong> | 👷 ยอดคน: <strong>${escapeHtml(totalWf)}</strong> คน</div>
                 <div>☀️ สภาพอากาศ: ${escapeHtml(weather)}</div>
               </div>
 
@@ -1081,37 +1090,57 @@ window.viewReportDetails = function(idx) {
   const title = document.getElementById('modal-report-title');
   if (!modal || !body) return;
 
-  const reportId = r.id || r['รหัสรายงาน'] || 'REPORT';
+  const reportId = r.id || r['รหัสรายงาน (Report ID)'] || r['รหัสรายงาน'] || 'REPORT';
   if (title) title.innerText = `รายงานฉบับเต็ม: ${reportId}`;
 
-  const photoList = r.photoUrls ? r.photoUrls.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const date = r.report_date || r['วันที่รายงาน (Date)'] || r['วันที่'] || '-';
+  const shift = r.shift_label || r['รอบกะ (Shift: เช้า/จบงาน)'] || r['กะการทำงาน'] || '-';
+  const foreman = r.foreman_name || r['ชื่อโฟร์แมน'] || r['ผู้รายงาน'] || '-';
+  const comp = r.sub_name || r.company || r['บริษัทผู้รับเหมา'] || r['บริษัท'] || '-';
+  const weather = r.weather || r['สภาพอากาศ'] || '-';
+  const rainDelay = (r.rain_delay_hours !== undefined && r.rain_delay_hours !== null) ? r.rain_delay_hours : (r['เวลาหยุดงานจากฝน (ชม.)'] || r['เวลาฝนหยุดงาน'] || 0);
+  const totalWf = (r.totalWorkforce !== undefined && r.totalWorkforce !== null && r.totalWorkforce !== '') ? r.totalWorkforce : (r['ยอดคนงานรวม (คน)'] || r['กำลังพลรวม'] || 0);
+  const tasks = r.task_summary || r['สรุปรายการงาน / เป้าหมาย'] || r['สรุปงาน'] || 'ไม่มีรายการงาน';
+  const machinery = r.machinery || r['เครื่องจักรที่ใช้งาน'] || '-';
+  const issues = r.issues || r['ปัญหาและอุปสรรค'] || r['ปัญหาอุปสรรค'] || '';
+  const photoRaw = r.photoUrls || r['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
+  const photoList = photoRaw ? String(photoRaw).split(',').map(s => s.trim()).filter(Boolean) : [];
 
   body.innerHTML = `
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid var(--border-subtle); font-size: 0.82rem;">
       <div>
-        <div>📅 <strong>วันที่รายงาน:</strong> ${r.report_date || r['วันที่'] || '-'} (${r.shift_label || r['กะการทำงาน'] || '-'})</div>
-        <div>👤 <strong>โฟร์แมนผู้รายงาน:</strong> ${r.foreman_name || r['ผู้รายงาน'] || '-'}</div>
-        <div>🏢 <strong>บริษัทผู้รับเหมา:</strong> ${r.sub_name || r['บริษัท'] || '-'}</div>
+        <div>📅 <strong>วันที่รายงาน:</strong> ${escapeHtml(date)} (${escapeHtml(shift)})</div>
+        <div>👤 <strong>โฟร์แมนผู้รายงาน:</strong> ${escapeHtml(foreman)}</div>
+        <div>🏢 <strong>บริษัทผู้รับเหมา:</strong> ${escapeHtml(comp)}</div>
       </div>
       <div>
-        <div>☀️ <strong>สภาพอากาศ:</strong> ${r.weather || r['สภาพอากาศ'] || '-'}</div>
-        <div>🌧️ <strong>เวลาหยุดงานจากฝน:</strong> ${r.rain_delay_hours || r['เวลาฝนหยุดงาน'] || 0} ชม.</div>
-        <div>👷 <strong>กำลังพลรวม:</strong> ${r.totalWorkforce || r['กำลังพลรวม'] || 0} คน</div>
+        <div>☀️ <strong>สภาพอากาศ:</strong> ${escapeHtml(weather)}</div>
+        <div>🌧️ <strong>เวลาหยุดงานจากฝน:</strong> ${escapeHtml(rainDelay)} ชม.</div>
+        <div>👷 <strong>กำลังพลรวม:</strong> <strong>${escapeHtml(totalWf)}</strong> คน</div>
       </div>
     </div>
 
     <div style="margin-bottom: 1rem;">
       <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-heading);">⚡ รายการงานที่บันทึก:</h4>
       <div style="background: #ffffff; border: 1px solid var(--border-subtle); padding: 10px; border-radius: 4px; font-size: 0.82rem; line-height: 1.5;">
-        ${r.task_summary || r['สรุปงาน'] || 'ไม่มีรายการงาน'}
+        ${escapeHtml(tasks)}
       </div>
     </div>
 
-    ${r.issues || r['ปัญหาอุปสรรค'] ? `
+    ${machinery && machinery !== '-' ? `
+      <div style="margin-bottom: 1rem;">
+        <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-heading);">🚜 เครื่องจักรและยานพาหนะ:</h4>
+        <div style="background: #ffffff; border: 1px solid var(--border-subtle); padding: 8px 10px; border-radius: 4px; font-size: 0.82rem; color: #334155;">
+          ${escapeHtml(machinery)}
+        </div>
+      </div>
+    ` : ''}
+
+    ${issues && issues !== 'ปกติ' && issues !== '-' ? `
       <div style="margin-bottom: 1rem;">
         <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: #b45309;">⚠️ ปัญหาอุปสรรค / ข้อสังเกต:</h4>
         <div style="background: #fffbeb; border: 1px solid #f59e0b; padding: 10px; border-radius: 4px; font-size: 0.82rem; color: #92400e;">
-          ${r.issues || r['ปัญหาอุปสรรค']}
+          ${escapeHtml(issues)}
         </div>
       </div>
     ` : ''}
@@ -1226,3 +1255,89 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// ==========================================
+// Real-Time Cross-Window & Background Sync
+// ==========================================
+function broadcastSync(type, details = {}) {
+  try {
+    const channel = new BroadcastChannel('cpm_site_sync');
+    channel.postMessage({
+      type: type,
+      projectId: state.project.id,
+      timestamp: Date.now(),
+      ...details
+    });
+    channel.close();
+  } catch (e) {}
+
+  try {
+    localStorage.setItem('cpm_sync_trigger', JSON.stringify({
+      type: type,
+      projectId: state.project.id,
+      time: Date.now(),
+      ...details
+    }));
+  } catch (e) {}
+}
+
+function setupRealtimeSync() {
+  // 1. BroadcastChannel: instant (< 50ms) cross-tab synchronization
+  try {
+    const channel = new BroadcastChannel('cpm_site_sync');
+    channel.onmessage = async (event) => {
+      const data = event.data;
+      if (data && (data.type === 'DAILY_REPORT_SUBMITTED' || data.type === 'PLAN_SUBMITTED' || data.type === 'PLAN_APPROVED' || data.type === 'REFRESH_ALL')) {
+        console.log('[LiveSync] BroadcastChannel signal received:', data.type);
+        triggerSyncFlash();
+        await loadDailyReports(true);
+        await loadWeeklyPlans(true);
+      }
+    };
+  } catch (e) {
+    console.warn('[LiveSync] BroadcastChannel not supported:', e);
+  }
+
+  // 2. Storage event fallback for older browsers or cross-domain contexts
+  window.addEventListener('storage', async (e) => {
+    if (e.key === 'cpm_sync_trigger' && e.newValue) {
+      console.log('[LiveSync] LocalStorage sync triggered');
+      triggerSyncFlash();
+      await loadDailyReports(true);
+      await loadWeeklyPlans(true);
+    }
+  });
+
+  // 3. Fast auto-polling: Every 10 seconds when PM dashboard is open & visible
+  let pollInterval = null;
+  const startPolling = () => {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(async () => {
+      if (!document.hidden) {
+        await loadDailyReports(true);
+        if (state.activeTab === 'view-pm-approvals') {
+          await loadWeeklyPlans(true);
+        }
+      }
+    }, 10000);
+  };
+
+  startPolling();
+
+  // 4. Immediate refresh when switching focus back to PM tab
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      loadDailyReports(true);
+      loadWeeklyPlans(true);
+    }
+  });
+}
+
+function triggerSyncFlash() {
+  const badge = document.querySelector('.live-sync-indicator');
+  if (badge) {
+    badge.classList.add('flash-active');
+    setTimeout(() => badge.classList.remove('flash-active'), 1200);
+  }
+}
+

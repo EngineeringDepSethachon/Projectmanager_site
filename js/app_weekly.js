@@ -1495,6 +1495,14 @@ async function submitPlanToPM() {
       state.planStatus = 'Pending';
       state.isDirty = false;
       renderPlanMetaUI();
+      try {
+        const channel = new BroadcastChannel('cpm_site_sync');
+        channel.postMessage({ type: 'PLAN_SUBMITTED', planId: state.currentPlanId, projectId: state.project.id, timestamp: Date.now() });
+        channel.close();
+      } catch (e) {}
+      try {
+        localStorage.setItem('cpm_sync_trigger', JSON.stringify({ type: 'PLAN_SUBMITTED', time: Date.now() }));
+      } catch (e) {}
       await loadWeeklyPlans();
     } else {
       showToast(`⚠️ ส่งไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบ'}`, 'warning');

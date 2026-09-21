@@ -104,13 +104,50 @@ function doGet(e) {
         return jsonResponse({ status: "success", total: 0, reports: [] });
       }
       const headers = data[0];
+      const targetProjId = (e.parameter && (e.parameter.projectId || e.parameter.project_id) ? String(e.parameter.projectId || e.parameter.project_id).trim() : "");
       const reports = [];
-      for (let i = 1; i < data.length; i++) {
+
+      // Iterate newest first (bottom of sheet to top)
+      for (let i = data.length - 1; i >= 1; i--) {
         const row = data[i];
+        if (!row[0]) continue;
         const report = {};
         headers.forEach((h, idx) => {
           report[h] = row[idx];
         });
+
+        const rowProjId = String(row[22] || report["รหัสโครงการ (Project ID)"] || "").trim();
+        if (targetProjId && targetProjId !== "-" && rowProjId && rowProjId !== "-" && rowProjId !== targetProjId) {
+          continue;
+        }
+
+        // Standard normalized properties for frontend consumption
+        report.id = String(row[0] || report["รหัสรายงาน (Report ID)"] || "");
+        report.report_date = formatDateValue(row[1] || report["วันที่รายงาน (Date)"]);
+        report.shift_label = String(row[2] || report["รอบกะ (Shift: เช้า/จบงาน)"] || "");
+        report.timestamp = String(row[3] || report["เวลาบันทึก (Timestamp)"] || "");
+        report.line_uid = String(row[4] || report["LINE UID"] || "");
+        report.line_name = String(row[5] || report["ชื่อ LINE (LINE Name)"] || "");
+        report.sub_name = String(row[6] || report["บริษัทผู้รับเหมา"] || "");
+        report.company = String(row[6] || report["บริษัทผู้รับเหมา"] || "");
+        report.foreman_name = String(row[7] || report["ชื่อโฟร์แมน"] || "");
+        report.weather = String(row[8] || report["สภาพอากาศ"] || "");
+        report.rain_delay_hours = Number(row[9] || report["เวลาหยุดงานจากฝน (ชม.)"] || 0);
+        report.foreman_count = Number(row[10] || report["โฟร์แมน (คน)"] || 0);
+        report.skilled_count = Number(row[11] || report["ช่างฝีมือ (คน)"] || 0);
+        report.labor_count = Number(row[12] || report["แรงงานทั่วไป (คน)"] || 0);
+        report.safety_count = Number(row[13] || report["จป.ความปลอดภัย (คน)"] || 0);
+        report.totalWorkforce = Number(row[14] || report["ยอดคนงานรวม (คน)"] || (report.foreman_count + report.skilled_count + report.labor_count + report.safety_count));
+        report.tasks_count = Number(row[15] || report["จำนวนงาน (รายการ)"] || 0);
+        report.task_summary = String(row[16] || report["สรุปรายการงาน / เป้าหมาย"] || "");
+        report.machinery = String(row[17] || report["เครื่องจักรที่ใช้งาน"] || "");
+        report.photos_count = Number(row[18] || report["จำนวนรูปภาพ"] || 0);
+        report.photoUrls = String(row[19] || report["ลิงก์รูปภาพหน้างาน (Drive)"] || "");
+        report.issues = String(row[20] || report["ปัญหาและอุปสรรค"] || "");
+        report.status = String(row[21] || report["สถานะการอนุมัติ"] || "");
+        report.project_id = String(row[22] || report["รหัสโครงการ (Project ID)"] || "");
+        report.project_name = String(row[23] || report["ชื่อโครงการ (Project Name)"] || "");
+
         reports.push(report);
       }
       return jsonResponse({
