@@ -1819,19 +1819,7 @@ function handleLineWebhook(payload) {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const siteUser = recordOrUpdateSiteUser(ss, userId, userProfile);
 
-      // 3. กำหนดหน้าเว็บปลายทางตาม Level ของผู้ใช้โดยตรง (LV1=foreman.html, LV2=weekly-plan.html, LV3=pm-center.html)
-      const rawLv = String(siteUser.level || "").toLowerCase().trim();
-      const rawRole = String(siteUser.role || "").toLowerCase().trim();
-      let targetPage = "foreman.html";
-
-      if (rawLv === "lv2" || rawLv === "2" || rawRole.includes("ผู้รับเหมา") || rawRole.includes("subcontractor")) {
-        targetPage = "weekly-plan.html";
-      } else if (rawLv === "lv3" || rawLv === "3" || rawRole.includes("pm") || rawRole.includes("ผู้จัดการ") || rawRole.includes("project manager")) {
-        targetPage = "pm-center.html";
-      } else {
-        targetPage = "foreman.html";
-      }
-
+      // 3. จัดเตรียม URL สำหรับแต่ละหน้าระบบ (Foreman, Weekly Plan, PM Center)
       let cleanBase = webAppFrontendUrl.trim();
       if (cleanBase.endsWith('index.html')) {
         cleanBase = cleanBase.replace('index.html', '');
@@ -1840,30 +1828,102 @@ function handleLineWebhook(payload) {
         cleanBase += '/';
       }
       const separator = cleanBase.includes('?') ? '&' : '?';
-      const directWebUrl = cleanBase + targetPage + separator +
-        "uid=" + encodeURIComponent(siteUser.uid) +
-        "&name=" + encodeURIComponent(siteUser.displayName) +
-        "&role=" + encodeURIComponent(siteUser.role) +
-        "&lv=" + encodeURIComponent(siteUser.level) +
-        "&company=" + encodeURIComponent(siteUser.company) +
-        "&prj=" + encodeURIComponent(siteUser.projectId || "-") +
-        "&prjName=" + encodeURIComponent(siteUser.projectName || "-") +
-        (siteUser.avatar ? "&avatar=" + encodeURIComponent(siteUser.avatar) : "");
 
-      // 4. ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ พร้อมสรุปข้อมูลตำแหน่งและโครงการ
-      replyLineWebAppCard(replyToken, token, {
-        userId: siteUser.uid,
-        userName: siteUser.displayName,
-        lineName: siteUser.lineName,
-        role: siteUser.role,
-        level: siteUser.level,
-        company: siteUser.company,
-        projectId: siteUser.projectId || "-",
-        projectName: siteUser.projectName || "-",
-        pictureUrl: siteUser.avatar,
-        webUrl: directWebUrl,
-        userMsg: userMsg
-      });
+      const buildWebUrl = function(targetPage) {
+        return cleanBase + targetPage + separator +
+          "uid=" + encodeURIComponent(siteUser.uid) +
+          "&name=" + encodeURIComponent(siteUser.displayName) +
+          "&role=" + encodeURIComponent(siteUser.role) +
+          "&lv=" + encodeURIComponent(siteUser.level) +
+          "&company=" + encodeURIComponent(siteUser.company) +
+          "&prj=" + encodeURIComponent(siteUser.projectId || "-") +
+          "&prjName=" + encodeURIComponent(siteUser.projectName || "-") +
+          (siteUser.avatar ? "&avatar=" + encodeURIComponent(siteUser.avatar) : "");
+      };
+
+      const foremanUrl = buildWebUrl("foreman.html");
+      const weeklyPlanUrl = buildWebUrl("weekly-plan.html");
+      const pmCenterUrl = buildWebUrl("pm-center.html");
+
+      // ตรวจสอบคำสำคัญในข้อความของผู้ใช้ (Command Parsing)
+      const cleanMsg = (userMsg || "").toLowerCase().trim();
+
+      const isHelpCmd = cleanMsg === "คำสั่ง" || 
+                        cleanMsg.includes("คำสั่ง") || 
+                        cleanMsg === "help" || 
+                        cleanMsg === "/help" || 
+                        cleanMsg === "menu" || 
+                        cleanMsg === "เมนู" || 
+                        cleanMsg === "วิธีใช้" ||
+                        cleanMsg === "คู่มือ";
+
+      const isForemanCmd = cleanMsg === "รายงาน" || 
+                           cleanMsg === "เปิดงาน" || 
+                           cleanMsg === "จบงาน" || 
+                           cleanMsg === "ส่งงาน" || 
+                           cleanMsg === "โฟร์แมน" || 
+                           cleanMsg === "foreman" || 
+                           cleanMsg === "หน้างาน";
+
+      const isPlanCmd = cleanMsg === "แผนงาน" || 
+                        cleanMsg === "วางแผน" || 
+                        cleanMsg === "gantt" || 
+                        cleanMsg === "ผู้รับเหมา" || 
+                        cleanMsg === "subcontractor" || 
+                        cleanMsg === "plan";
+
+      const isPMCmd = cleanMsg === "pm" || 
+                      cleanMsg === "อนุมัติ" || 
+                      cleanMsg === "แดชบอร์ด" || 
+                      cleanMsg === "ผู้จัดการ" || 
+                      cleanMsg === "center";
+
+      // 4. ทำการตอบกลับตามคำสั่ง
+      if (isHelpCmd) {
+        // เมื่อพิมพ์ "คำสั่ง" -> ส่งการ์ดแจ้งรายละเอียดคำสั่งทั้งหมดในระบบ พร้อมปุ่มลัดและ Quick Reply
+        replyLineHelpCommands(replyToken, token, {
+          userId: siteUser.uid,
+          userName: siteUser.displayName,
+          lineName: siteUser.lineName,
+          role: siteUser.role,
+          level: siteUser.level,
+          company: siteUser.company,
+          foremanUrl: foremanUrl,
+          weeklyPlanUrl: weeklyPlanUrl,
+          pmCenterUrl: pmCenterUrl
+        });
+      } else {
+        // กำหนดหน้าเว็บปลายทางตาม Level ของผู้ใช้โดยตรง หรือตามคำสั่งที่พิมพ์เจาะจง
+        let targetPage = "foreman.html";
+        const rawLv = String(siteUser.level || "").toLowerCase().trim();
+        const rawRole = String(siteUser.role || "").toLowerCase().trim();
+
+        if (isPlanCmd || rawLv === "lv2" || rawLv === "2" || rawRole.includes("ผู้รับเหมา") || rawRole.includes("subcontractor")) {
+          targetPage = "weekly-plan.html";
+        } else if (isPMCmd || rawLv === "lv3" || rawLv === "3" || rawRole.includes("pm") || rawRole.includes("ผู้จัดการ") || rawRole.includes("project manager")) {
+          targetPage = "pm-center.html";
+        } else {
+          targetPage = "foreman.html";
+        }
+
+        const directWebUrl = buildWebUrl(targetPage);
+
+        // ตอบกลับด้วย Flex Card ปรากฏปุ่มเข้าสู่ระบบ พร้อมสรุปข้อมูลตำแหน่ง โครงการ และ Quick Reply
+        replyLineWebAppCard(replyToken, token, {
+          userId: siteUser.uid,
+          userName: siteUser.displayName,
+          lineName: siteUser.lineName,
+          role: siteUser.role,
+          level: siteUser.level,
+          company: siteUser.company,
+          projectId: siteUser.projectId || "-",
+          projectName: siteUser.projectName || "-",
+          pictureUrl: siteUser.avatar,
+          webUrl: directWebUrl,
+          userMsg: userMsg,
+          targetPage: targetPage
+        });
+      }
     }
   }
 
@@ -1906,15 +1966,22 @@ function replyLineWebAppCard(replyToken, token, data) {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#4338ca",
+        backgroundColor: (function() {
+          if (data.targetPage === 'pm-center.html') return '#78350f';
+          if (data.targetPage === 'weekly-plan.html') return '#1e3a8a';
+          return '#4338ca';
+        })(),
         paddingAll: "16px",
         contents: [
           {
             type: "text",
             text: (function() {
+              if (data.targetPage === 'pm-center.html') return '👔 ระบบบริหารโครงการ PM';
+              if (data.targetPage === 'weekly-plan.html') return '📋 ระบบวางแผนงานประจำเดือน (ผู้รับเหมา)';
+              if (data.targetPage === 'foreman.html') return '📱 ระบบรายงานประจำวัน (โฟร์แมน)';
               var lv = String(data.level || '').toLowerCase();
               if (lv === 'lv3' || lv === '3') return '👔 ระบบบริหารโครงการ PM';
-              if (lv === 'lv2' || lv === '2') return '📋 ระบบวางแผนงาน (ผู้รับเหมา)';
+              if (lv === 'lv2' || lv === '2') return '📋 ระบบวางแผนงานประจำเดือน (ผู้รับเหมา)';
               return '📱 ระบบรายงานประจำวัน (โฟร์แมน)';
             })(),
             weight: "bold",
@@ -2023,9 +2090,16 @@ function replyLineWebAppCard(replyToken, token, data) {
           },
           {
             type: "text",
-            text: "💡 ผู้ใช้ใหม่จะถูกลงทะเบียนเป็น (-) ทั้งหมด แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อระบุชื่อ, ตำแหน่ง, บริษัท หรือโครงการได้ตลอดเวลา",
+            text: "💡 พิมพ์ 'คำสั่ง' ในแชทได้ตลอดเวลา เพื่อดูวิธีใช้งานและรายการคำสั่งทั้งหมด",
             size: "xxs",
-            color: "#cbd5e1",
+            color: "#38bdf8",
+            wrap: true
+          },
+          {
+            type: "text",
+            text: "⚙️ แอดมินสามารถเปิด Google Sheets ที่ชีต 'Site_Users' เพื่อระบุชื่อ, ตำแหน่ง, บริษัท หรือโครงการได้",
+            size: "xxs",
+            color: "#94a3b8",
             wrap: true
           }
         ]
@@ -2040,6 +2114,9 @@ function replyLineWebAppCard(replyToken, token, data) {
             type: "button",
             style: "primary",
             color: (function() {
+              if (data.targetPage === 'pm-center.html') return "#92400e";
+              if (data.targetPage === 'weekly-plan.html') return "#1e40af";
+              if (data.targetPage === 'foreman.html') return "#065f46";
               var lv = String(data.level || '').toLowerCase();
               if (lv === 'lv3' || lv === '3') return "#92400e";
               if (lv === 'lv2' || lv === '2') return "#1e40af";
@@ -2049,9 +2126,12 @@ function replyLineWebAppCard(replyToken, token, data) {
             action: {
               type: "uri",
               label: (function() {
+                if (data.targetPage === 'pm-center.html') return "👔 เปิดศูนย์บริหารโครงการ & Gantt (PM)";
+                if (data.targetPage === 'weekly-plan.html') return "📋 เปิดระบบวางแผนงานประจำเดือน (ผู้รับเหมา)";
+                if (data.targetPage === 'foreman.html') return "📱 เปิดระบบรายงานหน้างาน (โฟร์แมน)";
                 var lv = String(data.level || '').toLowerCase();
-                if (lv === 'lv3' || lv === '3') return "👔 เปิดศูนย์อนุมัติแผนงาน & Gantt (PM)";
-                if (lv === 'lv2' || lv === '2') return "📋 เปิดระบบวางแผนงานสัปดาห์ (ผู้รับเหมา)";
+                if (lv === 'lv3' || lv === '3') return "👔 เปิดศูนย์บริหารโครงการ & Gantt (PM)";
+                if (lv === 'lv2' || lv === '2') return "📋 เปิดระบบวางแผนงานประจำเดือน (ผู้รับเหมา)";
                 return "📱 เปิดระบบรายงานหน้างาน (โฟร์แมน)";
               })(),
               uri: data.webUrl
@@ -2059,6 +2139,9 @@ function replyLineWebAppCard(replyToken, token, data) {
           }
         ]
       }
+    },
+    quickReply: {
+      items: getLineQuickReplyItems()
     }
   };
 
@@ -2079,6 +2162,229 @@ function replyLineWebAppCard(replyToken, token, data) {
     UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", options);
   } catch (err) {
     Logger.log("Error replying to LINE: " + err.toString());
+  }
+}
+
+/**
+ * รายการ Quick Reply ลัดที่แสดงด้านล่างของหน้าต่างแชท LINE
+ */
+function getLineQuickReplyItems() {
+  return [
+    {
+      type: "action",
+      action: { type: "message", label: "📱 รายงานหน้างาน", text: "รายงาน" }
+    },
+    {
+      type: "action",
+      action: { type: "message", label: "📋 แผนงาน Gantt", text: "แผนงาน" }
+    },
+    {
+      type: "action",
+      action: { type: "message", label: "👔 ศูนย์ PM", text: "PM" }
+    },
+    {
+      type: "action",
+      action: { type: "message", label: "👤 โปรไฟล์ของฉัน", text: "โปรไฟล์" }
+    },
+    {
+      type: "action",
+      action: { type: "message", label: "❓ ดูคำสั่งทั้งหมด", text: "คำสั่ง" }
+    }
+  ];
+}
+
+/**
+ * ส่ง Reply Message ด้วย Flex Card เมื่อผู้ใช้พิมพ์ "คำสั่ง"
+ * สรุปคำสั่งทั้งหมดที่ระบบรองรับ พร้อมปุ่มเข้าสู่แต่ละระบบและ Quick Reply
+ */
+function replyLineHelpCommands(replyToken, token, data) {
+  if (!token || !replyToken) return;
+
+  const flexCard = {
+    type: "flex",
+    altText: "📋 คู่มือคำสั่งระบบ: พิมพ์ 'คำสั่ง' เพื่อดูวิธีใช้, 'รายงาน' เปิดงานโฟร์แมน, 'แผนงาน' วางแผน Gantt, 'PM' ศูนย์ PM, 'โปรไฟล์' ตรวจสอบสิทธิ์",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#0f172a",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "🤖 คู่มือคำสั่งระบบรายงาน & วางแผน",
+            weight: "bold",
+            color: "#ffffff",
+            size: "md"
+          },
+          {
+            type: "text",
+            text: "พิมพ์คำสั่งในแชท หรือกดปุ่มด้านล่างเพื่อเปิดใช้งานทันที",
+            size: "xxs",
+            color: "#94a3b8",
+            margin: "xs",
+            wrap: true
+          }
+        ]
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#1e293b",
+        paddingAll: "16px",
+        spacing: "md",
+        contents: [
+          // Section 1: Chat Commands
+          {
+            type: "text",
+            text: "💬 คำสั่งด่วนที่พิมพ์ในแชทได้:",
+            weight: "bold",
+            color: "#38bdf8",
+            size: "xs"
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "xs",
+            backgroundColor: "#0f172a",
+            paddingAll: "10px",
+            cornerRadius: "6px",
+            contents: [
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "xs",
+                contents: [
+                  { type: "text", text: "❓ คำสั่ง", size: "xxs", color: "#facc15", weight: "bold", flex: 3 },
+                  { type: "text", text: "ดูรายการคำสั่งทั้งหมด (หน้านี้)", size: "xxs", color: "#cbd5e1", flex: 7 }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "xs",
+                contents: [
+                  { type: "text", text: "📱 รายงาน", size: "xxs", color: "#34d399", weight: "bold", flex: 3 },
+                  { type: "text", text: "เปิดระบบรายงานประจำวัน (โฟร์แมน)", size: "xxs", color: "#cbd5e1", flex: 7 }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "xs",
+                contents: [
+                  { type: "text", text: "📋 แผนงาน", size: "xxs", color: "#60a5fa", weight: "bold", flex: 3 },
+                  { type: "text", text: "เปิดระบบวางแผนประจำเดือน Gantt", size: "xxs", color: "#cbd5e1", flex: 7 }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "xs",
+                contents: [
+                  { type: "text", text: "👔 PM", size: "xxs", color: "#fbbf24", weight: "bold", flex: 3 },
+                  { type: "text", text: "เปิดศูนย์บริหารและอนุมัติโครงการ PM", size: "xxs", color: "#cbd5e1", flex: 7 }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "xs",
+                contents: [
+                  { type: "text", text: "👤 โปรไฟล์", size: "xxs", color: "#c084fc", weight: "bold", flex: 3 },
+                  { type: "text", text: "ตรวจสอบระดับสิทธิ์ บริษัท และโครงการ", size: "xxs", color: "#cbd5e1", flex: 7 }
+                ]
+              }
+            ]
+          },
+          {
+            type: "separator",
+            color: "#334155"
+          },
+          // Section 2: Direct Portal Links
+          {
+            type: "text",
+            text: "🌐 ปุ่มลัดเปิดระบบโดยตรง:",
+            weight: "bold",
+            color: "#fcd34d",
+            size: "xs"
+          },
+          {
+            type: "button",
+            style: "primary",
+            color: "#059669",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "📱 1. ระบบรายงานประจำวัน (โฟร์แมน)",
+              uri: data.foremanUrl
+            }
+          },
+          {
+            type: "button",
+            style: "primary",
+            color: "#2563eb",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "📋 2. ระบบวางแผนประจำเดือน (ผู้รับเหมา)",
+              uri: data.weeklyPlanUrl
+            }
+          },
+          {
+            type: "button",
+            style: "primary",
+            color: "#d97706",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "👔 3. ศูนย์บริหารโครงการ (PM Center)",
+              uri: data.pmCenterUrl
+            }
+          }
+        ]
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#0f172a",
+        paddingAll: "10px",
+        contents: [
+          {
+            type: "text",
+            text: "💡 หรือแตะที่แถบเมนูด้านล่างสุด (Quick Reply) เพื่อส่งคำสั่งด่วน",
+            size: "xxs",
+            color: "#64748b",
+            align: "center",
+            wrap: true
+          }
+        ]
+      }
+    },
+    quickReply: {
+      items: getLineQuickReplyItems()
+    }
+  };
+
+  const options = {
+    method: "post",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    payload: JSON.stringify({
+      replyToken: replyToken,
+      messages: [flexCard]
+    }),
+    muteHttpExceptions: true
+  };
+
+  try {
+    UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", options);
+  } catch (err) {
+    Logger.log("Error replying to LINE help commands: " + err.toString());
   }
 }
 
