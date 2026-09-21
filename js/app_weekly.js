@@ -315,11 +315,18 @@ function syncCurrentMonthPlan() {
     if (savedDraft) {
       try {
         const parsed = JSON.parse(savedDraft);
-        state.currentPlan = null;
-        state.planStatus = 'Draft';
-        state.monthObjective = parsed.objective || '';
-        state.mainTasks = parsed.mainTasks || [];
-        state.pmNotes = '';
+        // Discard any old mock sample tasks
+        const hasMockTasks = (parsed.mainTasks || []).some(m => m.name && (m.name.includes('ตัดหัวเข็ม') || m.name.includes('เข้าแบบและผูกเหล็ก')));
+        if (hasMockTasks) {
+          localStorage.removeItem(draftKey);
+          initDefaultPlan();
+        } else {
+          state.currentPlan = null;
+          state.planStatus = 'Draft';
+          state.monthObjective = parsed.objective || '';
+          state.mainTasks = parsed.mainTasks || [];
+          state.pmNotes = '';
+        }
       } catch (e) {
         initDefaultPlan();
       }
@@ -338,96 +345,8 @@ function initDefaultPlan() {
   state.planStatus = 'Draft';
   state.monthObjective = '';
   state.pmNotes = '';
-
-  const days = state.monthInfo.days;
-  const totalDays = state.monthInfo.daysInMonth;
-
-  const task1EndIdx = Math.min(9, totalDays - 1);
-  const task2StartIdx = Math.min(8, totalDays - 1);
-  const task2EndIdx = Math.min(21, totalDays - 1);
-
-  state.mainTasks = [
-    {
-      id: 'MTASK-' + Date.now() + '-1',
-      name: 'งานตัดหัวเข็มและเทลีน ฐานราก F1-F16',
-      category: 'งานฐานราก',
-      categoryColor: 'cat-foundation',
-      workArea: 'โซนทิศเหนือ (Gridline A-D)',
-      startDayIndex: 0,
-      endDayIndex: task1EndIdx,
-      startDate: days[0].iso,
-      endDate: days[task1EndIdx].iso,
-      subtasks: [
-        {
-          id: 'STASK-101',
-          name: 'สกัดคอนกรีตหัวเข็มให้ได้ระดับ -1.50 ม.',
-          workArea: 'โซน A',
-          description: 'ใช้สกัดลมตัดหัวเข็ม ระวังอย่าให้เหล็กเสริมเสียหาย',
-          targetQty: '16 ต้น',
-          plannedWorkers: 4,
-          machinery: 'เครื่องสกัดลม 2 ตัว, รถขุด PC200',
-          actualStatus: 'Pending',
-          actualProgress: 0,
-          actualDate: null,
-          reportedBy: null
-        },
-        {
-          id: 'STASK-102',
-          name: 'เทคอนกรีตหยาบรองก้นหลุม (Lean Concrete)',
-          workArea: 'โซน A',
-          description: 'หนา 10 ซม. ปาดเรียบได้ระดับ',
-          targetQty: '25 ตร.ม.',
-          plannedWorkers: 3,
-          machinery: 'รถโม่คอนกรีต',
-          actualStatus: 'Pending',
-          actualProgress: 0,
-          actualDate: null,
-          reportedBy: null
-        }
-      ]
-    },
-    {
-      id: 'MTASK-' + Date.now() + '-2',
-      name: 'งานเข้าแบบและผูกเหล็กเสริมฐานราก F1-F8',
-      category: 'งานโครงสร้าง',
-      categoryColor: 'cat-structure',
-      workArea: 'โซนทิศเหนือ',
-      startDayIndex: task2StartIdx,
-      endDayIndex: task2EndIdx,
-      startDate: days[task2StartIdx].iso,
-      endDate: days[task2EndIdx].iso,
-      subtasks: [
-        {
-          id: 'STASK-201',
-          name: 'ผูกเหล็กข้ออ้อย DB20 ฐานราก F1-F8',
-          workArea: 'โซน A',
-          description: 'ผูกเหล็กตะแกรงล่าง-บน พร้อมหนุนลูกปูน 7.5 ซม.',
-          targetQty: '8 หลุม',
-          plannedWorkers: 5,
-          machinery: 'เครื่องดัดเหล็ก, เครื่องตัดไฟเบอร์',
-          actualStatus: 'Pending',
-          actualProgress: 0,
-          actualDate: null,
-          reportedBy: null
-        },
-        {
-          id: 'STASK-202',
-          name: 'ติดตั้งแบบหล่อข้างฐานรากและค้ำยัน',
-          workArea: 'โซน A',
-          description: 'แบบเหล็ก ทาน้ำยาถอดแบบ ค้ำยันแน่นหนา',
-          targetQty: '8 หลุม',
-          plannedWorkers: 3,
-          machinery: '-',
-          actualStatus: 'Pending',
-          actualProgress: 0,
-          actualDate: null,
-          reportedBy: null
-        }
-      ]
-    }
-  ];
-
-  state.expandedTasks.add(state.mainTasks[0].id);
+  state.mainTasks = [];
+  state.expandedTasks.clear();
 }
 
 async function loadTasksForPlan(planId) {
@@ -440,45 +359,109 @@ async function loadTasksForPlan(planId) {
 
       tasks.forEach((t, idx) => {
         const cat = t.category || 'งานโครงสร้าง';
-        const groupKey = t.parent_task_name || cat;
+
+        // Determine parent task name:
+        let groupKey = '';
+        if (t.parent_task_name) {
+          groupKey = t.parent_task_name;
+        } else if (t.description && t.description.includes('[งานหลัก:')) {
+          const matchMain = t.description.match(/\[งานหลัก:\s*([^\]]+)\]/);
+          if (matchMain) groupKey = matchMain[1].trim();
+        } else if (t.description && t.description.includes(':')) {
+          const parts = t.description.split(':');
+          if (parts[0].length > 2 && !parts[0].includes('http') && !parts[0].includes('[')) {
+            groupKey = parts[0].trim();
+          }
+        }
+        if (!groupKey) {
+          groupKey = t.taskName || t.name || cat;
+        }
+
+        let sDateStr = state.monthInfo.startIso;
+        let eDateStr = state.monthInfo.endIso;
+
+        if (t.description) {
+          const match = t.description.match(/\[(\d{4}-\d{2}-\d{2})\s+ถึง\s+(\d{4}-\d{2}-\d{2})\]/);
+          if (match) {
+            sDateStr = match[1];
+            eDateStr = match[2];
+          } else if (t.date) {
+            sDateStr = t.date;
+            eDateStr = t.date;
+          }
+        } else if (t.date) {
+          sDateStr = t.date;
+          eDateStr = t.date;
+        }
+
+        let workArea = t.workArea || t.work_area || '';
+        if (!workArea && t.description && t.description.includes('[โซน:')) {
+          const matchZone = t.description.match(/\[โซน:\s*([^\]]+)\]/);
+          if (matchZone && matchZone[1] !== '-') workArea = matchZone[1].trim();
+        }
 
         if (!grouped[groupKey]) {
+          let sIdx = days.findIndex(d => d.iso === sDateStr);
+          let eIdx = days.findIndex(d => d.iso === eDateStr);
+          if (sIdx < 0) sIdx = 0;
+          if (eIdx < 0) eIdx = Math.min(totalDays - 1, sIdx + 6);
+          if (sIdx > eIdx) eIdx = sIdx;
+
           grouped[groupKey] = {
             id: 'MTASK-' + planId + '-' + Object.keys(grouped).length,
             name: groupKey,
             category: cat,
             categoryColor: getCategoryColorClass(cat),
-            workArea: t.workArea || t.work_area || '',
-            startDayIndex: 0,
-            endDayIndex: Math.min(14, totalDays - 1),
-            startDate: state.monthInfo.startIso,
-            endDate: days[Math.min(14, totalDays - 1)].iso,
+            workArea: workArea,
+            startDayIndex: sIdx,
+            endDayIndex: eIdx,
+            startDate: days[sIdx].iso,
+            endDate: days[eIdx].iso,
             subtasks: []
           };
         }
 
-        grouped[groupKey].subtasks.push({
-          id: t.taskId || ('STASK-' + idx),
-          name: t.taskName || t.name || '-',
-          workArea: t.workArea || '',
-          description: t.description || t.taskDesc || '',
-          targetQty: t.targetQty || t.quantity || '',
-          plannedWorkers: Number(t.plannedWorkers) || 0,
-          machinery: t.machinery || '-',
-          actualStatus: t.actualStatus || (Number(t.progress || t.actualProgress) >= 100 ? 'Completed' : 'Pending'),
-          actualProgress: Number(t.progress || t.actualProgress) || 0,
-          actualDate: t.taskDate || null,
-          reportedBy: t.foremanName || t.reportedBy || null
-        });
+        const taskName = t.taskName || t.name || '';
+        const isSelfMainTask = (taskName === groupKey && (!t.description || (t.description.startsWith('[') && !t.description.includes(': '))));
+
+        if (!isSelfMainTask && taskName) {
+          let cleanDesc = t.description || t.taskDesc || '';
+          cleanDesc = cleanDesc.replace(/\[\d{4}-\d{2}-\d{2}\s+ถึง\s+\d{4}-\d{2}-\d{2}\]/g, '');
+          cleanDesc = cleanDesc.replace(/\[งานหลัก:[^\]]+\]/g, '');
+          cleanDesc = cleanDesc.replace(/\[โซน:[^\]]+\]/g, '');
+          if (cleanDesc.startsWith(groupKey + ':')) {
+            cleanDesc = cleanDesc.slice(groupKey.length + 1).trim();
+          }
+          cleanDesc = cleanDesc.trim();
+
+          grouped[groupKey].subtasks.push({
+            id: t.taskId || ('STASK-' + idx),
+            name: taskName,
+            workArea: workArea,
+            description: cleanDesc,
+            targetQty: t.targetQty || t.quantity || '',
+            plannedWorkers: Number(t.plannedWorkers) || 0,
+            machinery: t.machinery || '-',
+            actualStatus: t.actualStatus || (Number(t.progress || t.actualProgress) >= 100 ? 'Completed' : 'Pending'),
+            actualProgress: Number(t.progress || t.actualProgress) || 0,
+            actualDate: t.taskDate || null,
+            reportedBy: t.foremanName || t.reportedBy || null
+          });
+        }
       });
 
       state.mainTasks = Object.values(grouped);
       state.mainTasks.forEach(m => state.expandedTasks.add(m.id));
-      renderGanttTable();
-      updateKPISummary();
+    } else {
+      state.mainTasks = [];
     }
+    renderGanttTable();
+    updateKPISummary();
   } catch (e) {
     console.warn('loadTasksForPlan error:', e);
+    state.mainTasks = [];
+    renderGanttTable();
+    updateKPISummary();
   }
 }
 
@@ -593,12 +576,12 @@ function renderGanttTable() {
     tbody.innerHTML = `
       <tr>
         <td colspan="2">
-          <div class="gantt-empty-state">
+          <div class="gantt-empty-state" style="position: sticky; left: 0; max-width: 650px; margin: 0 auto;">
             <div class="empty-icon">📊</div>
             <h3>ยังไม่มีรายการงานหลักในเดือนนี้</h3>
-            <p>กดปุ่ม "➕ เพิ่มรายการงานหลัก" ด้านบนเพื่อเริ่มกำหนดแผนงานประจำเดือน</p>
+            <p>รายการงานจะดึงจาก Google Sheets เท่านั้น หรือกดปุ่ม "➕ เพิ่มรายการงานหลัก" ด้านบนเพื่อเริ่มกำหนดแผนงาน</p>
             <button type="button" class="btn-gantt-primary" onclick="window.openAddMainTaskModal()" style="margin: 0 auto;">
-              ➕ เพิ่มรายการงานหลักแรก
+              ➕ เพิ่มรายการงานหลักใหม่
             </button>
           </div>
         </td>
@@ -1447,7 +1430,7 @@ async function submitPlanToPM() {
         company: state.subcontractor.name,
         category: m.category,
         task_name: m.name,
-        description: `[${m.startDate} ถึง ${m.endDate}] ${m.workArea || ''}`,
+        description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${m.workArea || '-'}]`,
         work_area: m.workArea || '',
         quantity: '-',
         planned_workers: 5,
@@ -1465,7 +1448,7 @@ async function submitPlanToPM() {
           company: state.subcontractor.name,
           category: m.category,
           task_name: st.name,
-          description: `${m.name}: ${st.description || ''} [โซน: ${st.workArea || m.workArea || '-'}]`,
+          description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${st.workArea || m.workArea || '-'}] ${st.description || ''}`,
           work_area: st.workArea || m.workArea || '',
           quantity: st.targetQty || '-',
           planned_workers: Number(st.plannedWorkers || 0),
@@ -1573,6 +1556,7 @@ async function loadWeeklyPlans() {
       return !p.company || p.company === '-' || p.company === state.subcontractor.name;
     });
     renderArchivePlans();
+    syncCurrentMonthPlan();
   } catch (err) {
     console.warn('loadWeeklyPlans error:', err);
   }

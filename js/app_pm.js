@@ -346,14 +346,30 @@ window.togglePMSubtasks = async function(planId) {
           <tbody>
             ${tasks.map((t, idx) => {
               const prog = Number(t.progress || t.actualProgress || 0);
+              let mainTask = '';
+              let zone = t.workArea || '';
+              let desc = t.description || '';
+              if (desc.includes('[งานหลัก:')) {
+                const m = desc.match(/\[งานหลัก:\s*([^\]]+)\]/);
+                if (m) mainTask = m[1].trim();
+              }
+              if (!zone && desc.includes('[โซน:')) {
+                const z = desc.match(/\[โซน:\s*([^\]]+)\]/);
+                if (z && z[1] !== '-') zone = z[1].trim();
+              }
+              desc = desc.replace(/\[\d{4}-\d{2}-\d{2}\s+ถึง\s+\d{4}-\d{2}-\d{2}\]/g, '')
+                         .replace(/\[งานหลัก:[^\]]+\]/g, '')
+                         .replace(/\[โซน:[^\]]+\]/g, '')
+                         .trim();
               return `
                 <tr style="border-bottom: 1px solid var(--border-subtle);">
                   <td style="padding: 6px 10px; font-weight: 700; color: var(--text-muted);">${idx + 1}</td>
                   <td style="padding: 6px 10px;"><span class="task-cat-badge">${escapeHtml(t.category || 'ทั่วไป')}</span></td>
                   <td style="padding: 6px 10px;">
+                    ${mainTask ? `<div style="font-size:0.68rem; color:var(--primary); font-weight:700;">📂 งานหลัก: ${escapeHtml(mainTask)}</div>` : ''}
                     <strong>${escapeHtml(t.name || t.taskName || '-')}</strong>
-                    ${t.workArea ? `<div style="font-size:0.7rem; color:var(--text-muted);">📍 โซน: ${escapeHtml(t.workArea)}</div>` : ''}
-                    ${t.description ? `<div style="font-size:0.7rem; color:#64748b;">${escapeHtml(t.description)}</div>` : ''}
+                    ${zone ? `<div style="font-size:0.7rem; color:var(--text-muted);">📍 โซน: ${escapeHtml(zone)}</div>` : ''}
+                    ${desc ? `<div style="font-size:0.7rem; color:#64748b;">${escapeHtml(desc)}</div>` : ''}
                   </td>
                   <td style="padding: 6px 10px;"><strong>${escapeHtml(t.quantity || t.targetQty || '-')}</strong></td>
                   <td style="padding: 6px 10px;">${t.plannedWorkers || 0} คน</td>
@@ -531,9 +547,11 @@ function renderMasterMonthlyGantt() {
   Object.keys(companyGroups).forEach(comp => {
     html += `
       <tr>
-        <td colspan="2" class="pm-contractor-section-header">
-          <span>🏢 ${escapeHtml(comp)}</span>
-          <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">${companyGroups[comp].length} แผนงาน</span>
+        <td colspan="2" style="background: #f1f5f9; border-top: 2px solid var(--border-dark); border-bottom: 1.5px solid var(--border-subtle); padding: 0;">
+          <div class="pm-contractor-section-header" style="position: sticky; left: 0; max-width: 500px; display: flex; align-items: center; justify-content: space-between; padding: 8px 14px;">
+            <span>🏢 ${escapeHtml(comp)}</span>
+            <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; margin-left: 12px;">${companyGroups[comp].length} แผนงาน</span>
+          </div>
         </td>
       </tr>
     `;
