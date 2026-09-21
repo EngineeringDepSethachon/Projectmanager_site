@@ -220,6 +220,29 @@ export const firebaseService = {
   },
 
   /**
+   * Fetch Approved Tasks for a given date from Firestore (<100ms)
+   * @param {string} date - 'YYYY-MM-DD'
+   * @param {string} projectId
+   * @returns {Promise<Array>}
+   */
+  async getApprovedTasks(date, projectId) {
+    if (!this.isConfigured() || !date) return [];
+    try {
+      const docKey = `${projectId || 'all'}_${date}`;
+      const docRef = doc(db, 'approved_tasks_by_date', docKey);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.tasks)) return data.tasks;
+      }
+      return [];
+    } catch (err) {
+      console.warn('[FirebaseService] getApprovedTasks error:', err);
+      return [];
+    }
+  },
+
+  /**
    * Listen for Approved Tasks for a given date in real-time
    * @param {string} date - 'YYYY-MM-DD'
    * @param {string} projectId

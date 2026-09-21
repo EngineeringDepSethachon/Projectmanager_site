@@ -680,6 +680,27 @@ window.handlePMDecision = async function(planId, decision, overrideNotes = null)
     if (res && res.success) {
       showToast(`✅ บันทึกผล: ${decisionText} สำเร็จ! งานย่อยพร้อมให้โฟร์แมนดึงไปทำงานแล้ว`, 'success');
       broadcastSync('PLAN_APPROVED', { planId, decision });
+
+      // Sync approved tasks to Firestore (<100ms instant access for foremen)
+      if (decision === 'Approved' && firebaseService.isConfigured()) {
+        gasService.fetchDailyTasks(planId).then(async (tasks) => {
+          if (tasks && tasks.length > 0) {
+            const planCompany = targetPlan?.company || targetPlan?.subcontractor || '';
+            const tasksByDate = {};
+            tasks.forEach(t => {
+              const d = t.taskDate || t.date || '';
+              if (d) {
+                if (!tasksByDate[d]) tasksByDate[d] = [];
+                tasksByDate[d].push({ ...t, company: planCompany, planId: planId });
+              }
+            });
+            for (const [tDate, dTasks] of Object.entries(tasksByDate)) {
+              await firebaseService.syncApprovedTasks(tDate, state.project.id, dTasks);
+            }
+          }
+        }).catch(e => console.warn('[PM] Sync approved tasks to Firestore error:', e));
+      }
+
       await loadWeeklyPlans();
     } else {
       showToast(`⚠️ บันทึกไม่สำเร็จ: ${res?.message || 'โปรดตรวจสอบสิทธิ์'}`, 'warning');

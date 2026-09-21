@@ -77,13 +77,11 @@ const QUICK_ISSUES = [
 // ==========================================
 // Initialization
 // ==========================================
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Instant First Paint (0ms) - using cached LocalStorage state immediately
   parseUrlParams();
   initDateDisplay();
   renderProjectInfo();
-  await initLiff();
-  await syncUserProfileFromGAS();
-  await loadProjectsList();
   renderLineProfile();
   renderShiftUI();
   renderWeather();
@@ -94,10 +92,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindEventHandlers();
   setupModals();
 
-  // โหลดงานย่อยที่ PM อนุมัติล่วงหน้าสำหรับวันนี้
-  await loadApprovedTasksForToday();
-  await checkExistingReportForToday();
+  // 2. Setup Real-time Firebase & local tab listeners (<10ms)
   setupForemanRealtimeSync();
+
+  // 3. Fast Non-blocking Data Hydration (Cache 0ms -> Firestore <100ms -> GAS fallback)
+  loadApprovedTasksForToday();
+  checkExistingReportForToday();
+  loadProjectsList();
+
+  // 4. Background profile sync
+  if (state.lineUser.liffId || (typeof liff !== 'undefined')) {
+    initLiff().then(() => syncUserProfileFromGAS());
+  } else {
+    syncUserProfileFromGAS();
+  }
 });
 
 // ==========================================
@@ -211,97 +219,117 @@ function renderHorizontalDateStrip() {
 // Core: Load Approved Tasks for Today
 // (ดึงงานที่หัวหน้าผู้รับเหมาสร้าง และ PM อนุมัติล่วงหน้าแล้วเท่านั้น)
 // ==========================================
-async function loadApprovedTasksForToday() {
+function applyApprovedTasks(approvedList) {
   const banner = document.getElementById('plan-source-status-banner');
-  // NOTE: do NOT clear tasksContainer here — just update state quietly
-  // to avoid wiping emergency tasks mid-session.
+  state.approvedTasksToday = approvedList || [];
 
-  try {
-    const approved = await gasService.fetchApprovedTasksForDate(
-      state.reportDate,
-      state.subcontractor.name,
-      state.project.id
-    );
-    state.approvedTasksToday = approved || [];
+  if (state.approvedTasksToday.length > 0) {
+    const fromPlanTasks = state.approvedTasksToday.map((at, idx) => ({
+      id: 'TASK-' + (at.taskId || ('P-' + idx)),
+      source_task_id: at.taskId || at.id || ('TASK-' + idx),
+      from_plan: true,
+      company: at.company || state.subcontractor.name || '-',
+      name: at.name || at.taskName || at.category || 'งานตามแผน',
+      category: at.category || 'ทั่วไป',
+      workArea: at.workArea || at.work_area || '',
+      description: at.description || at.taskDesc || '',
+      quantity: at.quantity || at.targetQty || '',
+      plannedWorkers: at.plannedWorkers || 0,
+      progress: 0,
+      isPlanned: true
+    }));
 
-    if (state.approvedTasksToday.length > 0) {
-      // สร้าง list งานตามแผนจาก backend
-      const fromPlanTasks = state.approvedTasksToday.map((at, idx) => ({
-        id: 'TASK-' + Date.now() + '-' + idx,
-        source_task_id: at.taskId,
-        from_plan: true,
-        company: at.company || state.subcontractor.name || '-',
-        name: at.name || at.taskName || at.category || 'งานตามแผน',
-        category: at.category || 'ทั่วไป',
-        workArea: at.workArea || at.work_area || '',
-        description: at.description || at.taskDesc || '',
-        quantity: at.quantity || at.targetQty || '',
-        plannedWorkers: at.plannedWorkers || 0,
-        progress: 0,
-        isPlanned: true
-      }));
+    const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
+    const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
 
-      // คงงานฉุกเฉินนอกแผน (from_plan=false) ที่โฟร์แมนเพิ่มไว้ก่อน แล้วค่อยรวมกับงานแผน
-      const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
-      const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
+    state.morningPlannedTasks = [...fromPlanTasks, ...emergencyMorning];
 
-      // อัปเดต morningPlannedTasks: งานแผนใหม่ + งานฉุกเฉินที่มีอยู่
-      state.morningPlannedTasks = [...fromPlanTasks, ...emergencyMorning];
-
-      // ถ้า eveningActualTasks ยังว่างอยู่ ยังไม่ต้องยุ่ง (จะถูก init ตอน switchShift)
-      // แต่ถ้ามีงานฉุกเฉินเย็นอยู่แล้ว ให้คงไว้
-      if (state.eveningActualTasks.length > 0) {
-        // คงงานฉุกเฉินเย็น; งานจากแผนจะถูก sync ตอน switchShift ครั้งหน้า
-        state.eveningActualTasks = [
-          ...state.eveningActualTasks.filter(t => t.from_plan),
-          ...emergencyEvening
-        ];
-      }
-
-      if (banner) {
-        banner.className = 'approved-tasks-banner approved-active';
-        banner.style.display = 'flex';
-        banner.innerHTML = `
-          <div class="approved-banner-left">
-            <span class="banner-icon">🎯</span>
-            <div class="banner-content">
-              <strong>มี ${state.approvedTasksToday.length} รายการงานตามแผนที่ได้รับอนุมัติจาก PM วันนี้</strong>
-              <p>ระบบโหลดเป้าหมายจากแผนงานของหัวหน้าผู้รับเหมาให้อัตโนมัติแล้ว</p>
-            </div>
-          </div>
-          <span class="badge-status-approved" style="font-size: 0.72rem;">✓ อนุมัติแล้ว</span>
-        `;
-      }
-    } else {
-      // ไม่มีงานที่ PM อนุมัติสำหรับวันนี้
-      // คงแต่งานฉุกเฉินที่โฟร์แมนเพิ่มไว้
-      const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
-      const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
-      state.morningPlannedTasks = emergencyMorning;
-      if (state.eveningActualTasks.length > 0) {
-        state.eveningActualTasks = emergencyEvening;
-      }
-
-      if (banner) {
-        banner.className = 'approved-tasks-banner unapproved-warning';
-        banner.style.display = 'flex';
-        banner.innerHTML = `
-          <div class="approved-banner-left">
-            <span class="banner-icon">⚠️</span>
-            <div class="banner-content">
-              <strong style="color: #b45309;">ยังไม่มีแผนงานที่ได้รับการอนุมัติจาก PM สำหรับวันนี้</strong>
-              <p>โปรดรอหัวหน้าผู้รับเหมายื่นแผนงานรายสัปดาห์ และรอ PM กดอนุมัติ</p>
-            </div>
-          </div>
-        `;
-      }
+    if (state.eveningActualTasks.length > 0) {
+      state.eveningActualTasks = [
+        ...state.eveningActualTasks.filter(t => t.from_plan),
+        ...emergencyEvening
+      ];
     }
-  } catch (err) {
-    console.warn('loadApprovedTasksForToday error:', err);
-    // ไม่ reset state — คงงานฉุกเฉินไว้
+
+    if (banner) {
+      banner.className = 'approved-tasks-banner approved-active';
+      banner.style.display = 'flex';
+      banner.innerHTML = `
+        <div class="approved-banner-left">
+          <span class="banner-icon">🎯</span>
+          <div class="banner-content">
+            <strong>มี ${state.approvedTasksToday.length} รายการงานตามแผนที่ได้รับอนุมัติจาก PM วันนี้</strong>
+            <p>ระบบโหลดเป้าหมายจากแผนงานของหัวหน้าผู้รับเหมาให้อัตโนมัติแล้ว</p>
+          </div>
+        </div>
+        <span class="badge-status-approved" style="font-size: 0.72rem;">✓ อนุมัติแล้ว</span>
+      `;
+    }
+  } else {
+    const emergencyMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
+    const emergencyEvening = state.eveningActualTasks.filter(t => !t.from_plan);
+    state.morningPlannedTasks = emergencyMorning;
+    if (state.eveningActualTasks.length > 0) {
+      state.eveningActualTasks = emergencyEvening;
+    }
+
+    if (banner) {
+      banner.className = 'approved-tasks-banner unapproved-warning';
+      banner.style.display = 'flex';
+      banner.innerHTML = `
+        <div class="approved-banner-left">
+          <span class="banner-icon">⚠️</span>
+          <div class="banner-content">
+            <strong style="color: #b45309;">ยังไม่มีแผนงานที่ได้รับการอนุมัติจาก PM สำหรับวันนี้</strong>
+            <p>โปรดรอหัวหน้าผู้รับเหมายื่นแผนงานรายสัปดาห์ และรอ PM กดอนุมัติ</p>
+          </div>
+        </div>
+      `;
+    }
   }
 
   renderDynamicTasks();
+}
+
+async function loadApprovedTasksForToday() {
+  const cacheKey = `cpm_cache_tasks_${state.project.id}_${state.reportDate}_${state.subcontractor.name}`;
+
+  // 1. Instant Cache Display (0ms)
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        applyApprovedTasks(parsed);
+      }
+    }
+  } catch (e) {}
+
+  // 2. Fast Firestore Fetch in parallel (<100ms)
+  if (firebaseService.isConfigured()) {
+    firebaseService.getApprovedTasks(state.reportDate, state.project.id).then(fbTasks => {
+      if (fbTasks && fbTasks.length > 0) {
+        const mySub = state.subcontractor.name;
+        const filtered = (mySub && mySub !== '-') 
+          ? fbTasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
+          : fbTasks;
+        if (filtered.length > 0) {
+          applyApprovedTasks(filtered);
+          try { localStorage.setItem(cacheKey, JSON.stringify(filtered)); } catch(e) {}
+        }
+      }
+    }).catch(e => console.warn('[Foreman] Firestore getApprovedTasks error:', e));
+  }
+
+  // 3. Background GAS Fetch (fallback & master sync)
+  if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+    gasService.fetchApprovedTasksForDate(state.reportDate, state.subcontractor.name, state.project.id).then(gasTasks => {
+      if (gasTasks && gasTasks.length > 0) {
+        applyApprovedTasks(gasTasks);
+        try { localStorage.setItem(cacheKey, JSON.stringify(gasTasks)); } catch(e) {}
+      }
+    }).catch(e => console.warn('[Foreman] GAS fetchApprovedTasks error:', e));
+  }
 }
 
 // ==========================================
@@ -1050,98 +1078,97 @@ function renderShiftUI() {
   renderDynamicTasks();
 }
 
+function applyExistingReports(list) {
+  if (!list || list.length === 0) return;
+  const today = state.reportDate;
+  const mySub = state.subcontractor.name;
+  const myUid = state.lineUser.uid;
+
+  // Find morning report for today (or already completed report)
+  const mReport = list.find(r => {
+    const rDate = r.report_date || r['วันที่รายงาน (Date)'];
+    const rShift = String(r.shift_label || '');
+    const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
+    const rUid = r.line_uid || r['LINE UID'];
+    const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
+    const isCompleted = rShift.includes('เช้า-จบงาน') || r.status === 'day_completed';
+    const isMorn = isCompleted || rShift.includes('เช้า') || String(r.id || '').startsWith('MORN');
+    return rDate === today && isMatchUser && isMorn;
+  }) || null;
+
+  if (mReport) {
+    state.existingMorningReport = mReport;
+    if (mReport.foreman_count !== undefined) {
+      state.workforce.foreman = Number(mReport.foreman_count || 1);
+      state.workforce.skilled_workers = Number(mReport.skilled_count || 0);
+      state.workforce.general_labor = Number(mReport.labor_count || 0);
+      state.workforce.safety_officer = Number(mReport.safety_count || 0);
+      renderWorkforce();
+    }
+    if (mReport.weather) {
+      const matchW = ['sunny', 'cloudy', 'rain_light', 'rain_heavy'].find(t => mReport.weather.includes(t));
+      if (matchW) state.weather.type = matchW;
+      state.weather.text = mReport.weather;
+      renderWeather();
+    }
+    if (mReport.machinery && mReport.machinery !== '-') {
+      state.machinery = String(mReport.machinery).split(',').map(s => s.trim()).filter(Boolean);
+      renderMachinery();
+    }
+  }
+
+  // Find evening report for today
+  const eReport = list.find(r => {
+    const rDate = r.report_date || r['วันที่รายงาน (Date)'];
+    const rShift = String(r.shift_label || '');
+    const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
+    const rUid = r.line_uid || r['LINE UID'];
+    const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
+    const isCompleted = rShift.includes('เช้า-จบงาน') || r.status === 'day_completed';
+    const isEve = isCompleted || rShift.includes('เย็น') || rShift.includes('จบงาน') || String(r.id || '').startsWith('EVEN');
+    return rDate === today && isMatchUser && isEve;
+  }) || null;
+
+  if (eReport) {
+    state.existingEveningReport = eReport;
+  }
+
+  renderShiftUI();
+}
+
 async function checkExistingReportForToday() {
   if (!state.project.id || state.project.id === '-') return;
+  const cacheKey = `cpm_cache_reports_${state.project.id}_${state.reportDate}`;
+
+  // 1. Instant Cache Load (0ms)
   try {
-    let list = [];
-
-    // 1. Fast Firestore fetch (<100ms) to immediately catch any newly submitted reports
-    if (firebaseService.isConfigured()) {
-      try {
-        const fbList = await firebaseService.getDailyReports(state.project.id);
-        if (fbList && fbList.length > 0) {
-          list = fbList;
-        }
-      } catch (fbErr) {
-        console.warn('[Foreman] Firebase getDailyReports error:', fbErr);
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        applyExistingReports(parsed);
       }
     }
+  } catch(e) {}
 
-    // 2. Fetch from GAS & merge with Firestore list
-    if (gasService.isConfigured()) {
-      try {
-        const gasList = await gasService.fetchDailyReports(state.project.id);
-        if (gasList && gasList.length > 0) {
-          const map = new Map();
-          // Put Firestore items first
-          list.forEach(r => map.set(String(r.id), r));
-          // Merge GAS items
-          gasList.forEach(r => {
-            const existing = map.get(String(r.id)) || {};
-            map.set(String(r.id), { ...existing, ...r });
-          });
-          list = Array.from(map.values());
-        }
-      } catch (gasErr) {
-        console.warn('[Foreman] GAS fetchDailyReports error:', gasErr);
+  // 2. Fast Firestore fetch (<100ms)
+  if (firebaseService.isConfigured()) {
+    firebaseService.getDailyReports(state.project.id).then(fbList => {
+      if (fbList && fbList.length > 0) {
+        applyExistingReports(fbList);
+        try { localStorage.setItem(cacheKey, JSON.stringify(fbList)); } catch(e) {}
       }
-    }
+    }).catch(e => console.warn('[Foreman] Firebase getDailyReports error:', e));
+  }
 
-    if (list && list.length > 0) {
-      const today = state.reportDate;
-      const mySub = state.subcontractor.name;
-      const myUid = state.lineUser.uid;
-
-      // Find morning report for today (or already completed report)
-      state.existingMorningReport = list.find(r => {
-        const rDate = r.report_date || r['วันที่รายงาน (Date)'];
-        const rShift = String(r.shift_label || '');
-        const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
-        const rUid = r.line_uid || r['LINE UID'];
-        const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
-        const isCompleted = rShift.includes('เช้า-จบงาน') || r.status === 'day_completed';
-        const isMorn = isCompleted || rShift.includes('เช้า') || String(r.id || '').startsWith('MORN');
-        return rDate === today && isMatchUser && isMorn;
-      }) || null;
-
-      // Find evening report for today
-      state.existingEveningReport = list.find(r => {
-        const rDate = r.report_date || r['วันที่รายงาน (Date)'];
-        const rShift = String(r.shift_label || '');
-        const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
-        const rUid = r.line_uid || r['LINE UID'];
-        const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
-        const isCompleted = rShift.includes('เช้า-จบงาน') || r.status === 'day_completed';
-        const isEve = isCompleted || rShift.includes('เย็น') || rShift.includes('จบงาน') || String(r.id || '').startsWith('EVEN');
-        return rDate === today && isMatchUser && isEve;
-      }) || null;
-
-      // ถ้ามีรายงานรอบเช้าอยู่แล้ว ให้ดึงข้อมูลมาแสดงบนแบบฟอร์ม
-      if (state.existingMorningReport) {
-        const em = state.existingMorningReport;
-        if (em.foreman_count !== undefined) {
-          state.workforce.foreman = Number(em.foreman_count || 1);
-          state.workforce.skilled_workers = Number(em.skilled_count || 0);
-          state.workforce.general_labor = Number(em.labor_count || 0);
-          state.workforce.safety_officer = Number(em.safety_count || 0);
-          renderWorkforce();
-        }
-        if (em.weather) {
-          const matchW = ['sunny', 'cloudy', 'rain_light', 'rain_heavy'].find(t => em.weather.includes(t));
-          if (matchW) state.weather.type = matchW;
-          state.weather.text = em.weather;
-          renderWeather();
-        }
-        if (em.machinery && em.machinery !== '-') {
-          state.machinery = String(em.machinery).split(',').map(s => s.trim()).filter(Boolean);
-          renderMachinery();
-        }
+  // 3. Background GAS fetch
+  if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+    gasService.fetchDailyReports(state.project.id).then(gasList => {
+      if (gasList && gasList.length > 0) {
+        applyExistingReports(gasList);
+        try { localStorage.setItem(cacheKey, JSON.stringify(gasList)); } catch(e) {}
       }
-
-      renderShiftUI();
-    }
-  } catch(e) {
-    console.warn('checkExistingReportForToday error:', e);
+    }).catch(e => console.warn('[Foreman] GAS fetchDailyReports error:', e));
   }
 }
 
