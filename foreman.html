@@ -245,35 +245,57 @@
         </div>
       </section>
 
-      <!-- 5. Photos & Visual Proof -->
-      <section class="card">
+      <!-- 5. Photos & Visual Proof: ช่องใส่รูปเช้ากับปิดงานไว้ข้างกัน ความสูงเท่ากัน -->
+      <section class="card" id="photos-card-section">
         <div class="card-header flex-between">
           <div class="card-title">
             <span class="icon">📷</span>
-            <h2 id="photo-section-title">ภาพถ่ายแถวเปิดงาน / Safety Talk</h2>
+            <h2>ภาพถ่ายหน้างาน (เช้า / ปิดงาน)</h2>
           </div>
-          <span class="badge-hint" id="photo-counter">0 รูป</span>
+          <span class="badge-hint" id="photo-counter">รวม 0 รูป</span>
         </div>
         <div class="card-body">
-          <!-- พรีวิวภาพถ่ายเปิดงานรอบเช้า (แสดงในรอบปิดงาน) -->
-          <div id="morning-photos-container" style="display: none; margin-bottom: 1rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px;">
-            <div style="font-size: 0.78rem; font-weight: 700; color: #166534; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-              <span>🌅 ภาพเปิดงานรอบเช้าที่บันทึกแล้ว</span>
-              <span id="morning-photo-count-badge" style="font-size: 0.7rem; background: #dcfce7; color: #15803d; padding: 1px 6px; border-radius: 4px;">0 รูป</span>
-            </div>
-            <div class="photos-grid" id="morning-photos-grid"></div>
-          </div>
+          <input type="file" id="camera-file-input-morning" accept="image/*" capture="environment" style="display: none;">
+          <input type="file" id="camera-file-input-evening" accept="image/*" capture="environment" style="display: none;">
 
-          <input type="file" id="camera-file-input" accept="image/*" capture="environment" style="display: none;">
-          <div class="camera-trigger-box" id="camera-trigger-btn">
-            <div class="cam-icon">📸</div>
-            <div>
-              <strong id="camera-trigger-title">แตะถ่ายรูปแถวคนงาน หรือประชุม Safety</strong>
-              <span id="camera-trigger-desc">ประทับเวลาเปิดงานรอบเช้า และ LINE UID</span>
+          <!-- Dual side-by-side photo slots -->
+          <div class="dual-photo-slots">
+            <!-- ฝั่งซ้าย: รูปเปิดงานเช้า -->
+            <div class="photo-slot-box morning-box">
+              <div class="photo-slot-header">
+                <span class="slot-badge morning">🌅 รูปเปิดงาน (เช้า)</span>
+                <span class="slot-counter" id="morning-photo-count">0 รูป</span>
+              </div>
+              <div class="photo-trigger-btn" id="camera-trigger-morning" title="แตะเพื่อถ่ายหรือเลือกภาพเปิดงานรอบเช้า">
+                <div class="trigger-cam-icon">📸</div>
+                <div class="trigger-meta">
+                  <strong>ถ่ายรูปเปิดงานเช้า</strong>
+                  <span>แถวคนงาน / Safety</span>
+                </div>
+              </div>
+              <div class="photos-equal-container" id="morning-photos-preview-grid">
+                <!-- Morning photos rendered via JS -->
+              </div>
+            </div>
+
+            <!-- ฝั่งขวา: รูปปิดงานเย็น -->
+            <div class="photo-slot-box evening-box">
+              <div class="photo-slot-header">
+                <span class="slot-badge evening">🌆 รูปปิดงาน (เย็น)</span>
+                <span class="slot-counter" id="evening-photo-count">0 รูป</span>
+              </div>
+              <div class="photo-trigger-btn" id="camera-trigger-evening" title="แตะเพื่อถ่ายหรือเลือกภาพผลงานตอนปิดงาน">
+                <div class="trigger-cam-icon">📸</div>
+                <div class="trigger-meta">
+                  <strong>ถ่ายรูปปิดงานเย็น</strong>
+                  <span>ผลงานจริงหน้างาน</span>
+                </div>
+              </div>
+              <div class="photos-equal-container" id="evening-photos-preview-grid">
+                <!-- Evening photos rendered via JS -->
+              </div>
             </div>
           </div>
-          <div id="photo-merge-hint" class="photo-merge-hint" style="display: none;"></div>
-          <div class="photos-grid" id="photos-preview-grid" style="margin-top: 0.75rem;"></div>
         </div>
       </section>
 

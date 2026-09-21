@@ -108,25 +108,45 @@ export function buildDailyReportHtml(report, options = {}) {
     });
   }
 
-  // รูปภาพ (แปลงเป็น Direct Image CDN)
-  const rawPhotos = report.photoUrls || report['ลิงก์รูปภาพหน้างาน (Drive)'] || report.photos || '';
-  let photoList = [];
-  if (Array.isArray(rawPhotos)) {
-    photoList = rawPhotos.map(p => typeof p === 'string' ? formatDirectDriveImageUrl(p) : (p.url ? formatDirectDriveImageUrl(p.url) : p.base64)).filter(Boolean);
-  } else if (typeof rawPhotos === 'string' && rawPhotos.trim()) {
-    photoList = rawPhotos.split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean);
+  // รูปภาพ: แยกรูปเช้าและรูปปิดงาน (แปลงเป็น Direct Image CDN)
+  function extractPhotoUrls(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) {
+      return raw.map(p => typeof p === 'string' ? formatDirectDriveImageUrl(p) : (p.url ? formatDirectDriveImageUrl(p.url) : p.base64)).filter(Boolean);
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw.split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean);
+    }
+    return [];
   }
 
-  // หากมีรายงานของอีกกะ (เช้า-เย็น) ให้รวมรูปภาพทั้งหมดเข้าด้วยกัน
-  if (options.matchingReport) {
-    const matchingPhotos = options.matchingReport.photoUrls || options.matchingReport['ลิงก์รูปภาพหน้างาน (Drive)'] || options.matchingReport.photos || '';
-    let matchingList = [];
-    if (Array.isArray(matchingPhotos)) {
-      matchingList = matchingPhotos.map(p => typeof p === 'string' ? formatDirectDriveImageUrl(p) : (p.url ? formatDirectDriveImageUrl(p.url) : p.base64)).filter(Boolean);
-    } else if (typeof matchingPhotos === 'string' && matchingPhotos.trim()) {
-      matchingList = matchingPhotos.split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean);
+  let mornPhotos = extractPhotoUrls(report.morning_photos);
+  let evePhotos = extractPhotoUrls(report.evening_photos);
+
+  if (mornPhotos.length === 0 && evePhotos.length === 0) {
+    if (options.matchingReport) {
+      const isCurMorn = String(report.shift_type || report.shift_label || '').includes('เช้า');
+      if (isCurMorn) {
+        mornPhotos = extractPhotoUrls(report.photos || report.photoUrls || report['ลิงก์รูปภาพหน้างาน (Drive)']);
+        evePhotos = extractPhotoUrls(options.matchingReport.photos || options.matchingReport.photoUrls || options.matchingReport['ลิงก์รูปภาพหน้างาน (Drive)']);
+      } else {
+        evePhotos = extractPhotoUrls(report.photos || report.photoUrls || report['ลิงก์รูปภาพหน้างาน (Drive)']);
+        mornPhotos = extractPhotoUrls(options.matchingReport.photos || options.matchingReport.photoUrls || options.matchingReport['ลิงก์รูปภาพหน้างาน (Drive)']);
+      }
+    } else {
+      const allP = extractPhotoUrls(report.photos || report.photoUrls || report['ลิงก์รูปภาพหน้างาน (Drive)']);
+      if (allP.length === 1) {
+        if (String(report.shift_type || report.shift_label || '').includes('เย็น')) {
+          evePhotos = allP;
+        } else {
+          mornPhotos = allP;
+        }
+      } else if (allP.length > 1) {
+        const mid = Math.ceil(allP.length / 2);
+        mornPhotos = allP.slice(0, mid);
+        evePhotos = allP.slice(mid);
+      }
     }
-    photoList = [...photoList, ...matchingList];
   }
 
   // สร้าง HTML Document Template
@@ -289,28 +309,69 @@ export function buildDailyReportHtml(report, options = {}) {
         </tr>
       </table>
 
-      <!-- 6. Photos Section (If any) -->
-      ${photoList.length > 0 ? `
+      <!-- 6. Photos Section: ช่องแสดงรูปเช้ากับปิดงานไว้ข้างกัน ความสูงเท่ากัน -->
+      ${(mornPhotos.length > 0 || evePhotos.length > 0) ? `
         <div style="margin-bottom: 16px; page-break-inside: avoid;">
-          <div style="font-size: 0.85rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-            <span>📸</span> ภาพถ่ายบันทึกการปฏิบัติงานหน้างาน (${photoList.length} ภาพ)
+          <div style="font-size: 0.85rem; font-weight: 800; color: #0f172a; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>📸</span> ภาพถ่ายบันทึกการปฏิบัติงานหน้างาน (เปรียบเทียบเปิดงานเช้า vs ปิดงานเย็น)
           </div>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-            ${photoList.slice(0, 6).map((url, pIdx) => `
-              <div style="border: 1.5px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center;">
-                <img 
-                  src="${url}" 
-                  alt="รูปหน้างาน ${pIdx + 1}" 
-                  style="width: 100%; height: 110px; object-fit: cover; display: block;" 
-                  crossorigin="anonymous"
-                  onerror="this.style.display='none'"
-                />
-                <div style="font-size: 0.65rem; color: #64748b; padding: 2px 4px; background: #f1f5f9; border-top: 1px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                  ภาพที่ ${pIdx + 1} (${escapeHtml(thaiDate)})
+          <table style="width: 100%; border-collapse: separate; border-spacing: 10px 0;">
+            <tr>
+              <!-- ฝั่งซ้าย: ภาพเปิดงานรอบเช้า -->
+              <td style="width: 50%; vertical-align: top; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 10px;">
+                <div style="font-size: 0.78rem; font-weight: 800; color: #166534; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                  <span>🌅 ภาพเปิดงานรอบเช้า / Safety</span>
+                  <span style="font-size: 0.68rem; background: #dcfce7; color: #15803d; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${mornPhotos.length} ภาพ</span>
                 </div>
-              </div>
-            `).join('')}
-          </div>
+                ${mornPhotos.length > 0 ? `
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px;">
+                    ${mornPhotos.slice(0, 4).map((url, pIdx) => `
+                      <div style="border: 1px solid #bbf7d0; border-radius: 6px; overflow: hidden; background: #000; text-align: center;">
+                        <img 
+                          src="${url}" 
+                          alt="ภาพเปิดงาน ${pIdx + 1}" 
+                          style="width: 100%; height: 115px; object-fit: cover; display: block;" 
+                          crossorigin="anonymous"
+                          onerror="this.style.display='none'"
+                        />
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : `
+                  <div style="text-align: center; color: #94a3b8; font-size: 0.72rem; padding: 2rem 0; border: 1px dashed #cbd5e1; border-radius: 6px; background: #fff;">
+                    ไม่มีภาพเปิดงานเช้า
+                  </div>
+                `}
+              </td>
+
+              <!-- ฝั่งขวา: ภาพปิดงานรอบเย็น -->
+              <td style="width: 50%; vertical-align: top; background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 10px;">
+                <div style="font-size: 0.78rem; font-weight: 800; color: #1e40af; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                  <span>🌆 ภาพผลงานจริงตอนปิดงาน</span>
+                  <span style="font-size: 0.68rem; background: #dbeafe; color: #1d4ed8; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${evePhotos.length} ภาพ</span>
+                </div>
+                ${evePhotos.length > 0 ? `
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px;">
+                    ${evePhotos.slice(0, 4).map((url, pIdx) => `
+                      <div style="border: 1px solid #bfdbfe; border-radius: 6px; overflow: hidden; background: #000; text-align: center;">
+                        <img 
+                          src="${url}" 
+                          alt="ภาพปิดงาน ${pIdx + 1}" 
+                          style="width: 100%; height: 115px; object-fit: cover; display: block;" 
+                          crossorigin="anonymous"
+                          onerror="this.style.display='none'"
+                        />
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : `
+                  <div style="text-align: center; color: #94a3b8; font-size: 0.72rem; padding: 2rem 0; border: 1px dashed #cbd5e1; border-radius: 6px; background: #fff;">
+                    ไม่มีภาพปิดงานเย็น
+                  </div>
+                `}
+              </td>
+            </tr>
+          </table>
         </div>
       ` : ''}
 

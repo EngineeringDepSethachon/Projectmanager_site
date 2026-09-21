@@ -1243,6 +1243,198 @@ body {
 }
 
 /* ============================================================
+   Dual Side-by-Side Photo Slots (เช้า vs ปิดงาน ความสูงเท่ากัน)
+   ============================================================ */
+.dual-photo-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.photo-slot-box {
+  background: var(--bg-card-subtle, #f8fafc);
+  border: 1.5px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 10px);
+  padding: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 200px;
+}
+
+.photo-slot-box.morning-box {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.photo-slot-box.evening-box {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.photo-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.slot-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.slot-badge.morning {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.slot-badge.evening {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+
+.slot-counter {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+}
+
+.photo-trigger-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+  border-radius: 8px;
+  border: 1.5px dashed currentColor;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.morning-box .photo-trigger-btn {
+  color: #15803d;
+  background: #ffffff;
+  border-color: #22c55e;
+}
+
+.evening-box .photo-trigger-btn {
+  color: #1d4ed8;
+  background: #ffffff;
+  border-color: #3b82f6;
+}
+
+.photo-trigger-btn:hover,
+.photo-trigger-btn:active {
+  transform: translateY(-1px);
+  filter: brightness(0.97);
+}
+
+.trigger-cam-icon {
+  font-size: 1.5rem;
+  margin-bottom: 2px;
+}
+
+.trigger-meta strong {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.trigger-meta span {
+  display: block;
+  font-size: 0.65rem;
+  opacity: 0.8;
+  margin-top: 1px;
+}
+
+/* Container for photos in each slot */
+.photos-equal-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* Photo card with strict equal height */
+.photo-card-equal {
+  position: relative;
+  width: 100%;
+  height: 125px; /* ความสูงเท่ากันแน่นอน */
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #1e293b;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.photo-card-equal img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-card-equal .photo-stamp {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(2px);
+  color: #ffffff;
+  font-size: 0.62rem;
+  padding: 2px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+}
+
+.photo-card-equal .btn-remove-photo {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.85);
+  color: #ffffff;
+  border: none;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.photo-card-equal .btn-remove-photo:hover {
+  transform: scale(1.15);
+  background: #dc2626;
+}
+
+.slot-empty-hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  text-align: center;
+  padding: 0.75rem 0.4rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* ============================================================
    Unplanned Task Button — Redesigned
    ============================================================ */
 #btn-add-unplanned-task {

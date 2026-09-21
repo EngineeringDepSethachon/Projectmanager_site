@@ -1122,6 +1122,26 @@ function applyExistingReports(list) {
         }
       }
     }
+
+    // Hydrate morning photos if available
+    if (state.photos.length === 0) {
+      const rawM = mReport.morning_photos || mReport.photos || mReport.photoUrls || mReport['ลิงก์รูปภาพหน้างาน (Drive)'];
+      if (Array.isArray(rawM)) {
+        state.photos = rawM.map((p, i) => typeof p === 'string' ? { id: 'PH-M-'+i, url: p, timestamp: '🌅 เปิดงานเช้า' } : p).filter(p => p && p.url);
+      } else if (typeof rawM === 'string' && rawM.trim()) {
+        state.photos = rawM.split(',').map((u, i) => ({ id: 'PH-M-'+i, url: u.trim(), timestamp: '🌅 เปิดงานเช้า' })).filter(p => p.url);
+      }
+    }
+
+    // Hydrate evening photos if morning report was completed with evening photos
+    if (state.eveningPhotos.length === 0 && mReport.evening_photos) {
+      const rawE = mReport.evening_photos;
+      if (Array.isArray(rawE)) {
+        state.eveningPhotos = rawE.map((p, i) => typeof p === 'string' ? { id: 'PH-E-'+i, url: p, timestamp: '🌆 ปิดงาน' } : p).filter(p => p && p.url);
+      } else if (typeof rawE === 'string' && rawE.trim()) {
+        state.eveningPhotos = rawE.split(',').map((u, i) => ({ id: 'PH-E-'+i, url: u.trim(), timestamp: '🌆 ปิดงาน' })).filter(p => p.url);
+      }
+    }
   }
 
   // Find evening report for today
@@ -1138,8 +1158,17 @@ function applyExistingReports(list) {
 
   if (eReport) {
     state.existingEveningReport = eReport;
+    if (state.eveningPhotos.length === 0) {
+      const rawE = eReport.evening_photos || (eReport !== mReport ? (eReport.photos || eReport.photoUrls || eReport['ลิงก์รูปภาพหน้างาน (Drive)']) : null);
+      if (Array.isArray(rawE)) {
+        state.eveningPhotos = rawE.map((p, i) => typeof p === 'string' ? { id: 'PH-E-'+i, url: p, timestamp: '🌆 ปิดงาน' } : p).filter(p => p && p.url);
+      } else if (typeof rawE === 'string' && rawE.trim()) {
+        state.eveningPhotos = rawE.split(',').map((u, i) => ({ id: 'PH-E-'+i, url: u.trim(), timestamp: '🌆 ปิดงาน' })).filter(p => p.url);
+      }
+    }
   }
 
+  renderPhotos();
   renderShiftUI();
 }
 
@@ -1209,64 +1238,64 @@ function renderWorkforce() {
 }
 
 function renderPhotos() {
-  const isMorning = state.activeShift === 'morning';
-  const currentPhotos = isMorning ? state.photos : state.eveningPhotos;
+  // 1. Update overall photo counter badge
+  const totalCount = (state.photos ? state.photos.length : 0) + (state.eveningPhotos ? state.eveningPhotos.length : 0);
   const countEl = document.getElementById('photo-counter');
-  if (countEl) countEl.innerText = `${currentPhotos.length} รูป${!isMorning ? ' (ปิดงาน)' : ''}`;
+  if (countEl) countEl.innerText = `รวม ${totalCount} รูป`;
 
-  const gridEl = document.getElementById('photos-preview-grid');
-  if (gridEl) {
-    gridEl.innerHTML = currentPhotos.map((p, idx) => `
-      <div class="photo-card">
-        <img src="${p.url}" alt="รูปหน้างาน">
-        <div class="photo-stamp">${p.timestamp || ''}</div>
-        <button type="button" class="btn-remove-photo" onclick="window.removePhoto(${idx})">&times;</button>
-      </div>
-    `).join('');
+  // 2. Render Left Slot: Morning Photos (รูปเปิดงานเช้า)
+  const mCountEl = document.getElementById('morning-photo-count');
+  if (mCountEl) mCountEl.innerText = `${state.photos.length} รูป`;
+  const mGrid = document.getElementById('morning-photos-preview-grid');
+  if (mGrid) {
+    if (state.photos.length === 0) {
+      mGrid.innerHTML = `
+        <div class="slot-empty-hint">
+          📷 ยังไม่มีรูปเปิดงานเช้า
+        </div>
+      `;
+    } else {
+      mGrid.innerHTML = state.photos.map((p, idx) => `
+        <div class="photo-card-equal">
+          <img src="${p.url}" alt="รูปเปิดงานเช้า ${idx+1}">
+          <div class="photo-stamp">${p.timestamp || '🌅 เปิดงานเช้า'}</div>
+          <button type="button" class="btn-remove-photo" onclick="window.removePhoto('morning', ${idx})" title="ลบรูป">&times;</button>
+        </div>
+      `).join('');
+    }
   }
 
-  // Morning photos preview container (เฉพาะรอบปิดงาน)
-  const mornPhotoContainer = document.getElementById('morning-photos-container');
-  const mornPhotoGrid = document.getElementById('morning-photos-grid');
-  const mornPhotoBadge = document.getElementById('morning-photo-count-badge');
-
-  if (mornPhotoContainer) {
-    if (!isMorning && state.existingMorningReport) {
-      let mPhotos = [];
-      const em = state.existingMorningReport;
-      if (em.photoUrls) {
-        mPhotos = String(em.photoUrls).split(',').map(s => s.trim()).filter(Boolean);
-      } else if (state.photos && state.photos.length > 0) {
-        mPhotos = state.photos.map(p => p.url);
-      }
-
-      if (mPhotos.length > 0) {
-        mornPhotoContainer.style.display = 'block';
-        if (mornPhotoBadge) mornPhotoBadge.innerText = `${mPhotos.length} รูป`;
-        if (mornPhotoGrid) {
-          mornPhotoGrid.innerHTML = mPhotos.map((url, i) => `
-            <div class="photo-card morning-saved-photo">
-              <img src="${url}" alt="ภาพเปิดงานเช้า ${i+1}">
-              <div class="photo-stamp morning-stamp">🌅 เปิดงานเช้า #${i+1}</div>
-            </div>
-          `).join('');
-        }
-      } else {
-        mornPhotoContainer.style.display = 'none';
-      }
+  // 3. Render Right Slot: Evening Photos (รูปปิดงานเย็น)
+  const eCountEl = document.getElementById('evening-photo-count');
+  if (eCountEl) eCountEl.innerText = `${state.eveningPhotos.length} รูป`;
+  const eGrid = document.getElementById('evening-photos-preview-grid');
+  if (eGrid) {
+    if (state.eveningPhotos.length === 0) {
+      eGrid.innerHTML = `
+        <div class="slot-empty-hint">
+          📸 ยังไม่มีรูปปิดงานเย็น
+        </div>
+      `;
     } else {
-      mornPhotoContainer.style.display = 'none';
+      eGrid.innerHTML = state.eveningPhotos.map((p, idx) => `
+        <div class="photo-card-equal">
+          <img src="${p.url}" alt="รูปปิดงานเย็น ${idx+1}">
+          <div class="photo-stamp">${p.timestamp || '🌆 ปิดงาน'}</div>
+          <button type="button" class="btn-remove-photo" onclick="window.removePhoto('evening', ${idx})" title="ลบรูป">&times;</button>
+        </div>
+      `).join('');
     }
   }
 }
 
-window.removePhoto = function(idx) {
-  if (state.activeShift === 'morning') {
+window.removePhoto = function(shift, idx) {
+  if (shift === 'morning') {
     state.photos.splice(idx, 1);
   } else {
     state.eveningPhotos.splice(idx, 1);
   }
   renderPhotos();
+  showToast('ลบรูปภาพแล้ว', 'info');
 };
 
 function renderMachinery() {
@@ -1405,12 +1434,19 @@ function bindEventHandlers() {
     showToast('➕ เพิ่มงานรายงานเพิ่มเติมของโฟร์แมนแล้ว', 'info');
   });
 
-  // Camera upload
-  const camTrigger = document.getElementById('camera-trigger-btn');
-  const fileInput = document.getElementById('camera-file-input');
-  if (camTrigger && fileInput) {
-    camTrigger.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', handleFileUpload);
+  // Dual Camera upload: Morning and Evening
+  const camTriggerMorning = document.getElementById('camera-trigger-morning');
+  const fileInputMorning = document.getElementById('camera-file-input-morning');
+  if (camTriggerMorning && fileInputMorning) {
+    camTriggerMorning.addEventListener('click', () => fileInputMorning.click());
+    fileInputMorning.addEventListener('change', (e) => handleFileUpload('morning', e));
+  }
+
+  const camTriggerEvening = document.getElementById('camera-trigger-evening');
+  const fileInputEvening = document.getElementById('camera-file-input-evening');
+  if (camTriggerEvening && fileInputEvening) {
+    camTriggerEvening.addEventListener('click', () => fileInputEvening.click());
+    fileInputEvening.addEventListener('change', (e) => handleFileUpload('evening', e));
   }
 
   // Add custom machinery
@@ -1435,9 +1471,9 @@ function bindEventHandlers() {
 }
 
 // ==========================================
-// Photo Compression & Upload
+// Photo Compression & Upload (เช้า vs ปิดงาน)
 // ==========================================
-function handleFileUpload(e) {
+function handleFileUpload(shift, e) {
   const files = e.target.files;
   if (!files || files.length === 0) return;
 
@@ -1466,8 +1502,10 @@ function handleFileUpload(e) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
 
-      const isMorning = state.activeShift === 'morning';
-      const labelShift = isMorning ? '🌅 เปิดงาน' : '🌆 ปิดงาน';
+      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const labelShift = shift === 'morning' ? '🌅 เปิดงานเช้า' : '🌆 ปิดงานเย็น';
 
       const photoObj = {
         id: 'PH-' + Date.now(),
@@ -1476,14 +1514,15 @@ function handleFileUpload(e) {
         timestamp: `${state.reportDate} ${timeStr} (${labelShift})`
       };
 
-      if (isMorning) {
-        state.photos.unshift(photoObj);
+      if (shift === 'morning') {
+        state.photos.push(photoObj);
       } else {
-        state.eveningPhotos.unshift(photoObj);
+        state.eveningPhotos.push(photoObj);
       }
 
       renderPhotos();
       showToast(`📸 บันทึกภาพถ่าย${labelShift}สำเร็จ`, 'success');
+      e.target.value = '';
     };
     img.src = event.target.result;
   };
@@ -1572,7 +1611,10 @@ async function submitDailyReport() {
       quantity: t.quantity || '',
       progress: t.progress !== undefined ? t.progress : 0
     })),
-    photos: isMorning ? state.photos : (state.eveningPhotos.length > 0 ? state.eveningPhotos : state.photos),
+    photos: isMorning ? state.photos : (state.eveningPhotos.length > 0 ? [...state.photos, ...state.eveningPhotos] : state.photos),
+    morning_photos: state.photos,
+    evening_photos: state.eveningPhotos,
+    photoUrls: (isMorning ? state.photos : [...state.photos, ...state.eveningPhotos]).map(p => p.url).join(','),
     issues: finalIssues,
     totalWorkforce: totalWorkers,
     task_summary: isMorning 

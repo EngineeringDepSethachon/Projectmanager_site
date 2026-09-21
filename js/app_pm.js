@@ -1194,13 +1194,32 @@ window.viewReportDetails = function(idx) {
   const machinery = r.machinery || r['เครื่องจักรที่ใช้งาน'] || '-';
   const issues = r.issues || r['ปัญหาและอุปสรรค'] || r['ปัญหาอุปสรรค'] || '';
 
-  const photoRaw = r.photoUrls || r['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
-  let photoList = photoRaw ? String(photoRaw).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean) : [];
+  const parseList = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map(p => typeof p === 'string' ? formatDirectDriveImageUrl(p) : (p.url ? formatDirectDriveImageUrl(p.url) : p.base64)).filter(Boolean);
+    return String(raw).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean);
+  };
 
-  if (counterpart) {
-    const cpPhotos = counterpart.photoUrls || counterpart['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
-    const cpList = cpPhotos ? String(cpPhotos).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean) : [];
-    photoList = [...photoList, ...cpList];
+  let mornPhotos = parseList(r.morning_photos);
+  let evePhotos = parseList(r.evening_photos);
+
+  if (mornPhotos.length === 0 && evePhotos.length === 0) {
+    if (counterpart) {
+      const isRMorn = String(r.id || '').startsWith('MORN') || String(r.shift_label || '').includes('เช้า');
+      mornPhotos = isRMorn ? parseList(r.photoUrls || r.photos) : parseList(counterpart.photoUrls || counterpart.photos);
+      evePhotos = isRMorn ? parseList(counterpart.photoUrls || counterpart.photos) : parseList(r.photoUrls || r.photos);
+    } else {
+      const allP = parseList(r.photoUrls || r.photos);
+      if (String(r.id || '').startsWith('EVEN') || String(r.shift_label || '').includes('เย็น')) {
+        evePhotos = allP;
+      } else if (allP.length > 1) {
+        const mid = Math.ceil(allP.length / 2);
+        mornPhotos = allP.slice(0, mid);
+        evePhotos = allP.slice(mid);
+      } else {
+        mornPhotos = allP;
+      }
+    }
   }
 
   body.innerHTML = `
@@ -1260,17 +1279,47 @@ window.viewReportDetails = function(idx) {
       </div>
     ` : ''}
 
-    ${photoList.length > 0 ? `
+    ${(mornPhotos.length > 0 || evePhotos.length > 0) ? `
       <div>
-        <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-heading);">📸 ภาพถ่ายหน้างาน (${photoList.length} รูป):</h4>
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.6rem;">
-          ${photoList.map(url => `
-            <div style="border: 2px solid var(--border-dark); border-radius: 6px; overflow: hidden; background: #000;">
-              <a href="${url}" target="_blank" title="คลิกเพื่อดูรูปขนาดเต็ม">
-                <img src="${url}" alt="รูปหน้างาน" style="width: 100%; height: 130px; object-fit: cover; display: block;" onerror="this.src='https://placehold.co/300x200?text=Image+Load+Error'">
-              </a>
+        <h4 style="font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-heading);">📸 ภาพถ่ายหน้างาน (เปรียบเทียบเปิดงาน vs ปิดงาน):</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <!-- ช่องรูปเช้า -->
+          <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 10px;">
+            <div style="font-size: 0.76rem; font-weight: 800; color: #166534; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+              <span>🌅 ภาพเปิดงานเช้า</span>
+              <span style="font-size: 0.68rem; background: #dcfce7; color: #15803d; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${mornPhotos.length} รูป</span>
             </div>
-          `).join('')}
+            ${mornPhotos.length > 0 ? `
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px;">
+                ${mornPhotos.map(url => `
+                  <div style="border: 1px solid #bbf7d0; border-radius: 6px; overflow: hidden; background: #000;">
+                    <a href="${url}" target="_blank" title="คลิกเพื่อดูรูปขนาดเต็ม">
+                      <img src="${url}" alt="รูปเปิดงาน" style="width: 100%; height: 125px; object-fit: cover; display: block;" onerror="this.src='https://placehold.co/300x200?text=Image+Error'">
+                    </a>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `<div style="text-align:center; font-size:0.72rem; color:#94a3b8; padding:1.5rem 0; border:1px dashed #cbd5e1; border-radius:6px; background:#fff;">ไม่มีภาพเปิดงานเช้า</div>`}
+          </div>
+
+          <!-- ช่องรูปปิดงาน -->
+          <div style="background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 10px;">
+            <div style="font-size: 0.76rem; font-weight: 800; color: #1e40af; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+              <span>🌆 ภาพผลงานปิดงาน</span>
+              <span style="font-size: 0.68rem; background: #dbeafe; color: #1d4ed8; padding: 1px 6px; border-radius: 4px; font-weight: 700;">${evePhotos.length} รูป</span>
+            </div>
+            ${evePhotos.length > 0 ? `
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px;">
+                ${evePhotos.map(url => `
+                  <div style="border: 1px solid #bfdbfe; border-radius: 6px; overflow: hidden; background: #000;">
+                    <a href="${url}" target="_blank" title="คลิกเพื่อดูรูปขนาดเต็ม">
+                      <img src="${url}" alt="รูปปิดงาน" style="width: 100%; height: 125px; object-fit: cover; display: block;" onerror="this.src='https://placehold.co/300x200?text=Image+Error'">
+                    </a>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `<div style="text-align:center; font-size:0.72rem; color:#94a3b8; padding:1.5rem 0; border:1px dashed #cbd5e1; border-radius:6px; background:#fff;">ไม่มีภาพปิดงานเย็น</div>`}
+          </div>
         </div>
       </div>
     ` : ''}
