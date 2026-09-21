@@ -46,17 +46,16 @@ console.log('✅ 3. submitDailyReport() does NOT block on await gasService.sendR
 if (!submitBody.includes('renderShiftUI()')) {
   throw new Error('❌ submitDailyReport does not immediately call renderShiftUI()');
 }
-if (!submitBody.includes('saveReportToLocalCache(payload)')) {
-  throw new Error('❌ submitDailyReport does not saveReportToLocalCache');
+if (submitBody.includes('saveReportToLocalCache(payload)')) {
+  throw new Error('❌ submitDailyReport must NOT saveReportToLocalCache (no business data in localStorage)');
 }
 if (!submitBody.includes('runBackgroundReportSync(payload, shiftLabel, reportId)')) {
   throw new Error('❌ submitDailyReport does not delegate to runBackgroundReportSync');
 }
-console.log('✅ 4. submitDailyReport() performs instant optimistic commit and invokes runBackgroundReportSync');
+console.log('✅ 4. submitDailyReport() performs instant optimistic commit and invokes runBackgroundReportSync (without localStorage caching)');
 
-// 4. Verify helper functions exist
+// 4. Verify helper functions
 const helpers = [
-  'saveReportToLocalCache',
   'enqueueOfflineReport',
   'processOfflineReportsQueue',
   'showBackgroundSyncStatus',

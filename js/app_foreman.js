@@ -78,7 +78,17 @@ const QUICK_ISSUES = [
 // Initialization
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Instant First Paint (0ms) - using cached LocalStorage state immediately
+  // 0. ล้างแคชเก่าใน LocalStorage ออกทั้งหมด (ไม่เก็บข้อมูลรายงาน/งานไว้ในเครื่องอีกต่อไป)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('cpm_cache_') || key.startsWith('site_morning_plan_') || key.startsWith('cpm_site_reports_history') || key.startsWith('cpm_offline_reports_queue'))) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch(e) {}
+
+  // 1. Instant First Paint (0ms)
   parseUrlParams();
   initDateDisplay();
   renderProjectInfo();
@@ -239,9 +249,7 @@ function applyApprovedTasks(approvedList) {
 }
 
 async function loadApprovedTasksForToday() {
-  const cacheKey = `cpm_cache_tasks_${state.project.id}_${state.reportDate}_${state.subcontractor.name}`;
-
-  // 1. Instant check: ถ้ามี existingMorningReport และมีรายการงาน ให้ใช้ทันที (0ms)
+  // 1. ตรวจสอบรายงานเช้าใน Memory ก่อน (กรณีเพิ่งเปิดงานเช้า)
   if (state.existingMorningReport) {
     if (Array.isArray(state.existingMorningReport.task_progress) && state.existingMorningReport.task_progress.length > 0) {
       applyApprovedTasks(state.existingMorningReport.task_progress);
@@ -249,19 +257,8 @@ async function loadApprovedTasksForToday() {
     }
   }
 
-  // 2. Instant Cache Display (0ms)
-  try {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        applyApprovedTasks(parsed);
-      }
-    }
-  } catch (e) {}
-
-  // 3. Fast Firestore Fetch in parallel (<100ms)
-  if (firebaseService.isConfigured()) {
+  // 2. ดึงสดจาก Firestore โดยตรง (<100ms) - ไม่เก็บแคชลง LocalStorage เพื่อป้องกันปัญหาข้อมูลค้าง
+  if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
     try {
       const fbTasks = await firebaseService.getApprovedTasks(state.reportDate, state.project.id);
       if (Array.isArray(fbTasks)) {
@@ -269,32 +266,19 @@ async function loadApprovedTasksForToday() {
         const filtered = (mySub && mySub !== '-') 
           ? fbTasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
           : fbTasks;
-        if (filtered.length > 0) {
-          applyApprovedTasks(filtered);
-          try { localStorage.setItem(cacheKey, JSON.stringify(filtered)); } catch(e) {}
-          return; // ดึงจาก Firestore สำเร็จแล้ว ไม่ต้องรอ GAS
-        } else {
-          // ฐานข้อมูลใน Firestore ว่างเปล่า (หรือถูกเคลียร์) -> ล้างแคชและอัปเดตสถานะเป็นไม่มีงานทันที
-          try { localStorage.removeItem(cacheKey); } catch(e) {}
-          applyApprovedTasks([]);
-        }
+        applyApprovedTasks(filtered);
+        if (filtered.length > 0) return; // ดึงจาก Firestore สำเร็จแล้ว
       }
     } catch (e) {
       console.warn('[Foreman] Firestore getApprovedTasks error:', e);
     }
   }
 
-  // 4. Background GAS Fetch (fallback & master sync)
+  // 3. ดึงจาก Google Sheets (เป็น fallback หาก Firestore ยังไม่มีข้อมูล)
   if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
     gasService.fetchApprovedTasksForDate(state.reportDate, state.subcontractor.name, state.project.id).then(gasTasks => {
       if (Array.isArray(gasTasks)) {
-        if (gasTasks.length > 0) {
-          applyApprovedTasks(gasTasks);
-          try { localStorage.setItem(cacheKey, JSON.stringify(gasTasks)); } catch(e) {}
-        } else {
-          try { localStorage.removeItem(cacheKey); } catch(e) {}
-          applyApprovedTasks([]);
-        }
+        applyApprovedTasks(gasTasks);
       }
     }).catch(e => console.warn('[Foreman] GAS fetchApprovedTasks error:', e));
   }
@@ -1222,27 +1206,14 @@ function applyExistingReports(list) {
 
 async function checkExistingReportForToday() {
   if (!state.project.id || state.project.id === '-') return;
-  const cacheKey = `cpm_cache_reports_${state.project.id}_${state.reportDate}`;
 
-  // 1. Instant Cache Load (0ms) - optimistic first paint
-  try {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        applyExistingReports(parsed);
-      }
-    }
-  } catch(e) {}
-
-  // 2. Fast Firestore fetch (<100ms)
+  // 1. Fast Firestore fetch (<100ms) - ดึงข้อมูลตรงจาก Database สด ไม่เก็บแคชลง LocalStorage
   if (firebaseService.isConfigured()) {
     try {
       const fbList = await firebaseService.getDailyReports(state.project.id);
       if (Array.isArray(fbList)) {
         if (fbList.length > 0) {
           applyExistingReports(fbList);
-          try { localStorage.setItem(cacheKey, JSON.stringify(fbList)); } catch(e) {}
           const hasToday = fbList.some(r => (r.report_date || r['วันที่รายงาน (Date)']) === state.reportDate);
           if (hasToday) return; // พบรายงานวันนี้จาก Firestore แล้ว ไม่ต้องรอ GAS
         } else {
@@ -1257,13 +1228,12 @@ async function checkExistingReportForToday() {
     }
   }
 
-  // 3. Background GAS fetch (fallback)
+  // 2. Background GAS fetch (fallback)
   if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
     gasService.fetchDailyReports(state.project.id).then(gasList => {
       if (Array.isArray(gasList)) {
         if (gasList.length > 0) {
           applyExistingReports(gasList);
-          try { localStorage.setItem(cacheKey, JSON.stringify(gasList)); } catch(e) {}
         } else {
           if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
             clearTodayReportState();
@@ -1593,25 +1563,6 @@ function handleFileUpload(shift, e) {
 // ==========================================
 // Cache & Background Sync Helpers
 // ==========================================
-function saveReportToLocalCache(payload) {
-  try {
-    const cacheKey = `cpm_cache_reports_${payload.project_id}_${payload.report_date}`;
-    let list = [];
-    try {
-      const stored = localStorage.getItem(cacheKey);
-      if (stored) list = JSON.parse(stored) || [];
-    } catch(e) {}
-    const idx = list.findIndex(r => r.id === payload.id);
-    if (idx > -1) {
-      list[idx] = { ...list[idx], ...payload };
-    } else {
-      list.unshift(payload);
-    }
-    localStorage.setItem(cacheKey, JSON.stringify(list));
-  } catch(e) {
-    console.warn('[Cache] saveReportToLocalCache error:', e);
-  }
-}
 
 function enqueueOfflineReport(payload) {
   try {
@@ -1836,9 +1787,6 @@ async function submitDailyReport() {
       state.existingMorningReport.shift_label = 'รายงานประจำวัน (เช้า-จบงานครบถ้วน)';
     }
   }
-
-  // บันทึกลง Local Cache ทันที (รีเฟรชหน้าก็ไม่หาย)
-  saveReportToLocalCache(payload);
 
   // สลับสถานะ UI บนหน้าจอเป็น "ส่งแล้ว" ทันที ไม่ต้องรอเน็ต
   renderShiftUI();
