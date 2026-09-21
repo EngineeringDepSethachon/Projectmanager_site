@@ -30,8 +30,8 @@ const firebaseConfig = {
   projectId: "cpm-site-manager",
   storageBucket: "cpm-site-manager.firebasestorage.app",
   messagingSenderId: "64033745826",
-  appId: "1:64033745826:web:21fd4d5458f44e91b460fb",
-  measurementId: "G-CEXNMSDPQF"
+  appId: "1:64033745826:web:3e809a8441570f92b460fb",
+  measurementId: "G-SKQYBTSYTF"
 };
 
 let app = null;
