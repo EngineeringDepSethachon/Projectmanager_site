@@ -14,6 +14,7 @@
  */
 
 import { gasService } from './gas_service.js';
+import { downloadDailyReportPDF, printDailyReport } from './report_pdf_generator.js';
 
 // ==========================================
 // App State
@@ -34,6 +35,7 @@ const state = {
   approvalFilter: 'all',
   reportFilterShift: 'all',
   reportFilterSearch: '',
+  currentSelectedReport: null,
 
   // PM Master Gantt Month State
   pmYear: new Date().getFullYear(),
@@ -60,6 +62,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadWeeklyPlans();
     await loadDailyReports();
     showToast('ซิงก์ข้อมูลโครงการสำเร็จ!', 'success');
+  });
+
+  // Modal PDF Actions
+  document.getElementById('btn-modal-download-pdf')?.addEventListener('click', async () => {
+    if (!state.currentSelectedReport) {
+      showToast('กรุณาเลือกรายงานก่อนดาวน์โหลด', 'warning');
+      return;
+    }
+    const btn = document.getElementById('btn-modal-download-pdf');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> กำลังสร้าง PDF...';
+    }
+    showToast('⏳ กำลังจัดรูปแบบและสร้างเอกสาร PDF (A4)...', 'info');
+    try {
+      await downloadDailyReportPDF(state.currentSelectedReport, {
+        projectName: state.project.name,
+        projectId: state.project.id
+      });
+      showToast('ดาวน์โหลดไฟล์ PDF เรียบร้อยแล้ว', 'success');
+    } catch (err) {
+      console.error('downloadDailyReportPDF error:', err);
+      showToast('เกิดข้อผิดพลาดในการสร้าง PDF - สลับไปเปิดหน้าต่างพิมพ์แทน', 'info');
+      printDailyReport(state.currentSelectedReport, {
+        projectName: state.project.name,
+        projectId: state.project.id
+      });
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  });
+
+  document.getElementById('btn-modal-print-pdf')?.addEventListener('click', () => {
+    if (!state.currentSelectedReport) {
+      showToast('กรุณาเลือกรายงานก่อนสั่งพิมพ์', 'warning');
+      return;
+    }
+    printDailyReport(state.currentSelectedReport, {
+      projectName: state.project.name,
+      projectId: state.project.id
+    });
   });
 });
 
@@ -921,9 +968,17 @@ function renderDailyReportsTable() {
               ` : ''}
             </div>
 
-            <button type="button" class="btn-inspect-report" onclick="window.viewReportDetails(${idx})">
-              <span>🔍 ตรวจสอบรายงานฉบับเต็ม</span>
-            </button>
+            <div class="report-card-actions">
+              <button type="button" class="btn-inspect-report" onclick="window.viewReportDetails(${idx})">
+                <span>🔍 ดูฉบับเต็ม</span>
+              </button>
+              <button type="button" class="btn-card-pdf" onclick="window.quickDownloadReportPDF(${idx})" title="ดาวน์โหลด PDF (A4) ทันที">
+                <span>📄 PDF</span>
+              </button>
+              <button type="button" class="btn-card-pdf btn-card-print" onclick="window.quickPrintReport(${idx})" title="สั่งพิมพ์เอกสารทันที">
+                <span>🖨️ พิมพ์</span>
+              </button>
+            </div>
           </div>
         `;
       }).join('')}
@@ -931,9 +986,40 @@ function renderDailyReportsTable() {
   `;
 }
 
+window.quickDownloadReportPDF = async function(idx) {
+  const r = state.dailyReports[idx];
+  if (!r) return;
+  showToast('⏳ กำลังจัดรูปแบบและสร้างเอกสาร PDF (A4)...', 'info');
+  try {
+    await downloadDailyReportPDF(r, {
+      projectName: state.project.name,
+      projectId: state.project.id
+    });
+    showToast('ดาวน์โหลดไฟล์ PDF สำเร็จ', 'success');
+  } catch (err) {
+    console.error('quickDownloadReportPDF error:', err);
+    showToast('เกิดข้อผิดพลาดในการสร้าง PDF - สลับไปเปิดหน้าต่างพิมพ์แทน', 'info');
+    printDailyReport(r, {
+      projectName: state.project.name,
+      projectId: state.project.id
+    });
+  }
+};
+
+window.quickPrintReport = function(idx) {
+  const r = state.dailyReports[idx];
+  if (!r) return;
+  printDailyReport(r, {
+    projectName: state.project.name,
+    projectId: state.project.id
+  });
+};
+
 window.viewReportDetails = function(idx) {
   const r = state.dailyReports[idx];
   if (!r) return;
+
+  state.currentSelectedReport = r;
 
   const modal = document.getElementById('modal-report-details');
   const body = document.getElementById('modal-report-body');

@@ -4863,3 +4863,231 @@ th.pm-master-meta-cell {
   line-height: 1.5;
 }
 
+/* ==========================================================================
+   Daily Reports Archive & PDF Generator Action Styles (PM Center)
+   ========================================================================== */
+.reports-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.1rem;
+}
+
+.daily-report-card {
+  background: #ffffff;
+  border: 2px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+  padding: 1.1rem;
+  box-shadow: 2px 3px 0px var(--border-dark);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.daily-report-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 3px 5px 0px var(--border-dark);
+}
+
+.report-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.report-date-badge {
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: var(--text-heading);
+  background: var(--bg-card-subtle);
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+}
+
+.report-shift-tag {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+}
+
+.report-shift-tag.morning {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.report-shift-tag.evening {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.report-meta-info {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-main);
+  margin-bottom: 0.6rem;
+}
+
+.report-meta-info div {
+  margin-bottom: 2px;
+}
+
+.report-photos-preview {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.report-thumb-img {
+  width: 58px;
+  height: 58px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-dark);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.report-thumb-img:hover {
+  transform: scale(1.05);
+}
+
+/* Report Card Actions Row */
+.report-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 0.75rem;
+  align-items: stretch;
+}
+
+.btn-inspect-report {
+  flex: 1;
+  background: #f8fafc;
+  border: 1.5px solid var(--border-dark);
+  color: var(--text-heading);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 7px 12px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-shadow: 1.5px 2px 0px var(--border-dark);
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn-inspect-report:hover {
+  background: #e2e8f0;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 3px 0px var(--border-dark);
+}
+
+.btn-card-pdf {
+  background: #eff6ff;
+  border: 1.5px solid #2563eb;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 1.5px 2px 0px #2563eb;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn-card-pdf:hover {
+  background: #2563eb;
+  color: #ffffff;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 3px 0px var(--border-dark);
+}
+
+.btn-card-pdf.btn-card-print {
+  background: #f1f5f9;
+  border-color: #64748b;
+  color: #334155;
+  box-shadow: 1.5px 2px 0px #64748b;
+}
+
+.btn-card-pdf.btn-card-print:hover {
+  background: #475569;
+  color: #ffffff;
+  border-color: #334155;
+}
+
+/* Modal PDF Action Buttons (Header) */
+.btn-pdf-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1.5px solid var(--border-dark);
+}
+
+.btn-pdf-primary {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 2px 2px 0px var(--border-dark);
+}
+
+.btn-pdf-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px var(--border-dark);
+}
+
+.btn-pdf-secondary {
+  background: #ffffff;
+  color: var(--text-heading);
+  box-shadow: 2px 2px 0px var(--border-dark);
+}
+
+.btn-pdf-secondary:hover:not(:disabled) {
+  background: #f1f5f9;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px var(--border-dark);
+}
+
+.btn-pdf-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Print specific styles */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .app-header,
+  .pm-sub-nav,
+  .pm-executive-kpi-bar,
+  .pm-filter-panel,
+  .no-print,
+  .modal-backdrop:not(.active),
+  .toast-container {
+    display: none !important;
+  }
+}
+
+

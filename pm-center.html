@@ -199,13 +199,21 @@
 
   <!-- Full Report Details Modal -->
   <div class="modal-backdrop" id="modal-report-details">
-    <div class="modal-card" style="max-width: 750px;">
-      <div class="modal-header">
+    <div class="modal-card" style="max-width: 850px;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div class="modal-title">
           <span class="icon">📑</span>
           <h3 id="modal-report-title">รายละเอียดรายงานประจำวัน</h3>
         </div>
-        <button type="button" class="modal-close-btn" id="btn-close-report-modal" title="ปิด">×</button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" class="btn-pdf-action btn-pdf-primary" id="btn-modal-download-pdf" title="ดาวน์โหลดไฟล์ PDF ขนาด A4">
+            <span>📥</span> ดาวน์โหลด PDF (A4)
+          </button>
+          <button type="button" class="btn-pdf-action btn-pdf-secondary" id="btn-modal-print-pdf" title="สั่งพิมพ์เอกสาร">
+            <span>🖨️</span> พิมพ์เอกสาร
+          </button>
+          <button type="button" class="modal-close-btn" id="btn-close-report-modal" title="ปิด">×</button>
+        </div>
       </div>
       <div class="modal-body" id="modal-report-body" style="max-height: 80vh; overflow-y: auto;">
         <!-- Rendered via JS -->
@@ -231,8 +239,12 @@
 
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- PDF Generator Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
   <!-- Scripts -->
   <script type="module" src="js/gas_service.js"></script>
+  <script type="module" src="js/report_pdf_generator.js"></script>
   <script type="module" src="js/app_pm.js"></script>
 </body>
 </html>
