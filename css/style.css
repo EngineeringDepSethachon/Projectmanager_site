@@ -5207,6 +5207,33 @@ th.pm-master-meta-cell {
   100% { transform: scale(1); background: #ecfdf5; }
 }
 
+/* Shift Sync & Duplicate Prevention Banner */
+.shift-sync-status-banner {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.shift-sync-status-banner.morning-edit {
+  background: #eff6ff;
+  border: 1.5px solid #93c5fd;
+  color: #1e40af;
+}
+
+.shift-sync-status-banner.evening-connected {
+  background: #ecfdf5;
+  border: 1.5px solid #a7f3d0;
+  color: #065f46;
+}
+
+
 
 
 

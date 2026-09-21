@@ -42,6 +42,8 @@ const state = {
   morningPlannedTasks: [],
   eveningActualTasks: [],
   approvedTasksToday: [],
+  existingMorningReport: null,
+  existingEveningReport: null,
   photos: [],
   machinery: [],
   availableMachinery: (() => {
@@ -92,6 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // โหลดงานย่อยที่ PM อนุมัติล่วงหน้าสำหรับวันนี้
   await loadApprovedTasksForToday();
+  await checkExistingReportForToday();
   setupForemanRealtimeSync();
 });
 
@@ -472,20 +475,48 @@ function switchShift(shift) {
   state.activeShift = shift;
 
   if (shift === 'evening') {
-    // ดึงงานที่เปิดไว้ช่วงเช้ามาเป็น Baseline ในช่วงเย็น
+    // ดึงงานและข้อมูลที่เปิดไว้ช่วงเช้ามาเป็น Baseline ในช่วงเย็น
     if (state.eveningActualTasks.length === 0) {
-      state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
-        ...t,
-        id: 'ACT-' + t.id,
-        source_task_id: t.source_task_id || '',
-        from_plan: !!t.from_plan,
-        company: t.company || '',
-        planned_quantity: t.quantity,
-        progress: t.progress !== undefined ? t.progress : 0,
-        isPlanned: false
-      }));
+      if (state.morningPlannedTasks.length > 0) {
+        state.eveningActualTasks = state.morningPlannedTasks.map(t => ({
+          ...t,
+          id: 'ACT-' + (t.id || Date.now()),
+          source_task_id: t.source_task_id || t.id || '',
+          from_plan: !!t.from_plan,
+          company: t.company || state.subcontractor.name || '',
+          planned_quantity: t.quantity,
+          progress: t.progress !== undefined ? t.progress : 0,
+          isPlanned: false
+        }));
+      } else if (state.existingMorningReport && state.existingMorningReport.task_summary) {
+        const items = state.existingMorningReport.task_summary.split(' | ').filter(Boolean);
+        state.eveningActualTasks = items.map((it, idx) => ({
+          id: 'ACT-MORN-' + (idx + 1),
+          name: it.replace(/^\d+\.\s*/, '').replace(/\(\d+%\)\s*:?/, '').trim(),
+          description: it,
+          progress: 0,
+          isPlanned: false
+        }));
+      }
     }
-    showToast('🌆 สลับสู่โหมด: รายงานสรุปจบงานประจำวัน', 'info');
+
+    // ถ่ายโอนยอดกำลังพลและเครื่องจักรจากรอบเช้ามาเป็นค่าตั้งต้นรอบเย็น
+    if (state.existingMorningReport) {
+      const em = state.existingMorningReport;
+      if (em.foreman_count !== undefined) {
+        state.workforce.foreman = Number(em.foreman_count || 1);
+        state.workforce.skilled_workers = Number(em.skilled_count || 0);
+        state.workforce.general_labor = Number(em.labor_count || 0);
+        state.workforce.safety_officer = Number(em.safety_count || 0);
+        renderWorkforce();
+      }
+      if (em.machinery && em.machinery !== '-' && (!state.machinery || state.machinery.length === 0)) {
+        state.machinery = String(em.machinery).split(',').map(s => s.trim()).filter(Boolean);
+        renderMachinery();
+      }
+    }
+
+    showToast('🌆 สลับสู่โหมด: รายงานสรุปจบงานประจำวัน (เชื่อมต่อจากรอบเช้า)', 'info');
   } else {
     showToast('🌅 สลับสู่โหมด: เปิดงานตอนเช้า', 'info');
   }
@@ -501,6 +532,7 @@ function renderShiftUI() {
   const rainHoursBox = document.getElementById('rain-hours-box');
   const submitBtn = document.getElementById('btn-submit-daily-report');
   const submitText = document.getElementById('btn-submit-text');
+  const syncBanner = document.getElementById('shift-sync-status-banner');
 
   if (tabMorning && tabEvening) {
     if (isMorning) {
@@ -511,10 +543,31 @@ function renderShiftUI() {
         topBadge.innerText = '🌅 รอบเช้า';
       }
       if (rainHoursBox) rainHoursBox.style.display = 'none';
-      if (submitBtn) {
-        submitBtn.className = 'btn-submit-report morning';
-        submitText.innerText = 'ส่งรายงานเปิดงานตอนเช้า';
+
+      if (state.existingMorningReport) {
+        if (syncBanner) {
+          syncBanner.className = 'shift-sync-status-banner morning-edit';
+          syncBanner.style.display = 'flex';
+          syncBanner.innerHTML = `
+            <div>
+              <strong>ℹ️ คุณได้ส่งรายงานเปิดงานเช้าแล้ว (${escapeHtml(state.existingMorningReport.id)})</strong><br>
+              <span style="font-size: 0.72rem; opacity: 0.9;">ท่านสามารถปรับปรุงข้อมูลยอดคน สภาพอากาศ หรืองาน แล้วกดบันทึกการแก้ไขได้</span>
+            </div>
+            <span style="font-size: 0.72rem; font-weight: 700; background: #2563eb; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+          `;
+        }
+        if (submitBtn) {
+          submitBtn.className = 'btn-submit-report morning';
+          submitText.innerText = '✏️ บันทึกการแก้ไขรายงานเปิดงานตอนเช้า';
+        }
+      } else {
+        if (syncBanner) syncBanner.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.className = 'btn-submit-report morning';
+          submitText.innerText = 'ส่งรายงานเปิดงานตอนเช้า';
+        }
       }
+
     } else {
       tabMorning.classList.remove('active');
       tabEvening.classList.add('active');
@@ -523,14 +576,110 @@ function renderShiftUI() {
         topBadge.innerText = '🌆 รอบเย็น';
       }
       if (rainHoursBox) rainHoursBox.style.display = 'flex';
-      if (submitBtn) {
-        submitBtn.className = 'btn-submit-report evening';
-        submitText.innerText = 'ส่งรายงานสรุปจบงานประจำวัน';
+
+      if (state.existingEveningReport) {
+        if (syncBanner) {
+          syncBanner.className = 'shift-sync-status-banner morning-edit';
+          syncBanner.style.display = 'flex';
+          syncBanner.innerHTML = `
+            <div>
+              <strong>ℹ️ คุณได้ส่งรายงานสรุปจบงานแล้ว (${escapeHtml(state.existingEveningReport.id)})</strong><br>
+              <span style="font-size: 0.72rem; opacity: 0.9;">ท่านสามารถปรับปรุง % ผลงานจริง แล้วกดบันทึกการแก้ไขได้</span>
+            </div>
+            <span style="font-size: 0.72rem; font-weight: 700; background: #059669; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">โหมดแก้ไข</span>
+          `;
+        }
+        if (submitBtn) {
+          submitBtn.className = 'btn-submit-report evening';
+          submitText.innerText = '✏️ บันทึกการแก้ไขรายงานสรุปจบงาน';
+        }
+      } else if (state.existingMorningReport) {
+        if (syncBanner) {
+          syncBanner.className = 'shift-sync-status-banner evening-connected';
+          syncBanner.style.display = 'flex';
+          syncBanner.innerHTML = `
+            <div>
+              <strong>🔗 เชื่อมโยงข้อมูลจากรายงานรอบเช้าแล้ว</strong><br>
+              <span style="font-size: 0.72rem; opacity: 0.9;">รายการงานและกำลังพลถูกดึงมาจากรอบเช้าให้อัตโนมัติ — โปรดระบุ % ผลงานจริงและเวลาฝนตก</span>
+            </div>
+            <span style="font-size: 0.72rem; font-weight: 700; background: #10b981; color: #fff; padding: 2px 8px; border-radius: 4px; white-space: nowrap;">ต่อเนื่องรอบเช้า</span>
+          `;
+        }
+        if (submitBtn) {
+          submitBtn.className = 'btn-submit-report evening';
+          submitText.innerText = 'ส่งรายงานสรุปจบงานประจำวัน (ต่อจากรอบเช้า)';
+        }
+      } else {
+        if (syncBanner) syncBanner.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.className = 'btn-submit-report evening';
+          submitText.innerText = 'ส่งรายงานสรุปจบงานประจำวัน';
+        }
       }
     }
   }
 
   renderDynamicTasks();
+}
+
+async function checkExistingReportForToday() {
+  if (!gasService.isConfigured() || !state.project.id || state.project.id === '-') return;
+  try {
+    const list = await gasService.fetchDailyReports(state.project.id);
+    if (list && list.length > 0) {
+      const today = state.reportDate;
+      const mySub = state.subcontractor.name;
+      const myUid = state.lineUser.uid;
+
+      // Find morning report for today
+      state.existingMorningReport = list.find(r => {
+        const rDate = r.report_date || r['วันที่รายงาน (Date)'];
+        const rShift = String(r.shift_label || '');
+        const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
+        const rUid = r.line_uid || r['LINE UID'];
+        const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
+        const isMorn = rShift.includes('เช้า') || String(r.id || '').startsWith('MORN');
+        return rDate === today && isMatchUser && isMorn;
+      }) || null;
+
+      // Find evening report for today
+      state.existingEveningReport = list.find(r => {
+        const rDate = r.report_date || r['วันที่รายงาน (Date)'];
+        const rShift = String(r.shift_label || '');
+        const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
+        const rUid = r.line_uid || r['LINE UID'];
+        const isMatchUser = (mySub && mySub !== '-' && rSub === mySub) || (myUid && myUid !== '-' && rUid === myUid);
+        const isEve = rShift.includes('เย็น') || rShift.includes('จบงาน') || String(r.id || '').startsWith('EVEN');
+        return rDate === today && isMatchUser && isEve;
+      }) || null;
+
+      // ถ้ามีรายงานรอบเช้าอยู่แล้ว ให้ดึงข้อมูลมาแสดงบนแบบฟอร์ม
+      if (state.existingMorningReport) {
+        const em = state.existingMorningReport;
+        if (em.foreman_count !== undefined) {
+          state.workforce.foreman = Number(em.foreman_count || 1);
+          state.workforce.skilled_workers = Number(em.skilled_count || 0);
+          state.workforce.general_labor = Number(em.labor_count || 0);
+          state.workforce.safety_officer = Number(em.safety_count || 0);
+          renderWorkforce();
+        }
+        if (em.weather) {
+          const matchW = ['sunny', 'cloudy', 'rain_light', 'rain_heavy'].find(t => em.weather.includes(t));
+          if (matchW) state.weather.type = matchW;
+          state.weather.text = em.weather;
+          renderWeather();
+        }
+        if (em.machinery && em.machinery !== '-') {
+          state.machinery = String(em.machinery).split(',').map(s => s.trim()).filter(Boolean);
+          renderMachinery();
+        }
+      }
+
+      renderShiftUI();
+    }
+  } catch(e) {
+    console.warn('checkExistingReportForToday error:', e);
+  }
 }
 
 // ==========================================
@@ -810,9 +959,13 @@ async function submitDailyReport() {
     if (!proceed) return;
   }
 
+  const isEditMorning = isMorning && !!state.existingMorningReport;
+  const isEditEvening = !isMorning && !!state.existingEveningReport;
+  const isEdit = isEditMorning || isEditEvening;
+
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span>⏳ กำลังบันทึกรายงานรอบ ${shiftLabel}...</span>`;
+    btn.innerHTML = `<span>⏳ กำลัง${isEdit ? 'อัปเดตการแก้ไข' : 'บันทึก'}รายงานรอบ ${shiftLabel}...</span>`;
   }
 
   const customIssues = document.getElementById('custom-issue-text')?.value || '';
@@ -821,11 +974,21 @@ async function submitDailyReport() {
 
   const totalWorkers = Object.values(state.workforce).reduce((a, b) => a + b, 0);
   const now = new Date();
-  const reportPrefix = isMorning ? 'MORN' : 'EVEN';
-  const reportId = `${reportPrefix}-${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+
+  let reportId = '';
+  if (isEditMorning) {
+    reportId = state.existingMorningReport.id;
+  } else if (isEditEvening) {
+    reportId = state.existingEveningReport.id;
+  } else {
+    const reportPrefix = isMorning ? 'MORN' : 'EVEN';
+    reportId = `${reportPrefix}-${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+  }
 
   const payload = {
     id: reportId,
+    is_edit: isEdit,
+    morning_report_id: state.existingMorningReport ? state.existingMorningReport.id : '',
     shift_type: shiftCode,
     shift_label: shiftLabel,
     report_date: state.reportDate,
@@ -858,11 +1021,27 @@ async function submitDailyReport() {
 
   if (btn) {
     btn.disabled = false;
-    renderShiftUI();
   }
 
   if (result && result.success) {
-    showToast(`✅ บันทึกรายงาน ${shiftLabel} (รหัส ${reportId}) ลง Google Sheets สำเร็จ!`, 'success');
+    const actionWord = isEdit ? 'อัปเดตการแก้ไข' : 'บันทึก';
+    showToast(`✅ ${actionWord}รายงาน ${shiftLabel} (รหัส ${reportId}) ลง Google Sheets สำเร็จ!`, 'success');
+    
+    // อัปเดตสถานะ local state
+    if (isMorning) {
+      state.existingMorningReport = {
+        ...payload,
+        id: reportId,
+        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (${t.progress||0}%)`).join(' | ')
+      };
+    } else {
+      state.existingEveningReport = {
+        ...payload,
+        id: reportId,
+        task_summary: currentTasks.map((t, idx) => `${idx+1}. ${t.name} (${t.progress||0}%)`).join(' | ')
+      };
+    }
+    renderShiftUI();
     broadcastForemanSync('DAILY_REPORT_SUBMITTED', { reportId });
   } else {
     showToast(`⚠️ ส่งข้อมูลแล้ว: ${result?.message || 'โปรดตรวจสอบ'}`, 'info');

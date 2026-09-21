@@ -42,6 +42,21 @@ function formatThaiDate(dateStr) {
 }
 
 /**
+ * แปลงลิงก์ Google Drive ทุกรูปแบบเป็น Direct Image CDN URL เพื่อให้ <img> และ html2canvas เรนเดอร์ได้ 100%
+ */
+export function formatDirectDriveImageUrl(url) {
+  if (!url) return '';
+  url = String(url).trim();
+  if (url.startsWith('https://lh3.googleusercontent.com/d/')) return url;
+  if (url.startsWith('data:image')) return url;
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  }
+  return url;
+}
+
+/**
  * สร้าง HTML สำหรับเอกสารรายงานประจำวันขนาด A4
  */
 export function buildDailyReportHtml(report, options = {}) {
@@ -92,13 +107,25 @@ export function buildDailyReportHtml(report, options = {}) {
     });
   }
 
-  // รูปภาพ
+  // รูปภาพ (แปลงเป็น Direct Image CDN)
   const rawPhotos = report.photoUrls || report['ลิงก์รูปภาพหน้างาน (Drive)'] || report.photos || '';
   let photoList = [];
   if (Array.isArray(rawPhotos)) {
-    photoList = rawPhotos.map(p => typeof p === 'string' ? p : (p.url || p.base64)).filter(Boolean);
+    photoList = rawPhotos.map(p => typeof p === 'string' ? formatDirectDriveImageUrl(p) : (p.url ? formatDirectDriveImageUrl(p.url) : p.base64)).filter(Boolean);
   } else if (typeof rawPhotos === 'string' && rawPhotos.trim()) {
-    photoList = rawPhotos.split(',').map(s => s.trim()).filter(Boolean);
+    photoList = rawPhotos.split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean);
+  }
+
+  // หากมีรายงานของอีกกะ (เช้า-เย็น) ให้รวมรูปภาพทั้งหมดเข้าด้วยกัน
+  if (options.matchingReport) {
+    const matchingPhotos = options.matchingReport.photoUrls || options.matchingReport['ลิงก์รูปภาพหน้างาน (Drive)'] || options.matchingReport.photos || '';
+    let matchingList = [];
+    if (Array.isArray(matchingPhotos)) {
+      matchingList = matchingPhotos.map(p => typeof p === 'string' ? formatDirectDriveImageUrl(p) : (p.url ? formatDirectDriveImageUrl(p.url) : p.base64)).filter(Boolean);
+    } else if (typeof matchingPhotos === 'string' && matchingPhotos.trim()) {
+      matchingList = matchingPhotos.split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean);
+    }
+    photoList = [...photoList, ...matchingList];
   }
 
   // สร้าง HTML Document Template
@@ -267,25 +294,22 @@ export function buildDailyReportHtml(report, options = {}) {
           <div style="font-size: 0.85rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
             <span>📸</span> ภาพถ่ายบันทึกการปฏิบัติงานหน้างาน (${photoList.length} ภาพ)
           </div>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              ${photoList.slice(0, 3).map((url, pIdx) => `
-                <td style="width: 33.33%; padding: 0 4px; vertical-align: top;">
-                  <div style="border: 1.5px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center;">
-                    <img 
-                      src="${url}" 
-                      alt="รูปหน้างาน ${pIdx + 1}" 
-                      style="width: 100%; height: 125px; object-fit: cover; display: block;" 
-                      crossorigin="anonymous"
-                    />
-                    <div style="font-size: 0.68rem; color: #64748b; padding: 3px 6px; background: #f1f5f9; border-top: 1px solid #e2e8f0;">
-                      ภาพที่ ${pIdx + 1} (${escapeHtml(thaiDate)})
-                    </div>
-                  </div>
-                </td>
-              `).join('')}
-            </tr>
-          </table>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+            ${photoList.slice(0, 6).map((url, pIdx) => `
+              <div style="border: 1.5px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center;">
+                <img 
+                  src="${url}" 
+                  alt="รูปหน้างาน ${pIdx + 1}" 
+                  style="width: 100%; height: 110px; object-fit: cover; display: block;" 
+                  crossorigin="anonymous"
+                  onerror="this.style.display='none'"
+                />
+                <div style="font-size: 0.65rem; color: #64748b; padding: 2px 4px; background: #f1f5f9; border-top: 1px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  ภาพที่ ${pIdx + 1} (${escapeHtml(thaiDate)})
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </div>
       ` : ''}
 
@@ -348,12 +372,41 @@ export async function downloadDailyReportPDF(report, options = {}) {
 
   const tempContainer = document.createElement('div');
   tempContainer.id = 'pdf-render-temp-container';
-  tempContainer.style.position = 'fixed';
-  tempContainer.style.left = '-9999px';
+  tempContainer.style.position = 'absolute';
   tempContainer.style.top = '0';
+  tempContainer.style.left = '0';
+  tempContainer.style.zIndex = '-99999';
   tempContainer.style.width = '794px'; // 210mm at 96 DPI
+  tempContainer.style.minHeight = '1123px';
+  tempContainer.style.background = '#ffffff';
+  tempContainer.style.boxSizing = 'border-box';
+  tempContainer.style.pointerEvents = 'none';
   tempContainer.innerHTML = buildDailyReportHtml(report, options);
   document.body.appendChild(tempContainer);
+
+  // รอให้ Web Fonts (Sarabun, Jakarta) โหลดเสร็จ
+  try {
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+  } catch(e) {}
+
+  // รอให้รูปภาพทั้งหมดในเอกสารโหลดเสร็จเพื่อป้องกัน html2canvas ได้ผืนผ้าใบว่างเปล่า
+  const imgs = Array.from(tempContainer.querySelectorAll('img'));
+  await Promise.all(imgs.map(img => {
+    return new Promise(resolve => {
+      if (img.complete && img.naturalHeight !== 0) return resolve();
+      img.onload = () => resolve();
+      img.onerror = () => {
+        img.style.display = 'none'; // ซ่อนรูปที่เสียเพื่อไม่ให้ canvas ล้มเหลว
+        resolve();
+      };
+      setTimeout(resolve, 2000); // Timeout 2 วินาที
+    });
+  }));
+
+  // หน่วงเวลาสั้น ๆ เพื่อให้ layout DOM คงที่
+  await new Promise(r => setTimeout(r, 120));
 
   const opt = {
     margin: [10, 10, 10, 10], // mm
@@ -362,7 +415,11 @@ export async function downloadDailyReportPDF(report, options = {}) {
     html2canvas: {
       scale: 2,
       useCORS: true,
-      logging: false
+      allowTaint: true,
+      logging: false,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 794
     },
     jsPDF: {
       unit: 'mm',

@@ -14,7 +14,7 @@
  */
 
 import { gasService } from './gas_service.js';
-import { downloadDailyReportPDF, printDailyReport } from './report_pdf_generator.js';
+import { downloadDailyReportPDF, printDailyReport, formatDirectDriveImageUrl } from './report_pdf_generator.js';
 
 // ==========================================
 // App State
@@ -993,7 +993,7 @@ function renderDailyReportsTable() {
         const weather = r.weather || r['สภาพอากาศ'] || '-';
         const tasks = r.task_summary || r['สรุปรายการงาน / เป้าหมาย'] || r['สรุปงาน'] || '-';
         const photoRaw = r.photoUrls || r['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
-        const photoList = photoRaw ? String(photoRaw).split(',').map(s => s.trim()).filter(Boolean) : [];
+        const photoList = photoRaw ? String(photoRaw).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean) : [];
 
         return `
           <div class="daily-report-card">
@@ -1050,14 +1050,35 @@ function renderDailyReportsTable() {
   `;
 }
 
+window.findMatchingCounterpartReport = function(r) {
+  if (!r) return null;
+  const rDate = r.report_date || r['วันที่รายงาน (Date)'];
+  const rSub = r.sub_name || r.company || r['บริษัทผู้รับเหมา'];
+  const rId = String(r.id || '');
+  const rShift = String(r.shift_label || '');
+  const isMorning = rShift.includes('เช้า') || rId.startsWith('MORN');
+
+  return (state.dailyReports || []).find(other => {
+    if (other === r) return false;
+    const oDate = other.report_date || other['วันที่รายงาน (Date)'];
+    const oSub = other.sub_name || other.company || other['บริษัทผู้รับเหมา'];
+    const oId = String(other.id || '');
+    const oShift = String(other.shift_label || '');
+    const otherIsMorning = oShift.includes('เช้า') || oId.startsWith('MORN');
+    return oDate === rDate && oSub === rSub && otherIsMorning !== isMorning;
+  }) || null;
+};
+
 window.quickDownloadReportPDF = async function(idx) {
   const r = state.dailyReports[idx];
   if (!r) return;
+  const counterpart = window.findMatchingCounterpartReport(r);
   showToast('⏳ กำลังจัดรูปแบบและสร้างเอกสาร PDF (A4)...', 'info');
   try {
     await downloadDailyReportPDF(r, {
       projectName: state.project.name,
-      projectId: state.project.id
+      projectId: state.project.id,
+      matchingReport: counterpart
     });
     showToast('ดาวน์โหลดไฟล์ PDF สำเร็จ', 'success');
   } catch (err) {
@@ -1065,7 +1086,8 @@ window.quickDownloadReportPDF = async function(idx) {
     showToast('เกิดข้อผิดพลาดในการสร้าง PDF - สลับไปเปิดหน้าต่างพิมพ์แทน', 'info');
     printDailyReport(r, {
       projectName: state.project.name,
-      projectId: state.project.id
+      projectId: state.project.id,
+      matchingReport: counterpart
     });
   }
 };
@@ -1073,9 +1095,11 @@ window.quickDownloadReportPDF = async function(idx) {
 window.quickPrintReport = function(idx) {
   const r = state.dailyReports[idx];
   if (!r) return;
+  const counterpart = window.findMatchingCounterpartReport(r);
   printDailyReport(r, {
     projectName: state.project.name,
-    projectId: state.project.id
+    projectId: state.project.id,
+    matchingReport: counterpart
   });
 };
 
@@ -1083,7 +1107,11 @@ window.viewReportDetails = function(idx) {
   const r = state.dailyReports[idx];
   if (!r) return;
 
-  state.currentSelectedReport = r;
+  const counterpart = window.findMatchingCounterpartReport(r);
+  state.currentSelectedReport = {
+    ...r,
+    matchingReport: counterpart
+  };
 
   const modal = document.getElementById('modal-report-details');
   const body = document.getElementById('modal-report-body');
@@ -1091,7 +1119,7 @@ window.viewReportDetails = function(idx) {
   if (!modal || !body) return;
 
   const reportId = r.id || r['รหัสรายงาน (Report ID)'] || r['รหัสรายงาน'] || 'REPORT';
-  if (title) title.innerText = `รายงานฉบับเต็ม: ${reportId}`;
+  if (title) title.innerText = `รายงานประจำวัน: ${reportId} ${counterpart ? ' (ฉบับรวมเช้า-เย็น)' : ''}`;
 
   const date = r.report_date || r['วันที่รายงาน (Date)'] || r['วันที่'] || '-';
   const shift = r.shift_label || r['รอบกะ (Shift: เช้า/จบงาน)'] || r['กะการทำงาน'] || '-';
@@ -1103,10 +1131,26 @@ window.viewReportDetails = function(idx) {
   const tasks = r.task_summary || r['สรุปรายการงาน / เป้าหมาย'] || r['สรุปงาน'] || 'ไม่มีรายการงาน';
   const machinery = r.machinery || r['เครื่องจักรที่ใช้งาน'] || '-';
   const issues = r.issues || r['ปัญหาและอุปสรรค'] || r['ปัญหาอุปสรรค'] || '';
+
   const photoRaw = r.photoUrls || r['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
-  const photoList = photoRaw ? String(photoRaw).split(',').map(s => s.trim()).filter(Boolean) : [];
+  let photoList = photoRaw ? String(photoRaw).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean) : [];
+
+  if (counterpart) {
+    const cpPhotos = counterpart.photoUrls || counterpart['ลิงก์รูปภาพหน้างาน (Drive)'] || '';
+    const cpList = cpPhotos ? String(cpPhotos).split(',').map(s => formatDirectDriveImageUrl(s.trim())).filter(Boolean) : [];
+    photoList = [...photoList, ...cpList];
+  }
 
   body.innerHTML = `
+    ${counterpart ? `
+      <div style="background: #ecfdf5; border: 1.5px solid #a7f3d0; padding: 10px 14px; border-radius: 6px; font-size: 0.8rem; color: #065f46; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <strong>🔗 รายงานเชื่อมโยงสมบูรณ์ประจำวัน:</strong> มีบันทึกทั้งรอบเช้า (${escapeHtml(r.id.startsWith('MORN') ? r.id : counterpart.id)}) และรอบจบงาน (${escapeHtml(r.id.startsWith('EVEN') ? r.id : counterpart.id)})
+        </div>
+        <span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;">ครบทั้งวัน</span>
+      </div>
+    ` : ''}
+
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid var(--border-subtle); font-size: 0.82rem;">
       <div>
         <div>📅 <strong>วันที่รายงาน:</strong> ${escapeHtml(date)} (${escapeHtml(shift)})</div>
@@ -1121,11 +1165,20 @@ window.viewReportDetails = function(idx) {
     </div>
 
     <div style="margin-bottom: 1rem;">
-      <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-heading);">⚡ รายการงานที่บันทึก:</h4>
+      <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-heading);">⚡ รายการงานที่บันทึก (${escapeHtml(shift)}):</h4>
       <div style="background: #ffffff; border: 1px solid var(--border-subtle); padding: 10px; border-radius: 4px; font-size: 0.82rem; line-height: 1.5;">
         ${escapeHtml(tasks)}
       </div>
     </div>
+
+    ${counterpart ? `
+      <div style="margin-bottom: 1rem;">
+        <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-heading);">⚡ รายการงานของอีกรอบ (${escapeHtml(counterpart.shift_label || 'คู่เทียบ')}):</h4>
+        <div style="background: #f8fafc; border: 1px solid var(--border-subtle); padding: 10px; border-radius: 4px; font-size: 0.82rem; line-height: 1.5;">
+          ${escapeHtml(counterpart.task_summary || 'ไม่มีรายการงาน')}
+        </div>
+      </div>
+    ` : ''}
 
     ${machinery && machinery !== '-' ? `
       <div style="margin-bottom: 1rem;">
@@ -1152,7 +1205,7 @@ window.viewReportDetails = function(idx) {
           ${photoList.map(url => `
             <div style="border: 2px solid var(--border-dark); border-radius: 6px; overflow: hidden; background: #000;">
               <a href="${url}" target="_blank" title="คลิกเพื่อดูรูปขนาดเต็ม">
-                <img src="${url}" alt="รูปหน้างาน" style="width: 100%; height: 130px; object-fit: cover; display: block;">
+                <img src="${url}" alt="รูปหน้างาน" style="width: 100%; height: 130px; object-fit: cover; display: block;" onerror="this.src='https://placehold.co/300x200?text=Image+Load+Error'">
               </a>
             </div>
           `).join('')}

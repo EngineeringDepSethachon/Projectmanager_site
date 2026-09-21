@@ -142,7 +142,10 @@ function doGet(e) {
         report.task_summary = String(row[16] || report["สรุปรายการงาน / เป้าหมาย"] || "");
         report.machinery = String(row[17] || report["เครื่องจักรที่ใช้งาน"] || "");
         report.photos_count = Number(row[18] || report["จำนวนรูปภาพ"] || 0);
-        report.photoUrls = String(row[19] || report["ลิงก์รูปภาพหน้างาน (Drive)"] || "");
+        const rawPhotos = String(row[19] || report["ลิงก์รูปภาพหน้างาน (Drive)"] || "");
+        report.photoUrls = rawPhotos.split(",").map(function(u) {
+          return formatDirectDriveImageUrl(u.trim());
+        }).filter(Boolean).join(", ");
         report.issues = String(row[20] || report["ปัญหาและอุปสรรค"] || "");
         report.status = String(row[21] || report["สถานะการอนุมัติ"] || "");
         report.project_id = String(row[22] || report["รหัสโครงการ (Project ID)"] || "");
@@ -561,7 +564,6 @@ function doPost(e) {
     const isMorning = shiftType === "morning";
     const shiftLabel = payload.shift_label || (isMorning ? "เปิดงานตอนเช้า" : "รายงานจบงาน");
 
-    const reportId = payload.id || ((shiftType === "morning" ? "MORN-" : "EVEN-") + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd-HHmmss"));
     const reportDate = payload.report_date || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd");
     const timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
 
@@ -572,6 +574,48 @@ function doPost(e) {
     const foremanName = payload.foreman_name || lineName;
     const projectId = payload.project_id || payload.prj || "-";
     const projectName = payload.project_name || payload.prjName || "-";
+
+    // ตรวจสอบว่ามีรายงานของรอบนี้อยู่แล้วหรือไม่ (เพื่อป้องกันการส่งซ้ำและรองรับโหมดแก้ไข)
+    const reportsData = reportsSheet.getDataRange().getValues();
+    let existingRowIndex = -1; // 1-based index in sheet
+    let finalReportId = payload.id;
+
+    // A. ตรวจสอบจาก reportId ตรงตัวหากส่งมา
+    if (finalReportId && finalReportId !== "undefined" && finalReportId !== "-") {
+      for (let r = 1; r < reportsData.length; r++) {
+        if (String(reportsData[r][0]).trim() === String(finalReportId).trim()) {
+          existingRowIndex = r + 1;
+          break;
+        }
+      }
+    }
+
+    // B. หากเป็นรอบเช้าและไม่พบจาก ID ให้ตรวจว่าบริษัท/โฟร์แมนคนนี้มีรายงานรอบเช้าของวันนี้ในโครงการนี้แล้วหรือไม่
+    if (existingRowIndex === -1 && isMorning) {
+      for (let r = 1; r < reportsData.length; r++) {
+        const row = reportsData[r];
+        const rDate = formatDateValue(row[1]);
+        const rShift = String(row[2] || "");
+        const rSub = String(row[6] || "").trim();
+        const rUid = String(row[4] || "").trim();
+        const rProj = String(row[22] || "").trim();
+
+        const isSameDate = (rDate === reportDate);
+        const isSameShift = (rShift.includes("เช้า") || String(row[0]).startsWith("MORN"));
+        const isSameProj = (!projectId || projectId === "-" || rProj === projectId || rProj === "-");
+        const isSameSub = (subName && subName !== "-" && rSub === subName) || (lineUid && lineUid !== "-" && rUid === lineUid);
+
+        if (isSameDate && isSameShift && isSameProj && isSameSub) {
+          existingRowIndex = r + 1;
+          finalReportId = String(row[0]); // ใช้รหัสรายงานเดิมเพื่อแก้ไขทับ
+          break;
+        }
+      }
+    }
+
+    if (!finalReportId || finalReportId === "undefined" || finalReportId === "-") {
+      finalReportId = ((shiftType === "morning" ? "MORN-" : "EVEN-") + Utilities.formatDate(new Date(), "GMT+7", "yyyyMMdd-HHmmss"));
+    }
 
     // 2. สภาพอากาศ & เวลาหยุดงาน (รอบเช้าเป็น 0 ชม. เพราะยังไม่มีการหยุดงาน / รอบจบงานคำนวณตามจริง)
     const weather = payload.weather || "☀️ แจ่มใส";
@@ -589,6 +633,20 @@ function doPost(e) {
     const taskItems = payload.task_progress || [];
     const taskSummaryList = [];
 
+    // หากเป็นการแก้ไขแถวเดิม ให้ลบรายการงานเก่าของ reportId นี้ใน Tasks_Detail ออกก่อนเพื่อป้องกันงานซ้ำ
+    if (existingRowIndex > 0) {
+      try {
+        const tasksData = tasksSheet.getDataRange().getValues();
+        for (let t = tasksData.length - 1; t >= 1; t--) {
+          if (String(tasksData[t][0]).trim() === String(finalReportId).trim()) {
+            tasksSheet.deleteRow(t + 1);
+          }
+        }
+      } catch (delErr) {
+        Logger.log("Delete old tasks error: " + delErr.toString());
+      }
+    }
+
     // บันทึกลงตาราง Tasks_Detail ทีละรายการ
     taskItems.forEach(function(t, idx) {
       const taskName = t.name || t.task_name || ("งานที่ " + (idx + 1));
@@ -598,7 +656,7 @@ function doPost(e) {
       taskSummaryList.push((idx + 1) + ". " + taskName + " (" + progress + "%) : " + desc);
 
       tasksSheet.appendRow([
-        reportId,
+        finalReportId,
         reportDate,
         shiftLabel,
         lineUid,
@@ -613,14 +671,14 @@ function doPost(e) {
 
     // ซิงก์ผลงานย่อยกลับไปยังชีต Plan_Daily_Tasks ถ้ามีงานที่มาจากแผนงานสัปดาห์
     try {
-      syncPlanTasksFromDailyReport(ss, taskItems, reportId, foremanName, timestamp);
+      syncPlanTasksFromDailyReport(ss, taskItems, finalReportId, foremanName, timestamp);
     } catch (syncErr) {
       Logger.log("syncPlanTasksFromDailyReport error: " + syncErr.toString());
     }
 
     const taskSummary = taskSummaryList.join(" | ") || "ไม่มีรายการงาน";
 
-    // 5. บันทึกรูปภาพขึ้น Google Drive
+    // 5. บันทึกรูปภาพขึ้น Google Drive (แปลงเป็น Direct Image CDN URL ทันที)
     const photos = payload.photos || [];
     let photoUrls = [];
 
@@ -630,16 +688,18 @@ function doPost(e) {
           const folder = getOrCreateDriveFolder(DRIVE_FOLDER_NAME);
           const contentType = p.base64.substring(5, p.base64.indexOf(";"));
           const bytes = Utilities.base64Decode(p.base64.substr(p.base64.indexOf("base64,") + 7));
-          const fileName = reportId + "_photo_" + (pIdx + 1) + ".jpg";
+          const fileName = finalReportId + "_photo_" + (pIdx + 1) + ".jpg";
           const blob = Utilities.newBlob(bytes, contentType, fileName);
           const file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          photoUrls.push(file.getUrl());
+          const fileId = file.getId();
+          // บันทึกเป็น Direct CDN URL เพื่อให้ <img>, LINE, และ PDF ดึงไปแสดงผลเป็นรูปภาพได้โดยตรง
+          photoUrls.push("https://lh3.googleusercontent.com/d/" + fileId);
         } catch (err) {
           photoUrls.push(p.url || ("Photo #" + (pIdx + 1)));
         }
       } else if (p.url) {
-        photoUrls.push(p.url);
+        photoUrls.push(formatDirectDriveImageUrl(p.url));
       }
     });
 
@@ -648,9 +708,9 @@ function doPost(e) {
     const issues = Array.isArray(payload.issues) ? payload.issues.join(", ") : (payload.issues || "ปกติ");
     const status = payload.status || (shiftType === "morning" ? "morning_opened" : "evening_closed");
 
-    // 7. บันทึกลงตาราง Daily_Reports
-    reportsSheet.appendRow([
-      reportId,
+    // 7. บันทึกหรืออัปเดตลงตาราง Daily_Reports
+    const rowValues = [
+      finalReportId,
       reportDate,
       shiftLabel,
       timestamp,
@@ -674,7 +734,13 @@ function doPost(e) {
       status,
       projectId,
       projectName
-    ]);
+    ];
+
+    if (existingRowIndex > 0) {
+      reportsSheet.getRange(existingRowIndex, 1, 1, rowValues.length).setValues([rowValues]);
+    } else {
+      reportsSheet.appendRow(rowValues);
+    }
 
     // 8. ยิง LINE Bot Flex Message แจ้งเตือน (แยกตามเช้า vs จบงาน)
     let linePushResult = { sent: false, note: "ไม่ได้ระบุ Token" };
@@ -682,7 +748,7 @@ function doPost(e) {
       linePushResult = sendLineShiftFlexNotification({
         shiftType: shiftType,
         shiftLabel: shiftLabel,
-        reportId: reportId,
+        reportId: finalReportId,
         reportDate: reportDate,
         lineUid: lineUid,
         lineName: lineName,
@@ -695,7 +761,8 @@ function doPost(e) {
         totalWorkforce: totalWorkforce,
         taskItems: taskItems,
         photoUrl: photoUrls[0] || "",
-        issues: issues
+        issues: issues,
+        isUpdate: (existingRowIndex > 0)
       });
     } catch (lineErr) {
       linePushResult = { sent: false, error: lineErr.toString() };
@@ -703,8 +770,9 @@ function doPost(e) {
 
     return jsonResponse({
       status: "success",
-      message: "บันทึกรายงานรอบ " + shiftLabel + " ลง Google Sheets สำเร็จ",
-      report_id: reportId,
+      is_update: (existingRowIndex > 0),
+      message: (existingRowIndex > 0 ? "อัปเดตรายงานรอบ " : "บันทึกรายงานรอบ ") + shiftLabel + " สำเร็จ",
+      report_id: finalReportId,
       shift_type: shiftType,
       shift_label: shiftLabel,
       line_uid: lineUid,
@@ -1176,9 +1244,13 @@ function sendLineShiftFlexNotification(data) {
 
   const isMorning = data.shiftType === "morning";
   const headerColor = isMorning ? "#b45309" : "#065f46";
-  const badgeTitle = isMorning ? "🌅 รายงานเปิดงานตอนเช้า" : "🌆 สรุปผลงานจบงานประจำวัน";
+  const badgeTitle = isMorning 
+    ? (data.isUpdate ? "✏️ อัปเดตรายงานเปิดงานเช้า" : "🌅 รายงานเปิดงานตอนเช้า") 
+    : (data.isUpdate ? "✏️ อัปเดตรายงานสรุปจบงาน" : "🌆 สรุปผลงานจบงานประจำวัน");
   const taskHeaderTitle = isMorning ? "🎯 แผนงานที่คาดการณ์วันนี้ (" + data.taskItems.length + " รายการ):" : "⚡ ผลงานจริงที่ทำได้วันนี้ (" + data.taskItems.length + " รายการ):";
   const accentTextColor = isMorning ? "#f59e0b" : "#10b981";
+
+  const directPhotoUrl = formatDirectDriveImageUrl(data.photoUrl || "");
 
   const flexMessage = {
     type: "flex",
@@ -1208,9 +1280,9 @@ function sendLineShiftFlexNotification(data) {
           }
         ]
       },
-      hero: data.photoUrl && data.photoUrl.startsWith("http") ? {
+      hero: directPhotoUrl && directPhotoUrl.startsWith("http") ? {
         type: "image",
-        url: data.photoUrl,
+        url: directPhotoUrl,
         size: "full",
         aspectRatio: "16:9",
         aspectMode: "cover"
@@ -1960,6 +2032,21 @@ function getOrCreateDriveFolder(folderName) {
     return folders.next();
   }
   return DriveApp.createFolder(name);
+}
+
+/**
+ * แปลงลิงก์ Google Drive ทุกรูปแบบให้เป็น Direct Image CDN URL เพื่อให้ <img>, LINE, และ PDF แสดงผลได้ 100%
+ */
+function formatDirectDriveImageUrl(url) {
+  if (!url) return '';
+  url = String(url).trim();
+  if (url.startsWith('https://lh3.googleusercontent.com/d/')) return url;
+  if (url.startsWith('data:image')) return url;
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return "https://lh3.googleusercontent.com/d/" + match[1];
+  }
+  return url;
 }
 
 /**
