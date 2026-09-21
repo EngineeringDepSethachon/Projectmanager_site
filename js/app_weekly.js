@@ -9,6 +9,7 @@
  */
 
 import { gasService } from './gas_service.js';
+import { firebaseService } from './firebase_service.js';
 
 // ==========================================
 // App State
@@ -78,6 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindModalEvents();
   setupViewTabs();
   setupExitConfirmation();
+  setupWeeklyRealtimeSync();
 });
 
 // ==========================================
@@ -1495,6 +1497,13 @@ async function submitPlanToPM() {
       state.planStatus = 'Pending';
       state.isDirty = false;
       renderPlanMetaUI();
+      if (firebaseService.isConfigured()) {
+        firebaseService.broadcastEvent('PLAN_SUBMITTED', {
+          planId: state.currentPlanId,
+          projectId: state.project.id,
+          subName: state.subcontractor.name
+        }).catch(e => console.warn('[WeeklySync] Firebase broadcast error:', e));
+      }
       try {
         const channel = new BroadcastChannel('cpm_site_sync');
         channel.postMessage({ type: 'PLAN_SUBMITTED', planId: state.currentPlanId, projectId: state.project.id, timestamp: Date.now() });
@@ -1755,5 +1764,31 @@ function setupExitConfirmation() {
       return e.returnValue;
     }
   });
+}
+
+// ==========================================
+// Real-Time Cross-Device Sync
+// ==========================================
+function setupWeeklyRealtimeSync() {
+  if (firebaseService.isConfigured()) {
+    firebaseService.listenEvents(async (type, payload) => {
+      if (type === 'PLAN_APPROVED' || type === 'REFRESH_ALL') {
+        console.log('[WeeklyLiveSync] Firebase event received:', type, payload);
+        await loadWeeklyPlans(true);
+        showToast('⚡ แผนงานได้รับการอนุมัติจาก PM แล้ว! (Firebase Realtime)', 'success');
+      }
+    });
+  }
+
+  try {
+    const channel = new BroadcastChannel('cpm_site_sync');
+    channel.onmessage = async (event) => {
+      const data = event.data;
+      if (data && (data.type === 'PLAN_APPROVED' || data.type === 'REFRESH_ALL')) {
+        await loadWeeklyPlans(true);
+        showToast('⚡ แผนงานได้รับการอนุมัติจาก PM แล้ว!', 'success');
+      }
+    };
+  } catch (e) {}
 }
 

@@ -14,6 +14,7 @@
  */
 
 import { gasService } from './gas_service.js';
+import { firebaseService } from './firebase_service.js';
 import { downloadDailyReportPDF, printDailyReport, formatDirectDriveImageUrl } from './report_pdf_generator.js';
 
 // ==========================================
@@ -1320,6 +1321,15 @@ function escapeHtml(text) {
 // Real-Time Cross-Window & Background Sync
 // ==========================================
 function broadcastSync(type, details = {}) {
+  // 1. Firebase Firestore Real-Time Broadcast (<100ms cross-device)
+  if (firebaseService.isConfigured()) {
+    firebaseService.broadcastEvent(type, {
+      projectId: state.project.id,
+      ...details
+    }).catch(e => console.warn('[PMSync] Firebase broadcast error:', e));
+  }
+
+  // 2. Local BroadcastChannel
   try {
     const channel = new BroadcastChannel('cpm_site_sync');
     channel.postMessage({
@@ -1331,6 +1341,7 @@ function broadcastSync(type, details = {}) {
     channel.close();
   } catch (e) {}
 
+  // 3. LocalStorage trigger
   try {
     localStorage.setItem('cpm_sync_trigger', JSON.stringify({
       type: type,
@@ -1342,7 +1353,26 @@ function broadcastSync(type, details = {}) {
 }
 
 function setupRealtimeSync() {
-  // 1. BroadcastChannel: instant (< 50ms) cross-tab synchronization
+  // 1. Firebase Real-Time Firestore Listener (cross-device: desktop <-> mobile)
+  if (firebaseService.isConfigured()) {
+    firebaseService.listenEvents(async (type, payload) => {
+      if (type === 'DAILY_REPORT_SUBMITTED' || type === 'PLAN_SUBMITTED' || type === 'PLAN_APPROVED' || type === 'REFRESH_ALL') {
+        console.log('[PMSync] Firebase realtime event received:', type, payload);
+        triggerSyncFlash();
+        if (type === 'DAILY_REPORT_SUBMITTED') {
+          const author = payload.foremanName || payload.subName || 'โฟร์แมน';
+          const shift = payload.shift === 'evening' ? 'รอบปิดงานเย็น' : 'รอบเปิดงานเช้า';
+          showToast(`⚡ มีรายงานใหม่ (${shift}) จาก ${author}! อัปเดตข้อมูลทันที`, 'info');
+        } else if (type === 'PLAN_SUBMITTED') {
+          showToast('📋 มีแผนงานใหม่ยื่นส่งเข้ามาให้ PM พิจารณา!', 'info');
+        }
+        await loadDailyReports(true);
+        await loadWeeklyPlans(true);
+      }
+    });
+  }
+
+  // 2. BroadcastChannel: instant (< 50ms) cross-tab synchronization
   try {
     const channel = new BroadcastChannel('cpm_site_sync');
     channel.onmessage = async (event) => {
@@ -1358,7 +1388,7 @@ function setupRealtimeSync() {
     console.warn('[LiveSync] BroadcastChannel not supported:', e);
   }
 
-  // 2. Storage event fallback for older browsers or cross-domain contexts
+  // 3. Storage event fallback for older browsers or cross-domain contexts
   window.addEventListener('storage', async (e) => {
     if (e.key === 'cpm_sync_trigger' && e.newValue) {
       console.log('[LiveSync] LocalStorage sync triggered');

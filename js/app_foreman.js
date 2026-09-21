@@ -4,6 +4,7 @@
  */
 
 import { gasService } from './gas_service.js';
+import { firebaseService } from './firebase_service.js';
 
 // App State สำหรับโฟร์แมน
 const state = {
@@ -1504,6 +1505,13 @@ async function submitDailyReport() {
     status: isMorning ? 'morning_opened' : 'day_completed'
   };
 
+  // Real-time Firestore sync (<100ms cross-device)
+  if (firebaseService.isConfigured()) {
+    firebaseService.saveDailyReport(payload).catch(err => {
+      console.warn('[Firebase] saveDailyReport error:', err);
+    });
+  }
+
   let result = null;
   if (gasService.isConfigured()) {
     result = await gasService.sendReport(payload);
@@ -1688,6 +1696,15 @@ function escapeHtml(text) {
 // Real-Time Cross-Window & Background Sync
 // ==========================================
 function broadcastForemanSync(type, details = {}) {
+  // 1. Firebase Firestore Real-Time Broadcast (<100ms cross-device)
+  if (firebaseService.isConfigured()) {
+    firebaseService.broadcastEvent(type, {
+      projectId: state.project.id,
+      ...details
+    }).catch(e => console.warn('[ForemanLiveSync] Firebase broadcast error:', e));
+  }
+
+  // 2. Local BroadcastChannel
   try {
     const channel = new BroadcastChannel('cpm_site_sync');
     channel.postMessage({
@@ -1699,6 +1716,7 @@ function broadcastForemanSync(type, details = {}) {
     channel.close();
   } catch (e) {}
 
+  // 3. LocalStorage trigger
   try {
     localStorage.setItem('cpm_sync_trigger', JSON.stringify({
       type: type,
@@ -1710,7 +1728,18 @@ function broadcastForemanSync(type, details = {}) {
 }
 
 function setupForemanRealtimeSync() {
-  // Listen for PM approval or plan update to reload approved tasks automatically
+  // 1. Firebase Real-Time Firestore Listener (cross-device: mobile <-> desktop)
+  if (firebaseService.isConfigured()) {
+    firebaseService.listenEvents(async (type, payload) => {
+      if (type === 'PLAN_APPROVED' || type === 'PLAN_SUBMITTED' || type === 'REFRESH_ALL') {
+        console.log('[ForemanLiveSync] Firebase realtime event received:', type, payload);
+        await loadApprovedTasksForToday();
+        showToast('⚡ มีการอัปเดตแผนงานจาก PM (Firebase Realtime)! อัปเดตรายการงานแล้ว', 'info');
+      }
+    });
+  }
+
+  // 2. BroadcastChannel: local tab sync
   try {
     const channel = new BroadcastChannel('cpm_site_sync');
     channel.onmessage = async (event) => {
@@ -1725,7 +1754,7 @@ function setupForemanRealtimeSync() {
     console.warn('[ForemanLiveSync] BroadcastChannel error:', e);
   }
 
-  // Storage listener fallback
+  // 3. Storage listener fallback
   window.addEventListener('storage', async (e) => {
     if (e.key === 'cpm_sync_trigger' && e.newValue) {
       try {
@@ -1737,7 +1766,7 @@ function setupForemanRealtimeSync() {
     }
   });
 
-  // Background auto-polling every 15s to keep approved tasks up-to-date
+  // 4. Background auto-polling every 15s to keep approved tasks up-to-date
   setInterval(async () => {
     if (!document.hidden) {
       await loadApprovedTasksForToday();
