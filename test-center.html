@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ศูนย์ทดสอบระบบ & วินิจฉัยข้อผิดพลาด (CPM Diagnostic & Test Center)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --card-bg: rgba(22, 29, 47, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover: rgba(30, 41, 67, 0.85);
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.35);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.3);
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Sarabun', 'Plus Jakarta Sans', sans-serif;
+      background: radial-gradient(circle at 50% 0%, #1e293b 0%, #090d16 80%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    .container {
+      max-width: 1380px;
+      margin: 0 auto;
+    }
+
+    /* Header Bar */
+    .top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 1.5rem;
+    }
+
+    .brand-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      font-size: 2.2rem;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 8px var(--primary-glow));
+    }
+
+    .brand-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge-env {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 10px #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .btn-action {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid var(--card-border);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-action:hover {
+      background: #334155;
+      border-color: #64748b;
+      transform: translateY(-1px);
+    }
+
+    .btn-primary-run {
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 4px 14px var(--primary-glow);
+    }
+
+    .btn-primary-run:hover {
+      background: linear-gradient(135deg, #1d4ed8, #4338ca);
+      box-shadow: 0 6px 20px var(--primary-glow);
+    }
+
+    /* Role Nav Tabs */
+    .role-tabs {
+      display: flex;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 6px;
+      border-radius: 14px;
+      border: 1px solid var(--card-border);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+    }
+
+    .role-tab-btn {
+      flex: 1;
+      min-width: 180px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .role-tab-btn.active {
+      background: #1e293b;
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .role-tab-btn.active.tab-foreman { border-bottom: 2px solid #38bdf8; }
+    .role-tab-btn.active.tab-sub { border-bottom: 2px solid #a855f7; }
+    .role-tab-btn.active.tab-pm { border-bottom: 2px solid #10b981; }
+    .role-tab-btn.active.tab-analyst { border-bottom: 2px solid #f59e0b; }
+
+    /* Main Grid Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Role Panel Sections */
+    .role-panel {
+      display: none;
+    }
+
+    .role-panel.active {
+      display: block;
+      animation: fadeIn 0.25s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+      backdrop-filter: blur(12px);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Test Case Item */
+    .test-case-item {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      transition: all 0.15s ease;
+    }
+
+    .test-case-item:hover {
+      background: rgba(30, 41, 67, 0.7);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .test-case-info {
+      flex: 1;
+    }
+
+    .test-case-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin-bottom: 3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .test-case-desc {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .btn-run-test {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-run-test:hover {
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 2px 10px var(--primary-glow);
+    }
+
+    .btn-fix-action {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-fix-action:hover {
+      background: #d97706;
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(217, 119, 6, 0.4);
+    }
+
+    /* Terminal Side Panel */
+    .terminal-container {
+      background: #0b101b;
+      border: 1px solid #1e293b;
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 160px);
+      position: sticky;
+      top: 1.5rem;
+    }
+
+    .terminal-header {
+      padding: 12px 16px;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      border-radius: var(--radius) var(--radius) 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .terminal-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .terminal-body {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      line-height: 1.6;
+    }
+
+    .terminal-row {
+      padding: 4px 6px;
+      border-radius: 4px;
+      margin-bottom: 3px;
+      word-break: break-all;
+    }
+
+    .terminal-row.info { color: #cbd5e1; }
+    .terminal-row.success { color: #34d399; background: rgba(16, 185, 129, 0.08); }
+    .terminal-row.warning { color: #fde047; background: rgba(245, 158, 11, 0.08); }
+    .terminal-row.error { color: #f87171; background: rgba(239, 68, 68, 0.1); font-weight: 700; }
+
+    .term-time { color: #64748b; font-size: 0.68rem; margin-right: 4px; }
+    .term-role { color: #93c5fd; font-weight: 700; margin-right: 6px; }
+
+    /* Health Badges */
+    .health-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 1rem;
+    }
+
+    .health-pill {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .health-pill-label { font-size: 0.78rem; color: var(--text-muted); }
+    .health-pill-val { font-size: 0.82rem; font-weight: 800; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="brand-title-wrap">
+        <span class="brand-icon">🔬</span>
+        <div>
+          <h1 class="brand-title">CPM SYSTEM TEST & DIAGNOSTIC CENTER</h1>
+          <p class="brand-sub">ศูนย์ทดสอบระบบจริง 4 บทบาท & เครื่องมือตรวจสอบความถูกต้องของ Data Sync</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="badge-env">
+          <span class="badge-dot"></span>
+          <span>LIVE CONNECTED (REAL DATABASE)</span>
+        </div>
+        <button type="button" class="btn-action btn-primary-run" id="btn-run-all-e2e">
+          <span>🚀</span> รัน Full E2E Loop ทั้งระบบ
+        </button>
+        <button type="button" class="btn-action" id="btn-clear-term">
+          <span>🧹</span> ล้าง Log
+        </button>
+      </div>
+    </header>
+
+    <!-- Role Switcher Tabs -->
+    <nav class="role-tabs">
+      <button type="button" class="role-tab-btn active tab-analyst" data-role="analyst">
+        <span>🛠️</span> ผู้ดูแล Backend Analyst & ซ่อมแซม
+      </button>
+      <button type="button" class="role-tab-btn tab-foreman" data-role="foreman">
+        <span>👷</span> ผู้ใช้งาน Foreman (LV1)
+      </button>
+      <button type="button" class="role-tab-btn tab-sub" data-role="sub">
+        <span>📊</span> หัวหน้าโฟร์แมน / ผู้รับเหมา (LV2)
+      </button>
+      <button type="button" class="role-tab-btn tab-pm" data-role="pm">
+        <span>👔</span> ผู้จัดการโครงการ PM (LV3)
+      </button>
+    </nav>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+
+      <!-- Left Column: Test Panels -->
+      <div class="test-panels-column">
+
+        <!-- ======================================================== -->
+        <!-- TAB 4: BACKEND ANALYST & AUTO-FIX (DEFAULT VIEW)         -->
+        <!-- ======================================================== -->
+        <div class="role-panel active" id="panel-analyst">
+          <!-- 1. System Health -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>⚡</span>
+                <span>สถานะการเชื่อมต่อระบบจริง (System Health & Latency)</span>
+              </div>
+              <button type="button" class="btn-action" id="btn-ping-health">🔄 ตรวจสอบสด</button>
+            </div>
+            <div class="health-grid" id="health-grid-container">
+              <div class="health-pill">
+                <span class="health-pill-label">🔥 Firestore Realtime</span>
+                <span class="health-pill-val" id="val-health-firestore" style="color: #34d399;">กำลังตรวจสอบ...</span>
+              </div>
+              <div class="health-pill">
+                <span class="health-pill-label">📊 Google Sheets API</span>
+                <span class="health-pill-val" id="val-health-gas" style="color: #34d399;">กำลังตรวจสอบ...</span>
+              </div>
+              <div class="health-pill">
+                <span class="health-pill-label">💾 Local Storage</span>
+                <span class="health-pill-val" id="val-health-storage" style="color: #38bdf8;">พร้อมใช้งาน</span>
+              </div>
+              <div class="health-pill">
+                <span class="health-pill-label">📡 BroadcastChannel</span>
+                <span class="health-pill-val" id="val-health-broadcast" style="color: #38bdf8;">รองรับ (&lt;10ms)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Auto-Fix Toolkit -->
+          <div class="card" style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.04);">
+            <div class="card-header">
+              <div class="card-title" style="color: #fbbf24;">
+                <span>🛠️</span>
+                <span>ชุดเครื่องมือแก้ไขปัญหาและซ่อมแซมข้อมูลทันที (Auto-Fix Tools)</span>
+              </div>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>🎯</span>
+                  <span>ซ่อมแซม Approved Tasks สำหรับวันนี้ (Rebuild Today's Tasks)</span>
+                </div>
+                <div class="test-case-desc">
+                  แก้ปัญหาโฟร์แมนเปิดหน้างานแล้วไม่เจองานตามแผน: ดึงแผนที่ PM อนุมัติแล้วมาสร้าง Approved Tasks ให้วันปัจจุบันทันที
+                </div>
+              </div>
+              <button type="button" class="btn-fix-action" id="btn-fix-approved-tasks">
+                <span>🔧</span> ซ่อมแซมทันที
+              </button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>🔄</span>
+                  <span>ซิงก์ประสานข้อมูล Sheets &lt;-&gt; Firestore (Two-Way Reconciliation)</span>
+                </div>
+                <div class="test-case-desc">
+                  ดึงแผนงานและรายงานที่มีใน Google Sheets มาอัปเดตลง Firestore ป้องกันปัญหาข้อมูลตกหล่นข้ามฐานข้อมูล
+                </div>
+              </div>
+              <button type="button" class="btn-fix-action" id="btn-fix-reconcile">
+                <span>🔄</span> ดึงข้อมูลมาซิงก์
+              </button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>🧹</span>
+                  <span>ล้างแคช LocalStorage และรีเซ็ตสถานะการทดสอบ</span>
+                </div>
+                <div class="test-case-desc">
+                  ล้างแคชที่ค้างในเบราว์เซอร์ เพื่อให้เครื่องทดสอบทำงานกับข้อมูลสดจากคลาวด์ 100%
+                </div>
+              </div>
+              <button type="button" class="btn-action" id="btn-fix-clear-cache">
+                <span>🧹</span> ล้างแคชทดสอบ
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Data Sync Audit -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>📊</span>
+                <span>วิเคราะห์ความสอดคล้องของข้อมูล (Sync Audit)</span>
+              </div>
+              <button type="button" class="btn-action" id="btn-run-audit">🔍 ตรวจนับข้อมูล</button>
+            </div>
+            <div id="audit-results-container" style="font-size: 0.82rem; color: var(--text-muted);">
+              แตะปุ่ม "ตรวจนับข้อมูล" เพื่อเปรียบเทียบจำนวนแผนและรายงานระหว่าง Firestore กับ Google Sheets
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- TAB 1: FOREMAN (LV1)                                     -->
+        <!-- ======================================================== -->
+        <div class="role-panel" id="panel-foreman">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>👷</span>
+                <span>ชุดทดสอบบทบาท: โฟร์แมนหน้างาน (Foreman LV1)</span>
+              </div>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>1️⃣</span>
+                  <span>ทดสอบดึงงานตามแผนที่ PM อนุมัติ (Approved Tasks Fetch)</span>
+                </div>
+                <div class="test-case-desc">
+                  ตรวจสอบว่าโฟร์แมนได้รับรายการงานที่ PM อนุมัติล่วงหน้าแล้วสำหรับวันนี้ (&lt;100ms)
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-f-fetch">▶️ รันการทดสอบ</button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>2️⃣</span>
+                  <span>ทดสอบพิมพ์ข้อมูลไม่หาย (Anti-Wipe Focus Guard)</span>
+                </div>
+                <div class="test-case-desc">
+                  จำลองการพิมพ์เป้าหมาย, % ความคืบหน้า และหมายเหตุ แล้วยิง Background Snapshot เปล่าเข้ามา ตรวจว่าตัวหนังสือต้องไม่หาย
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-f-antiwipe">▶️ รันการทดสอบ</button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>3️⃣</span>
+                  <span>ทดสอบส่งรายงานเปิดงานตอนเช้า (Morning Report)</span>
+                </div>
+                <div class="test-case-desc">
+                  ส่งรายงานเปิดงานเช้าจริงลง Firestore และเช็กสถานะการตอบรับ
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-f-morning">▶️ รันการทดสอบ</button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>4️⃣</span>
+                  <span>ทดสอบส่งรายงานปิดงานตอนเย็น (Evening Complete Report)</span>
+                </div>
+                <div class="test-case-desc">
+                  ส่งรายงานปิดงานเย็น บันทึกผลงานสะสมจริง 100% พร้อมปิดงานประจำวัน
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-f-evening">▶️ รันการทดสอบ</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- TAB 2: SUBCONTRACTOR (LV2)                               -->
+        <!-- ======================================================== -->
+        <div class="role-panel" id="panel-sub">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>📊</span>
+                <span>ชุดทดสอบบทบาท: หัวหน้าผู้รับเหมา (Subcontractor LV2)</span>
+              </div>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>1️⃣</span>
+                  <span>ทดสอบสร้างและยื่นแผนงานประจำเดือน (Monthly Gantt Submit)</span>
+                </div>
+                <div class="test-case-desc">
+                  จำลองการวางแผนงานประจำเดือน แตกงานย่อย 3 รายการ แล้วกดส่งยื่นขออนุมัติไปยัง PM
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-s-plan">▶️ รันการทดสอบ</button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>2️⃣</span>
+                  <span>ทดสอบการบันทึก Local Draft ป้องกันข้อมูลหาย</span>
+                </div>
+                <div class="test-case-desc">
+                  ตรวจสอบว่าการพิมพ์เป้าหมายและรายการงานถูกบันทึกลง LocalStorage อัตโนมัติ
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-s-draft">▶️ รันการทดสอบ</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- TAB 3: PM (LV3)                                          -->
+        <!-- ======================================================== -->
+        <div class="role-panel" id="panel-pm">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>👔</span>
+                <span>ชุดทดสอบบทบาท: ผู้จัดการโครงการ (PM LV3)</span>
+              </div>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>1️⃣</span>
+                  <span>ดึงรายการแผนงานรออนุมัติ (Pending Plans Fetch)</span>
+                </div>
+                <div class="test-case-desc">
+                  ตรวจสอบว่า PM มองเห็นแผนงานที่หัวหน้าผู้รับเหมายื่นเข้ามา
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-pm-pending">▶️ รันการทดสอบ</button>
+            </div>
+
+            <div class="test-case-item">
+              <div class="test-case-info">
+                <div class="test-case-title">
+                  <span>2️⃣</span>
+                  <span>กดอนุมัติแผนงาน &amp; กระจายงานเข้าหน้าโฟร์แมน (Approve Plan)</span>
+                </div>
+                <div class="test-case-desc">
+                  ทดสอบการกดอนุมัติแผนงาน และตรวจสอบว่าระบบกระจาย Approved Tasks ไปยังหน้าโฟร์แมนทันที
+                </div>
+              </div>
+              <button type="button" class="btn-run-test" id="btn-test-pm-approve">▶️ รันการทดสอบ</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Live Terminal -->
+      <div class="terminal-column">
+        <div class="terminal-container">
+          <div class="terminal-header">
+            <div class="terminal-title">
+              <span>⚡</span>
+              <span>LIVE TEST CONSOLE &amp; LOGS</span>
+            </div>
+            <span style="font-size: 0.7rem; color: #64748b;">Auto-Scroll</span>
+          </div>
+          <div class="terminal-body" id="test-terminal">
+            <div class="terminal-row info">
+              <span class="term-time">[Ready]</span> <span class="term-role">[SYS]</span> ระบบทดสอบ CPM Test Center พร้อมใช้งาน เลือกบทบาทด้านบนหรือกดรันการทดสอบได้ทันที
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script type="module">
+    import { TestSuite } from './js/test_suite.js?v=2.2.0';
+
+    window.TestSuite = TestSuite;
+
+    // Tab Switching
+    document.querySelectorAll('.role-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.role-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.role-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const role = btn.dataset.role;
+        const panel = document.getElementById(`panel-${role}`);
+        if (panel) panel.classList.add('active');
+      });
+    });
+
+    // Clear Terminal
+    document.getElementById('btn-clear-term')?.addEventListener('click', () => {
+      const term = document.getElementById('test-terminal');
+      if (term) term.innerHTML = '<div class="terminal-row info"><span class="term-time">[Cleared]</span> Terminal logs cleared.</div>';
+    });
+
+    // Health Check Ping
+    async function doHealthCheck() {
+      const res = await TestSuite.runHealthCheck();
+      const fsEl = document.getElementById('val-health-firestore');
+      const gasEl = document.getElementById('val-health-gas');
+      if (fsEl && res.firestore) {
+        fsEl.innerText = `${res.firestore.status} (${res.firestore.latency || '-'})`;
+        fsEl.style.color = res.firestore.color;
+      }
+      if (gasEl && res.gas) {
+        gasEl.innerText = `${res.gas.status} (${res.gas.latency || '-'})`;
+        gasEl.style.color = res.gas.color;
+      }
+    }
+
+    document.getElementById('btn-ping-health')?.addEventListener('click', doHealthCheck);
+    setTimeout(doHealthCheck, 300);
+
+    // Auto-Fix Buttons
+    document.getElementById('btn-fix-approved-tasks')?.addEventListener('click', async () => {
+      await TestSuite.autoFixApprovedTasksForToday();
+    });
+
+    document.getElementById('btn-fix-reconcile')?.addEventListener('click', async () => {
+      await TestSuite.reconcileSheetsToFirestore();
+    });
+
+    document.getElementById('btn-fix-clear-cache')?.addEventListener('click', async () => {
+      await TestSuite.clearTestCacheAndReset();
+    });
+
+    document.getElementById('btn-run-audit')?.addEventListener('click', async () => {
+      const container = document.getElementById('audit-results-container');
+      if (container) container.innerHTML = '⏳ กำลังวิเคราะห์ข้อมูล...';
+      const a = await TestSuite.analyzeDataSync();
+      if (container) {
+        container.innerHTML = `
+          <div style="line-height: 1.8;">
+            <div>📋 <strong>แผนงาน (Plans):</strong> Firestore: <b>${a.firestorePlans}</b> | Sheets: <b>${a.gasPlans}</b> (${a.plansMatch ? '<span style="color:#34d399">✅ ตรงกัน</span>' : '<span style="color:#f87171">⚠️ ไม่ตรงกัน</span>'})</div>
+            <div>📝 <strong>รายงานประจำวัน (Daily Reports):</strong> Firestore: <b>${a.firestoreReports}</b> | Sheets: <b>${a.gasReports}</b> (${a.reportsMatch ? '<span style="color:#34d399">✅ ตรงกัน</span>' : '<span style="color:#f87171">⚠️ ไม่ตรงกัน</span>'})</div>
+            <div>🎯 <strong>งานที่อนุมัติสำหรับวันนี้ (${TestSuite.today}):</strong> <b>${a.approvedTasksForToday}</b> รายการ</div>
+          </div>
+        `;
+      }
+    });
+
+    // Foreman Tests
+    document.getElementById('btn-test-f-fetch')?.addEventListener('click', async () => {
+      await TestSuite.testForemanFetchApprovedTasks();
+    });
+    document.getElementById('btn-test-f-antiwipe')?.addEventListener('click', async () => {
+      await TestSuite.testForemanAntiWipeTyping();
+    });
+    let lastMornId = null;
+    document.getElementById('btn-test-f-morning')?.addEventListener('click', async () => {
+      const res = await TestSuite.testForemanSubmitMorningReport();
+      if (res.success) lastMornId = res.reportId;
+    });
+    document.getElementById('btn-test-f-evening')?.addEventListener('click', async () => {
+      await TestSuite.testForemanSubmitEveningReport(lastMornId);
+    });
+
+    // Subcontractor Tests
+    let lastPlanId = null;
+    document.getElementById('btn-test-s-plan')?.addEventListener('click', async () => {
+      const res = await TestSuite.testSubcontractorCreatePlan();
+      if (res.success) lastPlanId = res.planId;
+    });
+    document.getElementById('btn-test-s-draft')?.addEventListener('click', async () => {
+      await TestSuite.testSubcontractorDraftPersistence();
+    });
+
+    // PM Tests
+    document.getElementById('btn-test-pm-pending')?.addEventListener('click', async () => {
+      await TestSuite.testPMFetchPendingPlans();
+    });
+    document.getElementById('btn-test-pm-approve')?.addEventListener('click', async () => {
+      await TestSuite.testPMApprovePlan(lastPlanId);
+    });
+
+    // Full E2E Loop
+    document.getElementById('btn-run-all-e2e')?.addEventListener('click', async () => {
+      await TestSuite.runFullEndToEndTest();
+    });
+  </script>
+</body>
+</html>

@@ -28,3 +28,6 @@ Thumbs.db
 
 # Clasp
 .clasp.json
+
+# Scratch
+scratch/

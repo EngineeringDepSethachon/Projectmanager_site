@@ -748,35 +748,50 @@ window.handlePMDecision = async function(planId, decision, overrideNotes = null)
   }
 
   showToast(`✅ บันทึกผล: ${decisionText} สำเร็จ!`, 'success');
-  broadcastSync('PLAN_APPROVED', { planId, decision });
 
-  // 2. Fast Firestore Sync (<100ms)
+  // 2. Fast Firestore Sync (<100ms) - Write first so listening clients find the data
   if (firebaseService.isConfigured()) {
-    firebaseService.updateWeeklyPlanStatus(planId, decision, notes, state.user.name).catch(e => console.warn('[PM] Firestore update status error:', e));
+    try {
+      await firebaseService.updateWeeklyPlanStatus(planId, decision, notes, state.user.name);
 
-    if (decision === 'Approved') {
-      firebaseService.getPlanTasks(planId).then(async (cachedTasks) => {
-        let tasks = cachedTasks;
+      if (decision === 'Approved') {
+        let tasks = await firebaseService.getPlanTasks(planId);
         if (!tasks || tasks.length === 0) {
           tasks = await gasService.fetchDailyTasks(planId);
         }
         if (tasks && tasks.length > 0) {
           const planCompany = targetPlan?.company || targetPlan?.subcontractor || '';
           const tasksByDate = {};
+          
+          // Anchor date of plan
+          const todayIso = new Date().toISOString().slice(0, 10);
+          
           tasks.forEach(t => {
-            const d = t.taskDate || t.date || '';
-            if (d) {
-              if (!tasksByDate[d]) tasksByDate[d] = [];
-              tasksByDate[d].push({ ...t, company: planCompany, planId: planId });
+            const d = t.taskDate || t.date || todayIso;
+            if (!tasksByDate[d]) tasksByDate[d] = [];
+            tasksByDate[d].push({ ...t, company: planCompany, planId: planId });
+
+            // Also ensure today's date has this task if plan covers today
+            const pStart = targetPlan?.startDate || targetPlan?.start_date || '';
+            const pEnd = targetPlan?.endDate || targetPlan?.end_date || pStart;
+            if (todayIso >= pStart && todayIso <= pEnd && d !== todayIso) {
+              if (!tasksByDate[todayIso]) tasksByDate[todayIso] = [];
+              tasksByDate[todayIso].push({ ...t, company: planCompany, planId: planId });
             }
           });
+
           for (const [tDate, dTasks] of Object.entries(tasksByDate)) {
             await firebaseService.syncApprovedTasks(tDate, state.project.id, dTasks);
           }
         }
-      }).catch(e => console.warn('[PM] Sync approved tasks to Firestore error:', e));
+      }
+    } catch (e) {
+      console.warn('[PM] Firestore sync error during approval:', e);
     }
   }
+
+  // Now broadcast after Firestore writes are fully committed!
+  broadcastSync('PLAN_APPROVED', { planId, decision });
 
   // 3. Background GAS Sync (non-blocking)
   if (gasService.isConfigured()) {

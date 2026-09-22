@@ -508,7 +508,7 @@ function renderPlanMetaUI() {
   const objInput = document.getElementById('input-month-objective') || document.getElementById('input-week-objective');
   const pmBox = document.getElementById('pm-directive-box');
 
-  if (objInput) {
+  if (objInput && document.activeElement !== objInput) {
     objInput.value = state.monthObjective || '';
   }
 
@@ -1468,14 +1468,20 @@ async function submitPlanToPM() {
         task_id: m.id,
         plan_id: planId,
         date: m.startDate,
+        startDate: m.startDate,
+        endDate: m.endDate,
         day: m.category,
         company: state.subcontractor.name,
         category: m.category,
         task_name: m.name,
+        name: m.name,
         description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${m.workArea || '-'}]`,
         work_area: m.workArea || '',
+        workArea: m.workArea || '',
         quantity: '-',
+        targetQty: '-',
         planned_workers: 5,
+        plannedWorkers: 5,
         machinery: '-'
       });
     } else {
@@ -1486,14 +1492,20 @@ async function submitPlanToPM() {
           parent_task_id: m.id,
           parent_task_name: m.name,
           date: m.startDate, // Default anchor date
+          startDate: m.startDate,
+          endDate: m.endDate,
           day: m.category,
           company: state.subcontractor.name,
           category: m.category,
           task_name: st.name,
+          name: st.name,
           description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${st.workArea || m.workArea || '-'}] ${st.description || ''}`,
           work_area: st.workArea || m.workArea || '',
+          workArea: st.workArea || m.workArea || '',
           quantity: st.targetQty || '-',
+          targetQty: st.targetQty || '-',
           planned_workers: Number(st.plannedWorkers || 0),
+          plannedWorkers: Number(st.plannedWorkers || 0),
           machinery: st.machinery || '-'
         });
       });
@@ -1644,10 +1656,12 @@ async function loadWeeklyPlans(isSilent = false) {
 
   try {
     // 1. Fast Firestore fetch (<100ms)
+    let foundFirestore = false;
     if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
       try {
         const fbPlans = await firebaseService.getWeeklyPlans(state.project.id);
         if (Array.isArray(fbPlans) && fbPlans.length > 0) {
+          foundFirestore = true;
           const myPlans = fbPlans.filter(p => {
             if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
             return !p.company || p.company === '-' || p.company === state.subcontractor.name;
@@ -1664,9 +1678,10 @@ async function loadWeeklyPlans(isSilent = false) {
       }
     }
 
-    // 2. Background Google Sheets fetch & merge (non-blocking)
-    if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
-      gasService.fetchWeeklyPlans(state.project.id, '', state.subcontractor.name).then(gasPlans => {
+    // 2. Google Sheets fetch (เฉพาะกรณีที่ Firestore ไม่พบแผนงาน)
+    if (!foundFirestore && gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+      try {
+        const gasPlans = await gasService.fetchWeeklyPlans(state.project.id, '', state.subcontractor.name);
         if (Array.isArray(gasPlans)) {
           const validGasPlans = gasPlans.filter(p => {
             if (!state.subcontractor.name || state.subcontractor.name === '-') return true;
@@ -1685,9 +1700,9 @@ async function loadWeeklyPlans(isSilent = false) {
           syncCurrentMonthPlan();
           state.isDirty = false;
         }
-      }).catch(e => {
+      } catch(e) {
         if (!isSilent) console.warn('loadWeeklyPlans GAS error:', e);
-      });
+      }
     }
   } catch (err) {
     if (!isSilent) console.warn('loadWeeklyPlans error:', err);

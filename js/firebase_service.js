@@ -239,8 +239,45 @@ export const firebaseService = {
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const data = snap.data();
-        if (Array.isArray(data.tasks)) return data.tasks;
+        if (Array.isArray(data.tasks) && data.tasks.length > 0) return data.tasks;
       }
+
+      // Smart Fallback: Find approved weekly/monthly plans covering this date
+      const plans = await this.getWeeklyPlans(projectId);
+      const approvedPlans = plans.filter(p => {
+        const status = p.status || p.pmStatus;
+        if (status !== 'Approved') return false;
+        const s = p.startDate || p.start_date || '';
+        const e = p.endDate || p.end_date || s;
+        return (!s || !e || (date >= s && date <= e));
+      });
+
+      if (approvedPlans.length > 0) {
+        const collectedTasks = [];
+        for (const plan of approvedPlans) {
+          const pTasks = await this.getPlanTasks(plan.planId || plan.id);
+          if (Array.isArray(pTasks) && pTasks.length > 0) {
+            pTasks.forEach((t, idx) => {
+              collectedTasks.push({
+                taskId: t.task_id || t.id || t.taskId || ('AP-' + (plan.planId || plan.id) + '-' + idx),
+                name: t.task_name || t.name || t.taskName || 'งานตามแผนที่อนุมัติ',
+                targetQty: t.quantity || t.targetQty || '',
+                quantity: t.quantity || t.targetQty || '',
+                progress: 0,
+                plannedWorkers: t.planned_workers || t.plannedWorkers || 0,
+                workArea: t.work_area || t.workArea || '',
+                category: t.category || 'ทั่วไป',
+                company: plan.company || plan.company_name || t.company || '-',
+                from_plan: true
+              });
+            });
+          }
+        }
+        if (collectedTasks.length > 0) {
+          return collectedTasks;
+        }
+      }
+
       return [];
     } catch (err) {
       console.warn('[FirebaseService] getApprovedTasks error:', err);

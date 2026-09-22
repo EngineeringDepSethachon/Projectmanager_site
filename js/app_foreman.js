@@ -64,8 +64,35 @@ const state = {
       'รถโม่คอนกรีต'
     ];
   })(),
-  issues: []
+  issues: [],
+  customIssues: '',
+  _explicitDbCleared: false
 };
+
+// ==========================================
+// Anti-Flicker: Render Debounce & Dirty-Check System
+// ==========================================
+let _renderShiftTimer = null;
+let _renderTasksTimer = null;
+let _lastTasksHash = '';
+let _lastShiftState = '';
+let _lastPhotosHash = '';
+let _lastMachineryHash = '';
+let _lastWeatherHash = '';
+let _lastWorkforceHash = '';
+let _lastRenderedShift = '';
+let _initComplete = false;
+
+function computeTasksHash() {
+  const tasks = getActiveTasksList();
+  try {
+    return state.activeShift + ':' + tasks.map(t => t.id + '|' + (t.name||'') + '|' + (t.from_plan?'1':'0')).join(';');
+  } catch(e) { return ''; }
+}
+
+function computeShiftState() {
+  return state.activeShift + ':' + (state.existingMorningReport ? state.existingMorningReport.id : 'none') + ':' + (state.existingEveningReport ? state.existingEveningReport.id : 'none');
+}
 
 const QUICK_ISSUES = [
   '✅ งานราบรื่นตามแผน',
@@ -106,8 +133,17 @@ document.addEventListener('DOMContentLoaded', () => {
   setupForemanRealtimeSync();
 
   // 3. Fast Non-blocking Data Hydration (Cache 0ms -> Firestore <100ms -> GAS fallback)
-  loadApprovedTasksForToday();
-  checkExistingReportForToday();
+  //    ใช้ sequential await เพื่อป้องกัน race condition ระหว่าง approved tasks กับ existing reports
+  (async () => {
+    try {
+      await loadApprovedTasksForToday();
+      await checkExistingReportForToday();
+    } catch(e) {
+      console.warn('[Foreman] Init data hydration error:', e);
+    }
+    // Mark init complete to enable debounce for subsequent renders
+    _initComplete = true;
+  })();
   loadProjectsList();
 
   // 4. Background profile sync
@@ -150,6 +186,11 @@ function parseUrlParams() {
       state.subcontractor.name = decodeURIComponent(company);
       localStorage.setItem('site_sub_name', state.subcontractor.name);
     }
+    const avatar = urlParams.get('avatar');
+    if (avatar) {
+      state.lineUser.avatar = decodeURIComponent(avatar);
+      localStorage.setItem('site_line_avatar', state.lineUser.avatar);
+    }
   } catch (e) {
     console.warn('parseUrlParams error:', e);
   }
@@ -176,25 +217,95 @@ function initDateDisplay() {
 // Core: Load Approved Tasks for Today
 // (ดึงงานที่หัวหน้าผู้รับเหมาสร้าง และ PM อนุมัติล่วงหน้าแล้วเท่านั้น)
 // ==========================================
+// ==========================================
+// Sync current DOM input values to state to guarantee zero data loss
+// ==========================================
+function syncDomInputsToState() {
+  const issueTextarea = document.getElementById('custom-issue-text');
+  if (issueTextarea) {
+    state.customIssues = issueTextarea.value;
+  }
+
+  const container = document.getElementById('dynamic-tasks-container');
+  if (!container) return;
+  const list = getActiveTasksList();
+
+  container.querySelectorAll('.dynamic-task-card').forEach(card => {
+    const taskId = card.dataset.taskId;
+    const task = list.find(t => t.id === taskId);
+    if (!task) return;
+
+    // Quantity
+    const qtyInput = card.querySelector('input[placeholder*="เช่น 8 ต้น"], .compare-qty-input');
+    if (qtyInput && qtyInput.value !== undefined) {
+      task.quantity = qtyInput.value;
+      if (state.activeShift === 'evening') {
+        task.actual_quantity = qtyInput.value;
+      }
+    }
+
+    // Progress
+    const progInput = card.querySelector('.progress-num-input');
+    if (progInput && progInput.value !== '') {
+      task.progress = parseInt(progInput.value, 10) || 0;
+    }
+  });
+}
+
 function applyApprovedTasks(approvedList) {
   const banner = document.getElementById('plan-source-status-banner');
-  state.approvedTasksToday = approvedList || [];
+  
+  // Always capture whatever the user has typed into DOM inputs before any update
+  syncDomInputsToState();
+
+  const incomingList = Array.isArray(approvedList) ? approvedList : [];
+
+  // CRITICAL GUARD: If incoming list is empty, but we already have approved tasks loaded
+  // (e.g. from Google Sheets or active edits), DO NOT wipe them out!
+  // Firestore returning [] just means Firestore doesn't have tasks for today yet,
+  // which is normal because weekly plans/tasks are stored in Google Sheets.
+  if (incomingList.length === 0) {
+    if (state.morningPlannedTasks.length > 0 && !state._explicitDbCleared) {
+      console.log('[Foreman] Preserving existing loaded tasks, ignoring empty approved list sync');
+      return;
+    }
+  }
+
+  state.approvedTasksToday = incomingList;
 
   if (state.approvedTasksToday.length > 0) {
-    const fromPlanTasks = state.approvedTasksToday.map((at, idx) => ({
-      id: 'TASK-' + (at.taskId || at.id || ('P-' + idx)),
-      source_task_id: at.taskId || at.id || ('TASK-' + idx),
-      from_plan: at.from_plan !== undefined ? at.from_plan : true,
-      company: at.company || state.subcontractor.name || '-',
-      name: at.name || at.taskName || at.category || 'งานตามแผน',
-      category: at.category || 'ทั่วไป',
-      workArea: at.workArea || at.work_area || '',
-      description: at.description || at.taskDesc || '',
-      quantity: at.quantity || at.targetQty || '',
-      plannedWorkers: at.plannedWorkers || 0,
-      progress: at.progress !== undefined ? at.progress : 0,
-      isPlanned: at.isPlanned !== undefined ? at.isPlanned : true
-    }));
+    const fromPlanTasks = state.approvedTasksToday.map((at, idx) => {
+      const taskId = 'TASK-' + (at.taskId || at.id || ('P-' + idx));
+      const sourceId = at.taskId || at.id || ('TASK-' + idx);
+      
+      // Preserve any quantity or progress or details the user has already edited in this session!
+      const existingMorn = state.morningPlannedTasks.find(t => t.id === taskId || t.source_task_id === sourceId || t.name === at.name);
+      const existingEve = state.eveningActualTasks.find(t => t.id === taskId || t.source_task_id === sourceId || t.name === at.name);
+
+      const qty = (existingMorn && existingMorn.quantity !== undefined && existingMorn.quantity !== '') 
+        ? existingMorn.quantity 
+        : (at.quantity || at.targetQty || '');
+      const prog = (existingMorn && existingMorn.progress !== undefined && existingMorn.progress !== 0) 
+        ? existingMorn.progress 
+        : (at.progress !== undefined ? at.progress : 0);
+
+      return {
+        id: taskId,
+        source_task_id: sourceId,
+        from_plan: at.from_plan !== undefined ? at.from_plan : true,
+        company: at.company || state.subcontractor.name || '-',
+        name: at.name || at.taskName || at.category || 'งานตามแผน',
+        category: at.category || 'ทั่วไป',
+        workArea: at.workArea || at.work_area || (existingMorn ? existingMorn.workArea : ''),
+        description: at.description || at.taskDesc || (existingMorn ? existingMorn.description : ''),
+        quantity: qty,
+        plannedWorkers: at.plannedWorkers || 0,
+        progress: prog,
+        isPlanned: at.isPlanned !== undefined ? at.isPlanned : true,
+        planned_quantity: at.planned_quantity || (existingEve ? existingEve.planned_quantity : '') || qty,
+        planned_progress: at.planned_progress !== undefined ? at.planned_progress : (existingEve ? existingEve.planned_progress : prog)
+      };
+    });
 
     const extraMorning = state.morningPlannedTasks.filter(t => !t.from_plan);
     const extraEvening = state.eveningActualTasks.filter(t => !t.from_plan);
@@ -203,7 +314,10 @@ function applyApprovedTasks(approvedList) {
 
     if (state.eveningActualTasks.length > 0) {
       state.eveningActualTasks = [
-        ...state.eveningActualTasks.filter(t => t.from_plan),
+        ...fromPlanTasks.map(ft => {
+          const matchedEve = state.eveningActualTasks.find(et => et.id === ft.id || et.source_task_id === ft.source_task_id);
+          return matchedEve ? { ...ft, ...matchedEve } : ft;
+        }),
         ...extraEvening
       ];
     }
@@ -245,7 +359,7 @@ function applyApprovedTasks(approvedList) {
     }
   }
 
-  renderDynamicTasks();
+  renderDynamicTasks(false);
 }
 
 async function loadApprovedTasksForToday() {
@@ -257,30 +371,41 @@ async function loadApprovedTasksForToday() {
     }
   }
 
-  // 2. ดึงสดจาก Firestore โดยตรง (<100ms) - ไม่เก็บแคชลง LocalStorage เพื่อป้องกันปัญหาข้อมูลค้าง
+  // 2. ดึงสดจาก Firestore โดยตรง (<100ms) - Single-Fetch
+  let foundFirestore = false;
   if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
     try {
       const fbTasks = await firebaseService.getApprovedTasks(state.reportDate, state.project.id);
       if (Array.isArray(fbTasks)) {
-        const mySub = state.subcontractor.name;
-        const filtered = (mySub && mySub !== '-') 
-          ? fbTasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
-          : fbTasks;
-        applyApprovedTasks(filtered);
-        if (filtered.length > 0) return; // ดึงจาก Firestore สำเร็จแล้ว
+        foundFirestore = true;
+        if (fbTasks.length > 0) {
+          const mySub = state.subcontractor.name;
+          const filtered = (mySub && mySub !== '-') 
+            ? fbTasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
+            : fbTasks;
+          if (filtered.length > 0) {
+            applyApprovedTasks(filtered);
+            return; // ดึงจาก Firestore สำเร็จแล้ว ไม่ต้องเรียก GAS
+          }
+        }
       }
     } catch (e) {
       console.warn('[Foreman] Firestore getApprovedTasks error:', e);
     }
   }
 
-  // 3. ดึงจาก Google Sheets (เป็น fallback หาก Firestore ยังไม่มีข้อมูล)
-  if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
-    gasService.fetchApprovedTasksForDate(state.reportDate, state.subcontractor.name, state.project.id).then(gasTasks => {
-      if (Array.isArray(gasTasks)) {
+  // 3. ดึงจาก Google Sheets เฉพาะกรณีที่ Firestore ยังไม่มีข้อมูล และยังไม่มีรายการงานในหน้าจอ
+  if (!foundFirestore && gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+    try {
+      const gasTasks = await gasService.fetchApprovedTasksForDate(state.reportDate, state.subcontractor.name, state.project.id);
+      if (Array.isArray(gasTasks) && gasTasks.length > 0) {
         applyApprovedTasks(gasTasks);
+      } else if (state.morningPlannedTasks.length === 0) {
+        applyApprovedTasks([]);
       }
-    }).catch(e => console.warn('[Foreman] GAS fetchApprovedTasks error:', e));
+    } catch (e) {
+      console.warn('[Foreman] GAS fetchApprovedTasks error:', e);
+    }
   }
 }
 
@@ -291,9 +416,28 @@ function getActiveTasksList() {
   return state.activeShift === 'morning' ? state.morningPlannedTasks : state.eveningActualTasks;
 }
 
-function renderDynamicTasks() {
+function renderDynamicTasks(force = false) {
   const container = document.getElementById('dynamic-tasks-container');
   if (!container) return;
+
+  // Always capture active inputs before any re-render
+  syncDomInputsToState();
+
+  // ป้องกันหน้าจอกระพริบ/รีเฟรชขณะโฟร์แมนกำลังพิมพ์งาน: ถ้าผู้ใช้กำลังพิมพ์ใน input หรือ textarea ใดๆ ห้ามทำลาย DOM เด็ดขาด!
+  const activeEl = document.activeElement;
+  const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+  if (isTyping) {
+    console.log('[Foreman] Preserving active input focus during background sync');
+    return;
+  }
+
+  // Anti-Flicker: Skip re-render if structural task data hasn't actually changed
+  const currentHash = computeTasksHash();
+  if (!force && currentHash === _lastTasksHash && container.children.length > 0) {
+    console.log('[Foreman] Skipping renderDynamicTasks - no structural change');
+    return;
+  }
+  _lastTasksHash = currentHash;
 
   const isMorning = state.activeShift === 'morning';
   const tasks = getActiveTasksList();
@@ -699,7 +843,8 @@ function switchShift(shift) {
     showToast('🌅 สลับสู่โหมด: เปิดงานตอนเช้า', 'info');
   }
 
-  renderShiftUI();
+  _lastTasksHash = ''; // Force re-render tasks when switching shifts
+  _renderShiftUICore(); // Immediate render for user-initiated action (no debounce)
 }
 
 // Expose switchShift to window for onclick handlers
@@ -827,7 +972,16 @@ function renderMorningBaselineCard() {
   `;
 }
 
-function renderShiftUI() {
+// Debounced wrapper: coalesces multiple rapid calls into a single render
+function scheduleRenderShiftUI() {
+  if (_renderShiftTimer) clearTimeout(_renderShiftTimer);
+  _renderShiftTimer = setTimeout(() => {
+    _renderShiftTimer = null;
+    _renderShiftUICore();
+  }, _initComplete ? 80 : 0);
+}
+
+function _renderShiftUICore() {
   const isMorning = state.activeShift === 'morning';
   const tabMorning = document.getElementById('tab-morning-shift');
   const tabEvening = document.getElementById('tab-evening-shift');
@@ -1053,8 +1207,22 @@ function renderShiftUI() {
     }
   }
 
+  const issueText = document.getElementById('custom-issue-text');
+  if (issueText && state.customIssues && document.activeElement !== issueText) {
+    issueText.value = state.customIssues;
+  }
+
   renderPhotos();
-  renderDynamicTasks();
+  const tasksContainer = document.getElementById('dynamic-tasks-container');
+  if (_lastRenderedShift !== state.activeShift || !tasksContainer || !tasksContainer.children.length) {
+    _lastRenderedShift = state.activeShift;
+    renderDynamicTasks();
+  }
+}
+
+// Alias: all existing callers of renderShiftUI() now go through debounced wrapper
+function renderShiftUI() {
+  scheduleRenderShiftUI();
 }
 
 function clearTodayReportState() {
@@ -1062,6 +1230,11 @@ function clearTodayReportState() {
   state.existingEveningReport = null;
   state.photos = [];
   state.eveningPhotos = [];
+  // ไม่ล้าง state.customIssues หากโฟร์แมนพิมพ์ข้อความไว้แล้ว เพื่อป้องกันข้อมูลหน้างานสูญหาย
+  if (!state.customIssues) {
+    const issueText = document.getElementById('custom-issue-text');
+    if (issueText && document.activeElement !== issueText) issueText.value = '';
+  }
   state.workforce = {
     foreman: 1,
     skilled_workers: 0,
@@ -1092,10 +1265,12 @@ function applyExistingReports(list) {
   const mySub = state.subcontractor.name;
   const myUid = state.lineUser.uid;
 
-  // หากฐานข้อมูลว่างเปล่า (เช่น เคลียร์ Database) ให้ล้างสถานะหน้าจอทั้งหมดทันที
+  // หากฐานข้อมูลว่างเปล่า (เช่น เคลียร์ Database) ให้ล้างสถานะหน้าจอเฉพาะกรณีที่มีรายงานเดิมแสดงอยู่
   if (!Array.isArray(list) || list.length === 0) {
-    if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
-      clearTodayReportState();
+    if (state.existingMorningReport || state.existingEveningReport) {
+      if (!state.existingMorningReport?._bgSyncing && !state.existingEveningReport?._bgSyncing) {
+        clearTodayReportState();
+      }
     }
     return;
   }
@@ -1113,7 +1288,7 @@ function applyExistingReports(list) {
   }) || null;
 
   if (!mReport) {
-    if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
+    if (state.existingMorningReport && !state.existingMorningReport._bgSyncing) {
       state.existingMorningReport = null;
       state.photos = [];
     }
@@ -1186,7 +1361,7 @@ function applyExistingReports(list) {
   }) || null;
 
   if (!eReport) {
-    if (!state.existingEveningReport || !state.existingEveningReport._bgSyncing) {
+    if (state.existingEveningReport && !state.existingEveningReport._bgSyncing) {
       state.existingEveningReport = null;
       state.eveningPhotos = [];
     }
@@ -1207,20 +1382,24 @@ function applyExistingReports(list) {
 async function checkExistingReportForToday() {
   if (!state.project.id || state.project.id === '-') return;
 
-  // 1. Fast Firestore fetch (<100ms) - ดึงข้อมูลตรงจาก Database สด ไม่เก็บแคชลง LocalStorage
+  let foundFirestore = false;
+  // 1. Fast Firestore fetch (<100ms) - ดึงข้อมูลตรงจาก Database สด
   if (firebaseService.isConfigured()) {
     try {
       const fbList = await firebaseService.getDailyReports(state.project.id);
       if (Array.isArray(fbList)) {
+        foundFirestore = true;
         if (fbList.length > 0) {
           applyExistingReports(fbList);
-          const hasToday = fbList.some(r => (r.report_date || r['วันที่รายงาน (Date)']) === state.reportDate);
-          if (hasToday) return; // พบรายงานวันนี้จาก Firestore แล้ว ไม่ต้องรอ GAS
+          return; // พบหรือประมวลผลจาก Firestore แล้ว ไม่ต้องดึงจาก Sheets ซ้ำ
         } else {
-          // Firestore ว่างเปล่า (เคลียร์ DB แล้ว) -> เคลียร์รายงานหน้าจอทันที
-          if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
-            clearTodayReportState();
+          // Firestore ว่างเปล่า (ไม่มีรายงานค้าง)
+          if (state.existingMorningReport || state.existingEveningReport) {
+            if (!state.existingMorningReport?._bgSyncing && !state.existingEveningReport?._bgSyncing) {
+              clearTodayReportState();
+            }
           }
+          return;
         }
       }
     } catch (e) {
@@ -1228,19 +1407,16 @@ async function checkExistingReportForToday() {
     }
   }
 
-  // 2. Background GAS fetch (fallback)
-  if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
-    gasService.fetchDailyReports(state.project.id).then(gasList => {
-      if (Array.isArray(gasList)) {
-        if (gasList.length > 0) {
-          applyExistingReports(gasList);
-        } else {
-          if (!state.existingMorningReport || !state.existingMorningReport._bgSyncing) {
-            clearTodayReportState();
-          }
-        }
+  // 2. Fallback GAS fetch (เฉพาะเมื่อ Firestore ไม่ตอบสนอง)
+  if (!foundFirestore && gasService.isConfigured() && state.project.id && state.project.id !== '-') {
+    try {
+      const gasList = await gasService.fetchDailyReports(state.project.id);
+      if (Array.isArray(gasList) && gasList.length > 0) {
+        applyExistingReports(gasList);
       }
-    }).catch(e => console.warn('[Foreman] GAS fetchDailyReports error:', e));
+    } catch (e) {
+      console.warn('[Foreman] GAS fetchDailyReports error:', e);
+    }
   }
 }
 
@@ -1248,6 +1424,10 @@ async function checkExistingReportForToday() {
 // Weather & Workforce & UI Helpers
 // ==========================================
 function renderWeather() {
+  const hash = `${state.weather.type}:${state.weather.rainDelayHours}`;
+  if (hash === _lastWeatherHash) return;
+  _lastWeatherHash = hash;
+
   document.querySelectorAll('.weather-btn').forEach(btn => {
     if (btn.dataset.type === state.weather.type) btn.classList.add('active');
     else btn.classList.remove('active');
@@ -1258,6 +1438,10 @@ function renderWeather() {
 }
 
 function renderWorkforce() {
+  const hash = Object.values(state.workforce).join(':');
+  if (hash === _lastWorkforceHash) return;
+  _lastWorkforceHash = hash;
+
   let sum = 0;
   for (const [role, count] of Object.entries(state.workforce)) {
     const el = document.getElementById(`count-${role}`);
@@ -1269,6 +1453,10 @@ function renderWorkforce() {
 }
 
 function renderPhotos() {
+  const hash = (state.photos || []).map(p => p.url).join(';') + '||' + (state.eveningPhotos || []).map(p => p.url).join(';');
+  if (hash === _lastPhotosHash) return;
+  _lastPhotosHash = hash;
+
   // 1. Update overall photo counter badge
   const totalCount = (state.photos ? state.photos.length : 0) + (state.eveningPhotos ? state.eveningPhotos.length : 0);
   const countEl = document.getElementById('photo-counter');
@@ -1320,6 +1508,7 @@ function renderPhotos() {
 }
 
 window.removePhoto = function(shift, idx) {
+  _lastPhotosHash = '';
   if (shift === 'morning') {
     state.photos.splice(idx, 1);
   } else {
@@ -1330,6 +1519,10 @@ window.removePhoto = function(shift, idx) {
 };
 
 function renderMachinery() {
+  const hash = (state.machinery || []).join(';') + '||' + (state.availableMachinery || []).join(';');
+  if (hash === _lastMachineryHash) return;
+  _lastMachineryHash = hash;
+
   const grid = document.getElementById('machinery-chips-grid');
   const counterBadge = document.getElementById('machinery-counter-badge');
   if (counterBadge) counterBadge.innerText = `เลือกแล้ว ${state.machinery.length} เครื่อง`;
@@ -1360,6 +1553,7 @@ function renderMachinery() {
 }
 
 window.toggleMachinery = function(item) {
+  _lastMachineryHash = '';
   const idx = state.machinery.indexOf(item);
   if (idx > -1) state.machinery.splice(idx, 1);
   else state.machinery.push(item);
@@ -1496,6 +1690,14 @@ function bindEventHandlers() {
     renderMachinery();
     showToast(`เพิ่มเครื่องจักร: ${val}`, 'info');
   });
+
+  // Custom issue text listener to prevent loss during re-render
+  const issueText = document.getElementById('custom-issue-text');
+  if (issueText) {
+    issueText.addEventListener('input', (e) => {
+      state.customIssues = e.target.value;
+    });
+  }
 
   // Submit Daily Report
   document.getElementById('btn-submit-daily-report')?.addEventListener('click', submitDailyReport);
@@ -1789,7 +1991,8 @@ async function submitDailyReport() {
   }
 
   // สลับสถานะ UI บนหน้าจอเป็น "ส่งแล้ว" ทันที ไม่ต้องรอเน็ต
-  renderShiftUI();
+  _lastTasksHash = ''; // Force task re-render
+  _renderShiftUICore();
 
   // แสดง Toast แจ้งเตือนผู้ใช้ทันที
   const actionWord = isEdit ? 'อัปเดตการแก้ไข' : 'ส่ง';
@@ -2015,80 +2218,27 @@ function broadcastForemanSync(type, details = {}) {
 }
 
 function setupForemanRealtimeSync() {
-  // 1. Firebase Real-Time Firestore Listeners (cross-device: mobile <-> desktop)
+  // หน้าโฟร์แมนดึงข้อมูลเฉพาะตอนเปิดหน้าเว็บครั้งแรก (Fetch Once on Start)
+  // ไม่มีการเปิด Real-time Snapshots หรือ Polling วนซ้ำในเบื้องหลัง เพื่อให้หน้าจอนิ่ง 100% ขณะโฟร์แมนทำงาน
+
+  // 1. ดักฟังสัญญาณเฉพาะกรณีมีคำสั่งพิเศษ (เช่น เคลียร์ Database)
   if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
-    // A. Listen for Daily Reports collection changes (including deletions/clears in real-time)
-    firebaseService.listenDailyReports(state.project.id, (reportsList) => {
-      console.log('[ForemanLiveSync] Daily reports real-time snapshot:', reportsList?.length || 0);
-      applyExistingReports(reportsList || []);
-    });
-
-    // B. Listen for Approved Tasks changes in real-time
-    firebaseService.listenApprovedTasks(state.reportDate, state.project.id, (tasks) => {
-      console.log('[ForemanLiveSync] Approved tasks real-time snapshot:', tasks?.length || 0);
-      const mySub = state.subcontractor.name;
-      const filtered = (Array.isArray(tasks) && mySub && mySub !== '-') 
-        ? tasks.filter(t => !t.company || t.company === '-' || t.company.includes(mySub) || mySub.includes(t.company))
-        : (tasks || []);
-      applyApprovedTasks(filtered);
-    });
-
-    // C. Listen for broadcast events
     firebaseService.listenEvents(async (type, payload) => {
-      if (type === 'PLAN_APPROVED' || type === 'PLAN_SUBMITTED' || type === 'REFRESH_ALL' || type === 'DATABASE_CLEARED') {
-        console.log('[ForemanLiveSync] Firebase realtime event received:', type, payload);
-        if (type === 'DATABASE_CLEARED') {
-          clearTodayReportState();
-          applyApprovedTasks([]);
-        } else {
-          await loadApprovedTasksForToday();
-          await checkExistingReportForToday();
-        }
+      if (type === 'DATABASE_CLEARED') {
+        state._explicitDbCleared = true;
+        clearTodayReportState();
+        applyApprovedTasks([]);
+      } else if (type === 'PLAN_APPROVED') {
+        // แสดง Toast แจ้งเตือนให้ทราบเท่านั้น ไม่บังคับรีโหลดหรือรบกวนข้อมูลที่กำลังพิมพ์
+        showToast('⚡ มีการอนุมัติแผนงานใหม่จาก PM', 'info');
       }
     });
   }
 
-  // 2. BroadcastChannel: local tab sync
-  try {
-    const channel = new BroadcastChannel('cpm_site_sync');
-    channel.onmessage = async (event) => {
-      const data = event.data;
-      if (data && (data.type === 'PLAN_APPROVED' || data.type === 'PLAN_SUBMITTED' || data.type === 'REFRESH_ALL')) {
-        console.log('[ForemanLiveSync] Broadcast received:', data.type);
-        await loadApprovedTasksForToday();
-        showToast('⚡ มีการอัปเดตสถานะแผนงานจาก PM! ปรับปรุงรายการงานให้อัตโนมัติ', 'info');
-      }
-    };
-  } catch (e) {
-    console.warn('[ForemanLiveSync] BroadcastChannel error:', e);
-  }
-
-  // 3. Storage listener fallback
-  window.addEventListener('storage', async (e) => {
-    if (e.key === 'cpm_sync_trigger' && e.newValue) {
-      try {
-        const data = JSON.parse(e.newValue);
-        if (data.type === 'PLAN_APPROVED' || data.type === 'PLAN_SUBMITTED') {
-          await loadApprovedTasksForToday();
-        }
-      } catch(err) {}
-    }
-  });
-
-  // 4. Background auto-polling every 15s to keep approved tasks up-to-date
-  setInterval(async () => {
-    if (!document.hidden) {
-      await loadApprovedTasksForToday();
-    }
-  }, 15000);
-
-  // 5. Auto retry pending offline reports queue
+  // 2. Auto retry pending offline reports queue เมื่อเน็ตกลับมาต่อ
   window.addEventListener('online', () => {
     processOfflineReportsQueue();
   });
-  setInterval(() => {
-    processOfflineReportsQueue();
-  }, 60000);
   processOfflineReportsQueue();
 }
 
