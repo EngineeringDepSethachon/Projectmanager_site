@@ -40,7 +40,14 @@ const state = {
 
   // PM Master Gantt Month State
   pmYear: new Date().getFullYear(),
-  pmMonth: new Date().getMonth() // 0-11
+  pmMonth: new Date().getMonth(), // 0-11
+
+  // Anti-flicker and state preservation
+  _cachedPMNotes: {},
+  _openDrawers: new Set(),
+  _cachedDrawerHtml: {},
+  _lastPlansHash: '',
+  _lastReportsTableHash: ''
 };
 
 // ==========================================
@@ -251,6 +258,7 @@ async function loadWeeklyPlans(isSilent = false) {
           if (state.activeTab === 'view-pm-gantt') {
             renderMasterMonthlyGantt();
           }
+          return; // Single-Fetch: Firestore returned data, avoid triggering delayed background GAS call
         }
       } catch (fbErr) {
         console.warn('[PM] Firebase getWeeklyPlans error:', fbErr);
@@ -333,7 +341,23 @@ function updateExecutiveKPIs() {
   if (elTasksSub) elTasksSub.innerText = `${totalTasks} รายการงานทั้งหมด`;
 }
 
-function renderApprovalPlans() {
+function computePlansHash(plans, filter) {
+  return filter + '::' + plans.map(p => {
+    return [
+      p.planId,
+      p.status || p.pmStatus || 'Pending',
+      p.overallProgress || p.progress || 0,
+      p.totalTasks || 0,
+      p.avgWorkers || 0,
+      p.submittedAt || '',
+      p.pmName || '',
+      p.approvedAt || '',
+      p.pmComment || ''
+    ].join('|');
+  }).join(';;');
+}
+
+function renderApprovalPlans(force = false) {
   const container = document.getElementById('pm-plans-container');
   if (!container) return;
 
@@ -342,6 +366,29 @@ function renderApprovalPlans() {
   if (state.approvalFilter !== 'all') {
     filtered = filtered.filter(p => (p.status === state.approvalFilter || p.pmStatus === state.approvalFilter));
   }
+
+  // 1. Cache any currently typed notes in DOM before touching HTML
+  container.querySelectorAll('textarea[id^="pm-notes-"]').forEach(ta => {
+    const pId = ta.id.replace('pm-notes-', '');
+    if (ta.value !== undefined) {
+      if (!state._cachedPMNotes) state._cachedPMNotes = {};
+      state._cachedPMNotes[pId] = ta.value;
+    }
+  });
+
+  // 2. Typing protection: do NOT rebuild DOM if PM is actively typing inside plans container
+  const activeEl = document.activeElement;
+  const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && container.contains(activeEl);
+  if (isTyping && !force) {
+    return;
+  }
+
+  // 3. Structural Hash check: if plans and filters haven't changed, skip DOM rewrite
+  const hash = computePlansHash(filtered, state.approvalFilter);
+  if (!force && hash === state._lastPlansHash && container.children.length > 0) {
+    return;
+  }
+  state._lastPlansHash = hash;
 
   if (filtered.length === 0) {
     container.innerHTML = `
@@ -367,6 +414,15 @@ function renderApprovalPlans() {
     const submitterRole = p.submittedByRole || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)';
     const submitterCompany = p.submittedByCompany || p.company || 'ผู้รับเหมาประจำโครงการ';
     const submitDate = p.submittedAt || '-';
+
+    const currentNote = state._cachedPMNotes?.[p.planId] !== undefined
+      ? state._cachedPMNotes[p.planId]
+      : (p.pmNotes || p.pmComment || '');
+
+    const isSubtasksOpen = state._openDrawers?.has(p.planId + '_subtasks');
+    const isAuditOpen = state._openDrawers?.has(p.planId + '_audit');
+    const cachedSubtasksHtml = state._cachedDrawerHtml?.[p.planId + '_subtasks'] || '';
+    const cachedAuditHtml = state._cachedDrawerHtml?.[p.planId + '_audit'] || '';
 
     return `
       <div class="pm-plan-approval-card" data-plan-id="${escapeHtml(p.planId)}">
@@ -456,19 +512,23 @@ function renderApprovalPlans() {
           <div class="pm-drawers-btn-group">
             <button type="button" class="pm-drawer-toggle-btn btn-view-subtasks" onclick="window.togglePMSubtasks('${p.planId}')">
               <span>🔍 ตรวจสอบงานย่อยในแผนงาน (${total} รายการ)</span>
-              <span id="pm-arrow-${p.planId}">▼ ขยายดูรายละเอียด</span>
+              <span id="pm-arrow-${p.planId}">${isSubtasksOpen ? '▲ ย่อรายละเอียด' : '▼ ขยายดูรายละเอียด'}</span>
             </button>
             <button type="button" class="pm-drawer-toggle-btn btn-view-audit" onclick="window.togglePMAuditTrail('${p.planId}')">
               <span>📜 ประวัติการดำเนินการ (Audit Trail)</span>
-              <span id="pm-audit-arrow-${p.planId}">▼ ดูประวัติ Log</span>
+              <span id="pm-audit-arrow-${p.planId}">${isAuditOpen ? '▲ ซ่อนประวัติ Log' : '▼ ดูประวัติ Log'}</span>
             </button>
           </div>
 
           <!-- Drawer Content 1: Subtasks -->
-          <div id="pm-subtasks-${p.planId}" class="pm-plan-tasks-drawer" style="display: none;"></div>
+          <div id="pm-subtasks-${p.planId}" class="pm-plan-tasks-drawer" style="display: ${isSubtasksOpen ? 'block' : 'none'};">
+            ${cachedSubtasksHtml}
+          </div>
 
           <!-- Drawer Content 2: Audit Trail -->
-          <div id="pm-audit-${p.planId}" class="pm-audit-drawer" style="display: none;"></div>
+          <div id="pm-audit-${p.planId}" class="pm-audit-drawer" style="display: ${isAuditOpen ? 'block' : 'none'};">
+            ${cachedAuditHtml}
+          </div>
         </div>
 
         <!-- PM Decision Panel -->
@@ -518,7 +578,7 @@ function renderApprovalPlans() {
                 </button>
               </div>
 
-              <textarea id="pm-notes-${p.planId}" class="pm-comment-input" rows="2" placeholder="ระบุข้อสั่งการ คำแนะนำ หรือเงื่อนไขเพิ่มเติมถึงผู้รับเหมา...">${p.pmNotes || p.pmComment || ''}</textarea>
+              <textarea id="pm-notes-${p.planId}" class="pm-comment-input" rows="2" placeholder="ระบุข้อสั่งการ คำแนะนำ หรือเงื่อนไขเพิ่มเติมถึงผู้รับเหมา...">${escapeHtml(currentNote)}</textarea>
             </div>
 
             <div class="pm-decision-buttons">
@@ -534,6 +594,15 @@ function renderApprovalPlans() {
       </div>
     `;
   }).join('');
+
+  // 4. Attach input listeners to keep cached values updated
+  container.querySelectorAll('textarea[id^="pm-notes-"]').forEach(ta => {
+    const pId = ta.id.replace('pm-notes-', '');
+    ta.addEventListener('input', (e) => {
+      if (!state._cachedPMNotes) state._cachedPMNotes = {};
+      state._cachedPMNotes[pId] = e.target.value;
+    });
+  });
 }
 
 window.setQuickComment = function(planId, text) {
@@ -545,6 +614,8 @@ window.setQuickComment = function(planId, text) {
       textarea.value = text;
     }
     textarea.focus();
+    if (!state._cachedPMNotes) state._cachedPMNotes = {};
+    state._cachedPMNotes[planId] = textarea.value;
   }
 };
 
@@ -553,20 +624,33 @@ window.togglePMSubtasks = async function(planId) {
   const arrow = document.getElementById(`pm-arrow-${planId}`);
   if (!drawer) return;
 
+  const key = planId + '_subtasks';
+  if (!state._openDrawers) state._openDrawers = new Set();
+  if (!state._cachedDrawerHtml) state._cachedDrawerHtml = {};
+
   if (drawer.style.display === 'block') {
     drawer.style.display = 'none';
+    state._openDrawers.delete(key);
     if (arrow) arrow.innerText = '▼ ขยายดูรายละเอียด';
     return;
   }
 
   drawer.style.display = 'block';
+  state._openDrawers.add(key);
   if (arrow) arrow.innerText = '▲ ย่อรายละเอียด';
+
+  if (state._cachedDrawerHtml[key]) {
+    drawer.innerHTML = state._cachedDrawerHtml[key];
+    return;
+  }
+
   drawer.innerHTML = `<div style="text-align:center; padding:1.2rem; color:var(--text-muted);">⏳ กำลังดึงรายการงานย่อย...</div>`;
 
   try {
     const tasks = await gasService.fetchDailyTasks(planId);
     if (!tasks || tasks.length === 0) {
       drawer.innerHTML = `<div style="text-align:center; padding:1rem; color:var(--text-muted); font-size:0.8rem;">ไม่มีรายการงานย่อยในแผนงานนี้</div>`;
+      state._cachedDrawerHtml[key] = drawer.innerHTML;
       return;
     }
 
@@ -626,6 +710,7 @@ window.togglePMSubtasks = async function(planId) {
         </table>
       </div>
     `;
+    state._cachedDrawerHtml[key] = drawer.innerHTML;
   } catch (err) {
     drawer.innerHTML = `<div style="padding:0.8rem; color:var(--accent-coral); font-size:0.8rem;">เกิดข้อผิดพลาด: ${err.message}</div>`;
   }
@@ -636,14 +721,26 @@ window.togglePMAuditTrail = async function(planId) {
   const arrow = document.getElementById(`pm-audit-arrow-${planId}`);
   if (!drawer) return;
 
+  const key = planId + '_audit';
+  if (!state._openDrawers) state._openDrawers = new Set();
+  if (!state._cachedDrawerHtml) state._cachedDrawerHtml = {};
+
   if (drawer.style.display === 'block') {
     drawer.style.display = 'none';
+    state._openDrawers.delete(key);
     if (arrow) arrow.innerText = '▼ ดูประวัติ Log';
     return;
   }
 
   drawer.style.display = 'block';
+  state._openDrawers.add(key);
   if (arrow) arrow.innerText = '▲ ซ่อนประวัติ Log';
+
+  if (state._cachedDrawerHtml[key]) {
+    drawer.innerHTML = state._cachedDrawerHtml[key];
+    return;
+  }
+
   drawer.innerHTML = `<div style="text-align:center; padding:1.2rem; color:var(--text-muted);">⏳ กำลังดึงประวัติ Audit Trail...</div>`;
 
   try {
@@ -654,6 +751,7 @@ window.togglePMAuditTrail = async function(planId) {
           ยังไม่มีรายการบันทึก Audit Trail ในระบบ
         </div>
       `;
+      state._cachedDrawerHtml[key] = drawer.innerHTML;
       return;
     }
 
@@ -699,6 +797,7 @@ window.togglePMAuditTrail = async function(planId) {
         }).join('')}
       </div>
     `;
+    state._cachedDrawerHtml[key] = drawer.innerHTML;
   } catch (err) {
     drawer.innerHTML = `<div style="padding:0.8rem; color:var(--accent-coral); font-size:0.8rem;">เกิดข้อผิดพลาดในการโหลด Audit Trail: ${err.message}</div>`;
   }
@@ -1053,27 +1152,25 @@ function renderMasterMonthlyGantt() {
 // ==========================================
 async function loadDailyReports(isSilent = false) {
   try {
-    let list = [];
-
     // 1. Fast Firestore fetch (<100ms) for instant executive dashboard update
     if (firebaseService.isConfigured() && state.project.id && state.project.id !== '-') {
       try {
         const fbList = await firebaseService.getDailyReports(state.project.id);
-        if (fbList && fbList.length > 0) {
-          list = fbList;
-          state.dailyReports = list;
+        if (Array.isArray(fbList) && fbList.length > 0) {
+          state.dailyReports = fbList;
           const badge = document.getElementById('badge-total-reports');
           if (badge) badge.innerText = state.dailyReports.length;
           if (state.activeTab === 'view-pm-reports') {
             renderDailyReportsTable();
           }
+          return; // Single-Fetch: Firestore returned data, avoid triggering delayed background GAS call
         }
       } catch (fbErr) {
         console.warn('[PM] Firebase getDailyReports error:', fbErr);
       }
     }
 
-    // 2. Background Google Sheets fetch & merge (non-blocking)
+    // 2. Background Google Sheets fetch fallback (only if Firestore had no reports or wasn't configured)
     if (gasService.isConfigured() && state.project.id && state.project.id !== '-') {
       gasService.fetchDailyReports(state.project.id).then(gasList => {
         if (Array.isArray(gasList) && gasList.length > 0) {
@@ -1099,20 +1196,25 @@ async function loadDailyReports(isSilent = false) {
         if (!isSilent) console.warn('loadDailyReports GAS error:', e);
       });
     }
-
-    const prevCount = (state.dailyReports || []).length;
-    state.dailyReports = list || [];
-    const badge = document.getElementById('badge-total-reports');
-    if (badge) badge.innerText = state.dailyReports.length;
-    if (state.activeTab === 'view-pm-reports') {
-      renderDailyReportsTable();
-    }
   } catch (err) {
     if (!isSilent) console.warn('loadDailyReports error:', err);
   }
 }
 
-function renderDailyReportsTable() {
+function computeReportsHash(reports, shiftFilter, searchQuery) {
+  return shiftFilter + '::' + searchQuery + '::' + reports.map(r => {
+    return [
+      r.id || r['รหัสรายงาน'] || '',
+      r.report_date || r['วันที่รายงาน (Date)'] || r['วันที่'] || '',
+      r.shift_label || r['รอบกะ (Shift: เช้า/จบงาน)'] || '',
+      r.status || '',
+      r.totalWorkforce ?? '',
+      r.task_summary || r['สรุปรายการงาน / เป้าหมาย'] || ''
+    ].join('|');
+  }).join(';;');
+}
+
+function renderDailyReportsTable(force = false) {
   const container = document.getElementById('reports-table-container');
   const counterEl = document.getElementById('reports-archive-counter');
   if (!container) return;
@@ -1134,6 +1236,12 @@ function renderDailyReportsTable() {
   }
 
   if (counterEl) counterEl.innerText = `${filtered.length} รายงาน`;
+
+  const hash = computeReportsHash(filtered, state.reportFilterShift, state.reportFilterSearch);
+  if (!force && hash === state._lastReportsTableHash && container.children.length > 0) {
+    return;
+  }
+  state._lastReportsTableHash = hash;
 
   if (filtered.length === 0) {
     container.innerHTML = `
@@ -1639,27 +1747,35 @@ function setupRealtimeSync() {
     }
   });
 
-  // 3. Fast auto-polling: Every 10 seconds when PM dashboard is open & visible
+  // 3. Fallback auto-polling: Gentle 60 seconds interval (skipped if user is actively typing)
   let pollInterval = null;
   const startPolling = () => {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(async () => {
       if (!document.hidden) {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+        if (isTyping) return; // Do not interrupt user while typing
+
         await loadDailyReports(true);
         if (state.activeTab === 'view-pm-approvals') {
           await loadWeeklyPlans(true);
         }
       }
-    }, 10000);
+    }, 60000);
   };
 
   startPolling();
 
-  // 4. Immediate refresh when switching focus back to PM tab
+  // 4. Refresh when switching focus back to PM tab (only if not typing)
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      loadDailyReports(true);
-      loadWeeklyPlans(true);
+      const activeEl = document.activeElement;
+      const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+      if (!isTyping) {
+        loadDailyReports(true);
+        loadWeeklyPlans(true);
+      }
     }
   });
 }
