@@ -1440,172 +1440,204 @@ function openSubmitConfirmModal() {
   if (btnCancel) btnCancel.onclick = closeModal;
 
   if (btnConfirm) {
+    btnConfirm.disabled = false;
+    btnConfirm.innerHTML = '<span>🚀 ยืนยันส่งแผนให้ PM</span>';
     btnConfirm.onclick = async () => {
-      await submitPlanToPM();
-      closeModal();
+      btnConfirm.disabled = true;
+      btnConfirm.innerHTML = '<span>⏳ กำลังส่ง...</span>';
+      try {
+        await submitPlanToPM();
+      } catch (e) {
+        console.error('[Weekly] Submit plan failed:', e);
+      } finally {
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = '<span>🚀 ยืนยันส่งแผนให้ PM</span>';
+        closeModal();
+      }
     };
   }
 }
 
 async function submitPlanToPM() {
   const btnSubmit = document.getElementById('btn-submit-to-pm');
+  const btnConfirm = document.getElementById('btn-confirm-submit-plan');
   if (btnSubmit) {
     btnSubmit.disabled = true;
-    btnSubmit.innerText = '⏳ กำลังส่งให้ PM...';
+    btnSubmit.innerHTML = '<span>⏳ กำลังส่งให้ PM...</span>';
+  }
+  if (btnConfirm) {
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = '<span>⏳ กำลังส่ง...</span>';
   }
 
   showToast('🚀 กำลังส่งแผนงานประจำเดือนให้ PM พิจารณา...', 'info');
 
-  const planId = state.currentPlan?.planId || ('MPLAN-' + state.monthInfo.year + String(state.monthInfo.month + 1).padStart(2, '0') + '-' + Date.now().toString().slice(-4));
-  const foremanNote = document.getElementById('input-submit-note')?.value.trim() || 'ส่งแผนงานประจำเดือนจากระบบ Subcontractor Monthly Gantt Planner';
+  try {
+    const planId = state.currentPlan?.planId || ('MPLAN-' + state.monthInfo.year + String(state.monthInfo.month + 1).padStart(2, '0') + '-' + Date.now().toString().slice(-4));
+    const foremanNote = document.getElementById('input-submit-note')?.value.trim() || 'ส่งแผนงานประจำเดือนจากระบบ Subcontractor Monthly Gantt Planner';
 
-  const dailyTasksPayload = [];
+    const dailyTasksPayload = [];
 
-  state.mainTasks.forEach((m, mIdx) => {
-    const subtasks = m.subtasks || [];
-    if (subtasks.length === 0) {
-      dailyTasksPayload.push({
-        task_id: m.id,
-        plan_id: planId,
-        date: m.startDate,
-        startDate: m.startDate,
-        endDate: m.endDate,
-        day: m.category,
-        company: state.subcontractor.name,
-        category: m.category,
-        task_name: m.name,
-        name: m.name,
-        description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${m.workArea || '-'}]`,
-        work_area: m.workArea || '',
-        workArea: m.workArea || '',
-        quantity: '-',
-        targetQty: '-',
-        planned_workers: 5,
-        plannedWorkers: 5,
-        machinery: '-'
-      });
-    } else {
-      subtasks.forEach((st, stIdx) => {
+    state.mainTasks.forEach((m, mIdx) => {
+      const subtasks = m.subtasks || [];
+      if (subtasks.length === 0) {
         dailyTasksPayload.push({
-          task_id: st.id || ('STASK-' + mIdx + '-' + stIdx),
+          task_id: m.id,
           plan_id: planId,
-          parent_task_id: m.id,
-          parent_task_name: m.name,
-          date: m.startDate, // Default anchor date
+          date: m.startDate,
           startDate: m.startDate,
           endDate: m.endDate,
           day: m.category,
           company: state.subcontractor.name,
           category: m.category,
-          task_name: st.name,
-          name: st.name,
-          description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${st.workArea || m.workArea || '-'}] ${st.description || ''}`,
-          work_area: st.workArea || m.workArea || '',
-          workArea: st.workArea || m.workArea || '',
-          quantity: st.targetQty || '-',
-          targetQty: st.targetQty || '-',
-          planned_workers: Number(st.plannedWorkers || 0),
-          plannedWorkers: Number(st.plannedWorkers || 0),
-          machinery: st.machinery || '-'
+          task_name: m.name,
+          name: m.name,
+          description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${m.workArea || '-'}]`,
+          work_area: m.workArea || '',
+          workArea: m.workArea || '',
+          quantity: '-',
+          targetQty: '-',
+          planned_workers: 5,
+          plannedWorkers: 5,
+          machinery: '-'
         });
+      } else {
+        subtasks.forEach((st, stIdx) => {
+          dailyTasksPayload.push({
+            task_id: st.id || ('STASK-' + mIdx + '-' + stIdx),
+            plan_id: planId,
+            parent_task_id: m.id,
+            parent_task_name: m.name,
+            date: m.startDate, // Default anchor date
+            startDate: m.startDate,
+            endDate: m.endDate,
+            day: m.category,
+            company: state.subcontractor.name,
+            category: m.category,
+            task_name: st.name,
+            name: st.name,
+            description: `[${m.startDate} ถึง ${m.endDate}][งานหลัก: ${m.name}][โซน: ${st.workArea || m.workArea || '-'}] ${st.description || ''}`,
+            work_area: st.workArea || m.workArea || '',
+            workArea: st.workArea || m.workArea || '',
+            quantity: st.targetQty || '-',
+            targetQty: st.targetQty || '-',
+            planned_workers: Number(st.plannedWorkers || 0),
+            plannedWorkers: Number(st.plannedWorkers || 0),
+            machinery: st.machinery || '-'
+          });
+        });
+      }
+    });
+
+    // Resolve submitter identity from LINE profile / state / localStorage safely
+    const submitterName = state.lineUser?.displayName || state.lineUser?.name || state.user?.name || localStorage.getItem('site_user_name') || localStorage.getItem('site_line_name') || 'หัวหน้าผู้รับเหมา';
+    const submitterRole = state.lineUser?.role || localStorage.getItem('site_user_role') || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)';
+    const submitterUid = state.lineUser?.userId || state.lineUser?.uid || state.user?.uid || localStorage.getItem('site_user_uid') || localStorage.getItem('site_line_uid') || '-';
+    const submitterCompany = state.subcontractor?.name || localStorage.getItem('site_company_name') || 'ผู้รับเหมาประจำโครงการ';
+
+    const payload = {
+      plan_id: planId,
+      project_id: state.project.id,
+      project_name: state.project.name,
+      sub_id: state.subcontractor.id,
+      company_name: state.subcontractor.name,
+      company: state.subcontractor.name,
+      week_label: state.monthInfo.label,
+      start_date: state.monthInfo.startIso,
+      end_date: state.monthInfo.endIso,
+      days_count: state.monthInfo.daysInMonth,
+      weekly_objective: state.monthObjective || 'ดำเนินการตามแผนงานประจำเดือน',
+      objective: state.monthObjective || 'ดำเนินการตามแผนงานประจำเดือน',
+      status: 'Pending',
+      pmStatus: 'Pending',
+      foreman_note: foremanNote,
+      submitted_by_name: submitterName,
+      submitted_by_role: submitterRole,
+      submitted_by_uid: submitterUid,
+      submitted_by_company: submitterCompany,
+      submittedByName: submitterName,
+      submittedByRole: submitterRole,
+      submittedByUid: submitterUid,
+      submittedByCompany: submitterCompany,
+      daily_tasks: dailyTasksPayload,
+      tasks: dailyTasksPayload
+    };
+
+    // 1. Optimistic UI Update (0ms)
+    state.planStatus = 'Pending';
+    state.isDirty = false;
+    state.currentPlan = {
+      planId: planId,
+      projectId: state.project.id,
+      company: state.subcontractor.name,
+      startDate: state.monthInfo.startIso,
+      endDate: state.monthInfo.endIso,
+      weekLabel: state.monthInfo.label,
+      objective: state.monthObjective,
+      status: 'Pending',
+      pmStatus: 'Pending'
+    };
+    renderPlanMetaUI();
+    showToast('🎉 ส่งแผนงานประจำเดือนสำเร็จ! ระบบบันทึกและส่งแจ้งเตือนให้ PM เรียบร้อยแล้ว', 'success');
+
+    // Clear local draft for this month
+    const draftKey = `draft_mplan_${state.project.id}_${state.monthInfo.year}_${state.monthInfo.month}_${state.subcontractor.name}`;
+    try { localStorage.removeItem(draftKey); } catch (e) {}
+
+    // Close modal if open
+    document.getElementById('modal-submit-confirm')?.classList.remove('active');
+
+    // 2. Fast Firestore write (<100ms)
+    if (firebaseService.isConfigured()) {
+      firebaseService.saveWeeklyPlan(payload).catch(e => console.warn('[Weekly] Firestore save plan error:', e));
+      firebaseService.savePlanTasks(planId, dailyTasksPayload).catch(e => console.warn('[Weekly] Firestore save tasks error:', e));
+      const submitLog = {
+        action: 'SUBMIT_PLAN',
+        timestamp: new Date().toLocaleString('th-TH'),
+        userName: submitterName,
+        role: submitterRole,
+        company: submitterCompany,
+        notes: payload.weekly_objective || foremanNote || 'ยื่นส่งแผนงานประจำเดือน',
+        uid: submitterUid
+      };
+      firebaseService.addPlanLog(planId, submitLog).catch(e => console.warn('[Weekly] Firestore save log error:', e));
+    }
+
+    // Cross-tab broadcast
+    try {
+      const channel = new BroadcastChannel('cpm_site_sync');
+      channel.postMessage({ type: 'PLAN_SUBMITTED', planId: planId, projectId: state.project.id, timestamp: Date.now() });
+      channel.close();
+    } catch (e) {}
+    try {
+      localStorage.setItem('cpm_sync_trigger', JSON.stringify({ type: 'PLAN_SUBMITTED', time: Date.now() }));
+    } catch (e) {}
+
+    // 3. Background Google Apps Script sync (non-blocking)
+    if (gasService.isConfigured()) {
+      gasService.saveWeeklyPlan(payload).then(res => {
+        if (res && res.success) {
+          console.log('[Weekly] GAS save succeeded for', planId);
+        } else {
+          console.warn('[Weekly] GAS save response not success:', res);
+        }
+      }).catch(err => {
+        console.warn('[Weekly] GAS save network error:', err);
       });
     }
-  });
-
-  // Resolve submitter identity from LINE profile / state / localStorage
-  const submitterName = state.lineUser?.displayName || state.lineUser?.name || localStorage.getItem('site_user_name') || localStorage.getItem('site_line_name') || 'หัวหน้าผู้รับเหมา';
-  const submitterRole = state.lineUser?.role || localStorage.getItem('site_user_role') || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)';
-  const submitterUid = state.lineUser?.userId || state.lineUser?.uid || localStorage.getItem('site_user_uid') || localStorage.getItem('site_line_uid') || '-';
-  const submitterCompany = state.subcontractor?.name || localStorage.getItem('site_company_name') || '-';
-
-  const payload = {
-    plan_id: planId,
-    project_id: state.project.id,
-    project_name: state.project.name,
-    sub_id: state.subcontractor.id,
-    company_name: state.subcontractor.name,
-    week_label: state.monthInfo.label,
-    start_date: state.monthInfo.startIso,
-    end_date: state.monthInfo.endIso,
-    days_count: state.monthInfo.daysInMonth,
-    weekly_objective: state.monthObjective || 'ดำเนินการตามแผนงานประจำเดือน',
-    foreman_note: foremanNote,
-    submitted_by_name: submitterName,
-    submitted_by_role: submitterRole,
-    submitted_by_uid: submitterUid,
-    submitted_by_company: submitterCompany,
-    submittedByName: submitterName,
-    submittedByRole: submitterRole,
-    daily_tasks: dailyTasksPayload,
-    tasks: dailyTasksPayload
-  };
-
-  // 1. Optimistic UI Update (0ms)
-  state.planStatus = 'Pending';
-  state.isDirty = false;
-  state.currentPlan = {
-    planId: planId,
-    projectId: state.project.id,
-    company: state.subcontractor.name,
-    startDate: state.monthInfo.startIso,
-    endDate: state.monthInfo.endIso,
-    weekLabel: state.monthInfo.label,
-    objective: state.monthObjective,
-    status: 'Pending',
-    pmStatus: 'Pending'
-  };
-  renderPlanMetaUI();
-  showToast('🎉 ส่งแผนงานประจำเดือนสำเร็จ! ระบบบันทึกและส่งแจ้งเตือนให้ PM เรียบร้อยแล้ว', 'success');
-
-  // Clear local draft for this month
-  const draftKey = `draft_mplan_${state.project.id}_${state.monthInfo.year}_${state.monthInfo.month}_${state.subcontractor.name}`;
-  try { localStorage.removeItem(draftKey); } catch (e) {}
-
-  // Close modal if open
-  document.getElementById('modal-submit-confirm')?.classList.remove('active');
-
-  // 2. Fast Firestore write (<100ms)
-  if (firebaseService.isConfigured()) {
-    firebaseService.saveWeeklyPlan(payload).catch(e => console.warn('[Weekly] Firestore save plan error:', e));
-    firebaseService.savePlanTasks(planId, dailyTasksPayload).catch(e => console.warn('[Weekly] Firestore save tasks error:', e));
-    const submitLog = {
-      action: 'SUBMIT_PLAN',
-      timestamp: new Date().toLocaleString('th-TH'),
-      userName: payload.submittedByName || state.profile.name || 'หัวหน้าผู้รับเหมา',
-      role: payload.submittedByRole || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)',
-      company: payload.submittedByCompany || payload.company || 'ผู้รับเหมาประจำโครงการ',
-      notes: payload.objective || 'ยื่นส่งแผนงานประจำเดือน',
-      uid: payload.submittedByUid || state.profile.uid || '-'
-    };
-    firebaseService.addPlanLog(planId, submitLog).catch(e => console.warn('[Weekly] Firestore save log error:', e));
-  }
-
-  // Cross-tab broadcast
-  try {
-    const channel = new BroadcastChannel('cpm_site_sync');
-    channel.postMessage({ type: 'PLAN_SUBMITTED', planId: planId, projectId: state.project.id, timestamp: Date.now() });
-    channel.close();
-  } catch (e) {}
-  try {
-    localStorage.setItem('cpm_sync_trigger', JSON.stringify({ type: 'PLAN_SUBMITTED', time: Date.now() }));
-  } catch (e) {}
-
-  // 3. Background Google Apps Script sync (non-blocking)
-  if (gasService.isConfigured()) {
-    gasService.saveWeeklyPlan(payload).then(res => {
-      if (res && res.success) {
-        console.log('[Weekly] GAS save succeeded for', planId);
-      } else {
-        console.warn('[Weekly] GAS save response not success:', res);
-      }
-    }).catch(err => {
-      console.warn('[Weekly] GAS save network error:', err);
-    });
-  }
-
-  if (btnSubmit) {
-    btnSubmit.disabled = false;
-    btnSubmit.innerHTML = '<span>🚀 ยื่นส่ง PM อนุมัติ</span>';
+  } catch (err) {
+    console.error('[Weekly] Submit plan critical error:', err);
+    showToast('❌ ไม่สามารถส่งแผนงานได้: ' + (err.message || err), 'error');
+    throw err;
+  } finally {
+    if (btnSubmit) {
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = '<span>🚀 ยื่นส่ง PM อนุมัติ</span>';
+    }
+    if (btnConfirm) {
+      btnConfirm.disabled = false;
+      btnConfirm.innerHTML = '<span>🚀 ยืนยันส่งแผนให้ PM</span>';
+    }
   }
 }
 

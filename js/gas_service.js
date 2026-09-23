@@ -398,7 +398,8 @@ export const gasService = {
 
       if (response.ok) {
         this.clearCache('wplans_');
-        if (planData && planData.plan_id) this.clearCache('tasks_' + planData.plan_id);
+        const planId = planPayload?.plan_id || planPayload?.planId;
+        if (planId) this.clearCache('tasks_' + planId);
         const result = await response.json().catch(() => null);
         return {
           success: true,
