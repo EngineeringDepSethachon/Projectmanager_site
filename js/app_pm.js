@@ -619,6 +619,120 @@ window.setQuickComment = function(planId, text) {
   }
 };
 
+function renderSubtasksTableHTML(tasks) {
+  if (!tasks || tasks.length === 0) {
+    return `<div style="text-align:center; padding:1rem; color:var(--text-muted); font-size:0.8rem;">ไม่มีรายการงานย่อยในแผนงานนี้</div>`;
+  }
+  return `
+    <div style="overflow-x: auto;">
+      <table class="subtasks-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+        <thead>
+          <tr style="background: #f1f5f9; border-bottom: 1.5px solid var(--border-subtle); text-align: left;">
+            <th style="padding: 6px 10px; width: 50px;">#</th>
+            <th style="padding: 6px 10px; width: 110px;">หมวดหมู่งาน</th>
+            <th style="padding: 6px 10px;">ชื่องานย่อย / รายละเอียด</th>
+            <th style="padding: 6px 10px; width: 100px;">เป้าหมาย</th>
+            <th style="padding: 6px 10px; width: 70px;">คนงาน</th>
+            <th style="padding: 6px 10px; width: 120px;">เครื่องจักร</th>
+            <th style="padding: 6px 10px; width: 110px; text-align: right;">ผลงานจริงโฟร์แมน</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tasks.map((t, idx) => {
+            const prog = Number(t.progress || t.actualProgress || 0);
+            let mainTask = '';
+            let zone = t.workArea || '';
+            let desc = t.description || '';
+            if (desc.includes('[งานหลัก:')) {
+              const m = desc.match(/\[งานหลัก:\s*([^\]]+)\]/);
+              if (m) mainTask = m[1].trim();
+            }
+            if (!zone && desc.includes('[โซน:')) {
+              const z = desc.match(/\[โซน:\s*([^\]]+)\]/);
+              if (z && z[1] !== '-') zone = z[1].trim();
+            }
+            desc = desc.replace(/\[\d{4}-\d{2}-\d{2}\s+ถึง\s+\d{4}-\d{2}-\d{2}\]/g, '')
+                       .replace(/\[งานหลัก:[^\]]+\]/g, '')
+                       .replace(/\[โซน:[^\]]+\]/g, '')
+                       .trim();
+            return `
+              <tr style="border-bottom: 1px solid var(--border-subtle);">
+                <td style="padding: 6px 10px; font-weight: 700; color: var(--text-muted);">${idx + 1}</td>
+                <td style="padding: 6px 10px;"><span class="task-cat-badge">${escapeHtml(t.category || 'ทั่วไป')}</span></td>
+                <td style="padding: 6px 10px;">
+                  ${mainTask ? `<div style="font-size:0.68rem; color:var(--primary); font-weight:700;">📂 งานหลัก: ${escapeHtml(mainTask)}</div>` : ''}
+                  <strong>${escapeHtml(t.name || t.taskName || '-')}</strong>
+                  ${zone ? `<div style="font-size:0.7rem; color:var(--text-muted);">📍 โซน: ${escapeHtml(zone)}</div>` : ''}
+                  ${desc ? `<div style="font-size:0.7rem; color:#64748b;">${escapeHtml(desc)}</div>` : ''}
+                </td>
+                <td style="padding: 6px 10px;"><strong>${escapeHtml(t.quantity || t.targetQty || '-')}</strong></td>
+                <td style="padding: 6px 10px;">${t.plannedWorkers || 0} คน</td>
+                <td style="padding: 6px 10px; font-size: 0.72rem;">${escapeHtml(t.machinery || '-')}</td>
+                <td style="padding: 6px 10px; text-align: right;">
+                  <strong style="color: ${prog >= 100 ? '#059669' : 'inherit'};">${prog}%</strong>
+                  ${t.foremanName ? `<div style="font-size:0.65rem; color:var(--text-muted);">โดย: ${escapeHtml(t.foremanName)}</div>` : ''}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAuditTrailHTML(logs) {
+  if (!logs || logs.length === 0) {
+    return `
+      <div style="text-align:center; padding:1.2rem; color:var(--text-muted); font-size:0.82rem;">
+        ยังไม่มีรายการบันทึก Audit Trail ในระบบ
+      </div>
+    `;
+  }
+  return `
+    <div class="audit-trail-timeline">
+      ${logs.map(lg => {
+        let actionBadge = '';
+        let actionIcon = '📝';
+        if (lg.action === 'SUBMIT_PLAN') {
+          actionBadge = '<span class="audit-action-badge submit">🚀 ยื่นส่งแผนงาน</span>';
+          actionIcon = '📤';
+        } else if (lg.action === 'PM_APPROVE') {
+          actionBadge = '<span class="audit-action-badge approve">✅ อนุมัติแผนงาน</span>';
+          actionIcon = '🟢';
+        } else if (lg.action === 'PM_REVISION') {
+          actionBadge = '<span class="audit-action-badge revision">⚠️ ส่งกลับให้แก้ไข</span>';
+          actionIcon = '🔴';
+        } else {
+          actionBadge = `<span class="audit-action-badge">${escapeHtml(lg.action)}</span>`;
+        }
+
+        return `
+          <div class="audit-trail-step">
+            <div class="audit-step-bullet">${actionIcon}</div>
+            <div class="audit-step-content">
+              <div class="audit-step-header">
+                ${actionBadge}
+                <span class="audit-step-time">🕒 ${escapeHtml(lg.timestamp || '-')}</span>
+              </div>
+              <div class="audit-step-user">
+                <strong>👤 ${escapeHtml(lg.userName || 'ไม่ระบุ')}</strong>
+                <span class="audit-role-pill">💼 ${escapeHtml(lg.role || '-')}</span>
+                ${lg.company ? `<span class="audit-company-pill">🏢 ${escapeHtml(lg.company)}</span>` : ''}
+              </div>
+              ${lg.notes && lg.notes !== '-' ? `
+                <div class="audit-step-notes">
+                  💬 "${escapeHtml(lg.notes)}"
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 window.togglePMSubtasks = async function(planId) {
   const drawer = document.getElementById(`pm-subtasks-${planId}`);
   const arrow = document.getElementById(`pm-arrow-${planId}`);
@@ -639,78 +753,37 @@ window.togglePMSubtasks = async function(planId) {
   state._openDrawers.add(key);
   if (arrow) arrow.innerText = '▲ ย่อรายละเอียด';
 
+  // 1. In-memory cache (0ms)
   if (state._cachedDrawerHtml[key]) {
     drawer.innerHTML = state._cachedDrawerHtml[key];
     return;
   }
 
+  // 2. Fast Firestore lookup (<50ms)
+  if (firebaseService.isConfigured()) {
+    try {
+      const fbTasks = await firebaseService.getPlanTasks(planId);
+      if (Array.isArray(fbTasks) && fbTasks.length > 0) {
+        drawer.innerHTML = renderSubtasksTableHTML(fbTasks);
+        state._cachedDrawerHtml[key] = drawer.innerHTML;
+        return; // Finished in <50ms!
+      }
+    } catch (e) {
+      console.warn('[PM] Firebase getPlanTasks error:', e);
+    }
+  }
+
   drawer.innerHTML = `<div style="text-align:center; padding:1.2rem; color:var(--text-muted);">⏳ กำลังดึงรายการงานย่อย...</div>`;
 
+  // 3. Fallback to GAS with background caching
   try {
     const tasks = await gasService.fetchDailyTasks(planId);
-    if (!tasks || tasks.length === 0) {
-      drawer.innerHTML = `<div style="text-align:center; padding:1rem; color:var(--text-muted); font-size:0.8rem;">ไม่มีรายการงานย่อยในแผนงานนี้</div>`;
-      state._cachedDrawerHtml[key] = drawer.innerHTML;
-      return;
-    }
-
-    drawer.innerHTML = `
-      <div style="overflow-x: auto;">
-        <table class="subtasks-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
-          <thead>
-            <tr style="background: #f1f5f9; border-bottom: 1.5px solid var(--border-subtle); text-align: left;">
-              <th style="padding: 6px 10px; width: 50px;">#</th>
-              <th style="padding: 6px 10px; width: 110px;">หมวดหมู่งาน</th>
-              <th style="padding: 6px 10px;">ชื่องานย่อย / รายละเอียด</th>
-              <th style="padding: 6px 10px; width: 100px;">เป้าหมาย</th>
-              <th style="padding: 6px 10px; width: 70px;">คนงาน</th>
-              <th style="padding: 6px 10px; width: 120px;">เครื่องจักร</th>
-              <th style="padding: 6px 10px; width: 110px; text-align: right;">ผลงานจริงโฟร์แมน</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tasks.map((t, idx) => {
-              const prog = Number(t.progress || t.actualProgress || 0);
-              let mainTask = '';
-              let zone = t.workArea || '';
-              let desc = t.description || '';
-              if (desc.includes('[งานหลัก:')) {
-                const m = desc.match(/\[งานหลัก:\s*([^\]]+)\]/);
-                if (m) mainTask = m[1].trim();
-              }
-              if (!zone && desc.includes('[โซน:')) {
-                const z = desc.match(/\[โซน:\s*([^\]]+)\]/);
-                if (z && z[1] !== '-') zone = z[1].trim();
-              }
-              desc = desc.replace(/\[\d{4}-\d{2}-\d{2}\s+ถึง\s+\d{4}-\d{2}-\d{2}\]/g, '')
-                         .replace(/\[งานหลัก:[^\]]+\]/g, '')
-                         .replace(/\[โซน:[^\]]+\]/g, '')
-                         .trim();
-              return `
-                <tr style="border-bottom: 1px solid var(--border-subtle);">
-                  <td style="padding: 6px 10px; font-weight: 700; color: var(--text-muted);">${idx + 1}</td>
-                  <td style="padding: 6px 10px;"><span class="task-cat-badge">${escapeHtml(t.category || 'ทั่วไป')}</span></td>
-                  <td style="padding: 6px 10px;">
-                    ${mainTask ? `<div style="font-size:0.68rem; color:var(--primary); font-weight:700;">📂 งานหลัก: ${escapeHtml(mainTask)}</div>` : ''}
-                    <strong>${escapeHtml(t.name || t.taskName || '-')}</strong>
-                    ${zone ? `<div style="font-size:0.7rem; color:var(--text-muted);">📍 โซน: ${escapeHtml(zone)}</div>` : ''}
-                    ${desc ? `<div style="font-size:0.7rem; color:#64748b;">${escapeHtml(desc)}</div>` : ''}
-                  </td>
-                  <td style="padding: 6px 10px;"><strong>${escapeHtml(t.quantity || t.targetQty || '-')}</strong></td>
-                  <td style="padding: 6px 10px;">${t.plannedWorkers || 0} คน</td>
-                  <td style="padding: 6px 10px; font-size: 0.72rem;">${escapeHtml(t.machinery || '-')}</td>
-                  <td style="padding: 6px 10px; text-align: right;">
-                    <strong style="color: ${prog >= 100 ? '#059669' : 'inherit'};">${prog}%</strong>
-                    ${t.foremanName ? `<div style="font-size:0.65rem; color:var(--text-muted);">โดย: ${escapeHtml(t.foremanName)}</div>` : ''}
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
+    drawer.innerHTML = renderSubtasksTableHTML(tasks);
     state._cachedDrawerHtml[key] = drawer.innerHTML;
+
+    if (tasks && tasks.length > 0 && firebaseService.isConfigured()) {
+      firebaseService.savePlanTasks(planId, tasks).catch(() => {});
+    }
   } catch (err) {
     drawer.innerHTML = `<div style="padding:0.8rem; color:var(--accent-coral); font-size:0.8rem;">เกิดข้อผิดพลาด: ${err.message}</div>`;
   }
@@ -736,70 +809,73 @@ window.togglePMAuditTrail = async function(planId) {
   state._openDrawers.add(key);
   if (arrow) arrow.innerText = '▲ ซ่อนประวัติ Log';
 
+  // 1. In-memory cache (0ms)
   if (state._cachedDrawerHtml[key]) {
     drawer.innerHTML = state._cachedDrawerHtml[key];
     return;
   }
 
-  drawer.innerHTML = `<div style="text-align:center; padding:1.2rem; color:var(--text-muted);">⏳ กำลังดึงประวัติ Audit Trail...</div>`;
-
-  try {
-    const logs = await gasService.fetchPlanLogs(planId);
-    if (!logs || logs.length === 0) {
-      drawer.innerHTML = `
-        <div style="text-align:center; padding:1.2rem; color:var(--text-muted); font-size:0.82rem;">
-          ยังไม่มีรายการบันทึก Audit Trail ในระบบ
-        </div>
-      `;
-      state._cachedDrawerHtml[key] = drawer.innerHTML;
-      return;
+  // 2. Instant Baseline Timeline from Target Plan (0ms - ZERO WAIT TIME!)
+  const targetPlan = (state.weeklyPlans || []).find(p => p.planId === planId);
+  const baselineLogs = [];
+  if (targetPlan) {
+    if (targetPlan.submittedAt && targetPlan.submittedAt !== '-') {
+      baselineLogs.push({
+        action: 'SUBMIT_PLAN',
+        timestamp: targetPlan.submittedAt,
+        userName: targetPlan.submittedByName || targetPlan.createdBy || 'หัวหน้าผู้รับเหมา',
+        role: targetPlan.submittedByRole || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)',
+        company: targetPlan.submittedByCompany || targetPlan.company || 'ผู้รับเหมาประจำโครงการ',
+        notes: targetPlan.objective || 'ยื่นเสนอแผนงานประจำเดือน'
+      });
     }
+    if (targetPlan.approvedAt && targetPlan.approvedAt !== '-') {
+      const isApp = (targetPlan.status === 'Approved' || targetPlan.pmStatus === 'Approved');
+      baselineLogs.push({
+        action: isApp ? 'PM_APPROVE' : 'PM_REVISION',
+        timestamp: targetPlan.approvedAt,
+        userName: targetPlan.pmName || state.user.name,
+        role: 'ผู้จัดการโครงการ (PM)',
+        company: state.project.name || '-',
+        notes: targetPlan.pmComment || (isApp ? 'อนุมัติแผนงานเรียบร้อย' : 'ส่งกลับให้แก้ไข')
+      });
+    }
+  }
 
-    drawer.innerHTML = `
-      <div class="audit-trail-timeline">
-        ${logs.map(lg => {
-          let actionBadge = '';
-          let actionIcon = '📝';
-          if (lg.action === 'SUBMIT_PLAN') {
-            actionBadge = '<span class="audit-action-badge submit">🚀 ยื่นส่งแผนงาน</span>';
-            actionIcon = '📤';
-          } else if (lg.action === 'PM_APPROVE') {
-            actionBadge = '<span class="audit-action-badge approve">✅ อนุมัติแผนงาน</span>';
-            actionIcon = '🟢';
-          } else if (lg.action === 'PM_REVISION') {
-            actionBadge = '<span class="audit-action-badge revision">⚠️ ส่งกลับให้แก้ไข</span>';
-            actionIcon = '🔴';
-          } else {
-            actionBadge = `<span class="audit-action-badge">${escapeHtml(lg.action)}</span>`;
-          }
+  if (baselineLogs.length > 0) {
+    drawer.innerHTML = renderAuditTrailHTML(baselineLogs);
+  } else {
+    drawer.innerHTML = `<div style="text-align:center; padding:1.2rem; color:var(--text-muted);">⏳ กำลังดึงประวัติ Audit Trail...</div>`;
+  }
 
-          return `
-            <div class="audit-trail-step">
-              <div class="audit-step-bullet">${actionIcon}</div>
-              <div class="audit-step-content">
-                <div class="audit-step-header">
-                  ${actionBadge}
-                  <span class="audit-step-time">🕒 ${escapeHtml(lg.timestamp || '-')}</span>
-                </div>
-                <div class="audit-step-user">
-                  <strong>👤 ${escapeHtml(lg.userName || 'ไม่ระบุ')}</strong>
-                  <span class="audit-role-pill">💼 ${escapeHtml(lg.role || '-')}</span>
-                  ${lg.company ? `<span class="audit-company-pill">🏢 ${escapeHtml(lg.company)}</span>` : ''}
-                </div>
-                ${lg.notes && lg.notes !== '-' ? `
-                  <div class="audit-step-notes">
-                    💬 "${escapeHtml(lg.notes)}"
-                  </div>
-                ` : ''}
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-    state._cachedDrawerHtml[key] = drawer.innerHTML;
-  } catch (err) {
-    drawer.innerHTML = `<div style="padding:0.8rem; color:var(--accent-coral); font-size:0.8rem;">เกิดข้อผิดพลาดในการโหลด Audit Trail: ${err.message}</div>`;
+  // 3. Fast Firestore Query (<50ms)
+  let foundLogs = false;
+  if (firebaseService.isConfigured()) {
+    try {
+      const fbLogs = await firebaseService.getPlanLogs(planId);
+      if (Array.isArray(fbLogs) && fbLogs.length > 0) {
+        drawer.innerHTML = renderAuditTrailHTML(fbLogs);
+        state._cachedDrawerHtml[key] = drawer.innerHTML;
+        foundLogs = true;
+      }
+    } catch (e) {
+      console.warn('[PM] Firebase getPlanLogs error:', e);
+    }
+  }
+
+  // 4. Background GAS Fetch (sync & enrich)
+  if (!foundLogs && gasService.isConfigured()) {
+    gasService.fetchPlanLogs(planId).then(gasLogs => {
+      if (Array.isArray(gasLogs) && gasLogs.length > 0) {
+        drawer.innerHTML = renderAuditTrailHTML(gasLogs);
+        state._cachedDrawerHtml[key] = drawer.innerHTML;
+        if (firebaseService.isConfigured()) {
+          firebaseService.savePlanLogs(planId, gasLogs).catch(() => {});
+        }
+      }
+    }).catch(err => {
+      console.warn('[PM] GAS fetchPlanLogs error:', err);
+    });
   }
 };
 
@@ -852,6 +928,21 @@ window.handlePMDecision = async function(planId, decision, overrideNotes = null)
   if (firebaseService.isConfigured()) {
     try {
       await firebaseService.updateWeeklyPlanStatus(planId, decision, notes, state.user.name);
+
+      // Save decision audit log to Firestore (<100ms)
+      const decisionLog = {
+        action: decision === 'Approved' ? 'PM_APPROVE' : 'PM_REVISION',
+        timestamp: nowStr,
+        userName: state.user.name,
+        role: 'ผู้จัดการโครงการ (PM)',
+        company: state.project.name || '-',
+        notes: notes || (decision === 'Approved' ? 'อนุมัติแผนงานเรียบร้อย' : 'ส่งกลับให้แก้ไข'),
+        uid: state.user.uid || '-'
+      };
+      await firebaseService.addPlanLog(planId, decisionLog).catch(() => {});
+      if (state._cachedDrawerHtml) {
+        delete state._cachedDrawerHtml[planId + '_audit'];
+      }
 
       if (decision === 'Approved') {
         let tasks = await firebaseService.getPlanTasks(planId);

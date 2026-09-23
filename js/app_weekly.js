@@ -1568,6 +1568,16 @@ async function submitPlanToPM() {
   if (firebaseService.isConfigured()) {
     firebaseService.saveWeeklyPlan(payload).catch(e => console.warn('[Weekly] Firestore save plan error:', e));
     firebaseService.savePlanTasks(planId, dailyTasksPayload).catch(e => console.warn('[Weekly] Firestore save tasks error:', e));
+    const submitLog = {
+      action: 'SUBMIT_PLAN',
+      timestamp: new Date().toLocaleString('th-TH'),
+      userName: payload.submittedByName || state.profile.name || 'หัวหน้าผู้รับเหมา',
+      role: payload.submittedByRole || 'หัวหน้าผู้รับเหมา (Subcontractor Lead)',
+      company: payload.submittedByCompany || payload.company || 'ผู้รับเหมาประจำโครงการ',
+      notes: payload.objective || 'ยื่นส่งแผนงานประจำเดือน',
+      uid: payload.submittedByUid || state.profile.uid || '-'
+    };
+    firebaseService.addPlanLog(planId, submitLog).catch(e => console.warn('[Weekly] Firestore save log error:', e));
   }
 
   // Cross-tab broadcast

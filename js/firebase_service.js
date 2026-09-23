@@ -483,5 +483,66 @@ export const firebaseService = {
       console.warn('[FirebaseService] getPlanTasks error:', err);
       return [];
     }
+  },
+
+  /**
+   * Save or overwrite Audit Trail Logs for a plan in Firestore (<100ms)
+   */
+  async savePlanLogs(planId, logs = []) {
+    if (!this.isConfigured() || !planId) return false;
+    try {
+      const docRef = doc(db, 'plan_logs', String(planId));
+      await setDoc(docRef, {
+        planId: String(planId),
+        logs: logs,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn('[FirebaseService] savePlanLogs error:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Add a single Audit Trail Log entry for a plan in Firestore (<100ms)
+   */
+  async addPlanLog(planId, logEntry) {
+    if (!this.isConfigured() || !planId || !logEntry) return false;
+    try {
+      const existingLogs = await this.getPlanLogs(planId);
+      // Avoid duplicate consecutive identical logs
+      const isDuplicate = existingLogs.some(l => 
+        l.action === logEntry.action && 
+        l.timestamp === logEntry.timestamp && 
+        l.userName === logEntry.userName
+      );
+      if (isDuplicate) return true;
+      const updatedLogs = [...existingLogs, logEntry];
+      return await this.savePlanLogs(planId, updatedLogs);
+    } catch (err) {
+      console.warn('[FirebaseService] addPlanLog error:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Fetch Audit Trail Logs for a plan from Firestore (<100ms)
+   */
+  async getPlanLogs(planId) {
+    if (!this.isConfigured() || !planId) return [];
+    try {
+      const docRef = doc(db, 'plan_logs', String(planId));
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.logs)) return data.logs;
+      }
+      return [];
+    } catch (err) {
+      console.warn('[FirebaseService] getPlanLogs error:', err);
+      return [];
+    }
   }
 };
+

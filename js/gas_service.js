@@ -36,6 +36,66 @@ export const gasService = {
     return Boolean(url && url.includes('script.google.com'));
   },
 
+  _cache: new Map(),
+
+  /**
+   * Fast Caching layer: checks memory & localStorage before making costly network requests (0ms vs 3-8s)
+   */
+  async _getCachedOrFetch(key, ttlMs, fetchFn) {
+    // 1. In-memory cache check (0ms)
+    const mem = this._cache.get(key);
+    if (mem && (Date.now() - mem.time < ttlMs)) {
+      return mem.data;
+    }
+
+    // 2. localStorage check (0ms)
+    try {
+      const stored = localStorage.getItem(`cpm_cache_${key}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.time && (Date.now() - parsed.time < ttlMs)) {
+          this._cache.set(key, { data: parsed.data, time: parsed.time });
+          return parsed.data;
+        }
+      }
+    } catch (e) {}
+
+    // 3. Fetch from network
+    const freshData = await fetchFn();
+    if (freshData !== null && freshData !== undefined) {
+      const now = Date.now();
+      this._cache.set(key, { data: freshData, time: now });
+      try {
+        localStorage.setItem(`cpm_cache_${key}`, JSON.stringify({ data: freshData, time: now }));
+      } catch (e) {}
+    }
+    return freshData;
+  },
+
+  /**
+   * Clear cache for specific key or prefix
+   */
+  clearCache(keyPrefix = '') {
+    if (!keyPrefix) {
+      this._cache.clear();
+      return;
+    }
+    for (const k of this._cache.keys()) {
+      if (k.startsWith(keyPrefix)) this._cache.delete(k);
+    }
+    try {
+      const toRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const lKey = localStorage.key(i);
+        if (lKey && lKey.startsWith(`cpm_cache_${keyPrefix}`)) {
+          toRemove.push(lKey);
+        }
+      }
+      toRemove.forEach(k => localStorage.removeItem(k));
+    } catch (e) {}
+  },
+
+
   /**
    * ทดสอบเชื่อมต่อ Google Apps Script Web App (Ping Health Check)
    */
@@ -92,6 +152,7 @@ export const gasService = {
       });
 
       if (response.ok) {
+        this.clearCache('reports_');
         const result = await response.json().catch(() => null);
         return {
           success: true,
@@ -131,69 +192,75 @@ export const gasService = {
   },
 
   /**
-   * ดึงรายชื่อบริษัทผู้รับเหมาจากชีต Subcontractors ใน Google Sheets
+   * ดึงรายชื่อบริษัทผู้รับเหมาจากชีต Subcontractors ใน Google Sheets (Cached 15m)
    */
   async fetchSubcontractors() {
     const url = this.getUrl();
     if (!this.isConfigured()) return null;
 
-    try {
-      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_subcontractors&_t=' + Date.now();
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.subcontractors)) {
-        return data.subcontractors;
+    return this._getCachedOrFetch('subs', 15 * 60 * 1000, async () => {
+      try {
+        const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_subcontractors&_t=' + Date.now();
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.subcontractors)) {
+          return data.subcontractors;
+        }
+        return null;
+      } catch (err) {
+        console.warn('fetchSubcontractors error:', err);
+        return null;
       }
-      return null;
-    } catch (err) {
-      console.warn('fetchSubcontractors error:', err);
-      return null;
-    }
+    });
   },
 
   /**
-   * ดึงข้อมูลโปรไฟล์ผู้ใช้จากชีต Site_Users ใน Google Sheets ด้วย UID
+   * ดึงข้อมูลโปรไฟล์ผู้ใช้จากชีต Site_Users ใน Google Sheets ด้วย UID (Cached 10m)
    */
   async fetchUserProfile(uid) {
     const url = this.getUrl();
     if (!this.isConfigured() || !uid) return null;
 
-    try {
-      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_user&uid=' + encodeURIComponent(uid) + '&_t=' + Date.now();
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data && data.status === 'success' && data.user) {
-        return data.user;
+    return this._getCachedOrFetch(`user_${uid}`, 10 * 60 * 1000, async () => {
+      try {
+        const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_user&uid=' + encodeURIComponent(uid) + '&_t=' + Date.now();
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data && data.status === 'success' && data.user) {
+          return data.user;
+        }
+        return null;
+      } catch (err) {
+        console.warn('fetchUserProfile error:', err);
+        return null;
       }
-      return null;
-    } catch (err) {
-      console.warn('fetchUserProfile error:', err);
-      return null;
-    }
+    });
   },
 
   /**
-   * ดึงรายการโครงการจากชีต Projects ใน Google Sheets
+   * ดึงรายการโครงการจากชีต Projects ใน Google Sheets (Cached 15m)
    */
   async fetchProjects() {
     const url = this.getUrl();
     if (!this.isConfigured()) return null;
 
-    try {
-      const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_projects&_t=' + Date.now();
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.projects)) {
-        return data.projects;
+    return this._getCachedOrFetch('projects', 15 * 60 * 1000, async () => {
+      try {
+        const queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_projects&_t=' + Date.now();
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.projects)) {
+          return data.projects;
+        }
+        return null;
+      } catch (err) {
+        console.warn('fetchProjects error:', err);
+        return null;
       }
-      return null;
-    } catch (err) {
-      console.warn('fetchProjects error:', err);
-      return null;
-    }
+    });
   },
 
   /**
@@ -215,58 +282,64 @@ export const gasService = {
   },
 
   /**
-   * ดึงรายการแผนงานสัปดาห์จากชีต Weekly_Plans
+   * ดึงรายการแผนงานสัปดาห์จากชีต Weekly_Plans (Cached 3m)
    */
   async fetchWeeklyPlans(projectId = '', subId = '', company = '') {
     const url = this.getUrl();
     if (!this.isConfigured()) return [];
 
-    try {
-      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_weekly_plans&_t=' + Date.now();
-      if (projectId && projectId !== '-') queryUrl += `&projectId=${encodeURIComponent(projectId)}`;
-      if (subId && subId !== '-') queryUrl += `&subId=${encodeURIComponent(subId)}`;
-      if (company && company !== '-') queryUrl += `&company=${encodeURIComponent(company)}`;
+    const cacheKey = `wplans_${projectId || 'all'}_${subId || 'all'}_${company || 'all'}`;
+    return this._getCachedOrFetch(cacheKey, 3 * 60 * 1000, async () => {
+      try {
+        let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_weekly_plans&_t=' + Date.now();
+        if (projectId && projectId !== '-') queryUrl += `&projectId=${encodeURIComponent(projectId)}`;
+        if (subId && subId !== '-') queryUrl += `&subId=${encodeURIComponent(subId)}`;
+        if (company && company !== '-') queryUrl += `&company=${encodeURIComponent(company)}`;
 
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.plans)) {
-        return data.plans;
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.plans)) {
+          return data.plans;
+        }
+        return [];
+      } catch (err) {
+        console.warn('fetchWeeklyPlans error:', err);
+        return [];
       }
-      return [];
-    } catch (err) {
-      console.warn('fetchWeeklyPlans error:', err);
-      return [];
-    }
+    });
   },
 
   /**
-   * ดึงรายการงานย่อยจากชีต Plan_Daily_Tasks
+   * ดึงรายการงานย่อยจากชีต Plan_Daily_Tasks (Cached 10m)
    */
   async fetchDailyTasks(planId = '', date = '') {
     const url = this.getUrl();
     if (!this.isConfigured()) return [];
 
-    try {
-      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_daily_tasks&_t=' + Date.now();
-      if (planId) queryUrl += `&planId=${encodeURIComponent(planId)}`;
-      if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
+    const cacheKey = `tasks_${planId || 'all'}_${date || 'all'}`;
+    return this._getCachedOrFetch(cacheKey, 10 * 60 * 1000, async () => {
+      try {
+        let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_daily_tasks&_t=' + Date.now();
+        if (planId) queryUrl += `&planId=${encodeURIComponent(planId)}`;
+        if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
 
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.tasks)) {
-        return data.tasks;
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.tasks)) {
+          return data.tasks;
+        }
+        return [];
+      } catch (err) {
+        console.warn('fetchDailyTasks error:', err);
+        return [];
       }
-      return [];
-    } catch (err) {
-      console.warn('fetchDailyTasks error:', err);
-      return [];
-    }
+    });
   },
 
   /**
-   * ดึงรายการงานย่อยที่ PM อนุมัติแล้วสำหรับวันที่กำหนด เพื่อให้โฟร์แมนดึงไปเปิดงานเช้า
+   * ดึงรายการงานย่อยที่ PM อนุมัติแล้วสำหรับวันที่กำหนด เพื่อให้โฟร์แมนดึงไปเปิดงานเช้า (Cached 5m)
    */
   async fetchApprovedTasksForDate(date = '', company = '', projectId = '') {
     const url = this.getUrl();
@@ -280,23 +353,26 @@ export const gasService = {
       finalCompany = '';
     }
 
-    try {
-      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_approved_tasks_for_date&_t=' + Date.now();
-      if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
-      if (finalCompany && finalCompany !== '-' && finalCompany !== 'ผู้รับเหมา') queryUrl += `&company=${encodeURIComponent(finalCompany)}`;
-      if (finalProjectId && finalProjectId !== '-') queryUrl += `&projectId=${encodeURIComponent(finalProjectId)}`;
+    const cacheKey = `approved_tasks_${date}_${finalProjectId || 'all'}_${finalCompany || 'all'}`;
+    return this._getCachedOrFetch(cacheKey, 5 * 60 * 1000, async () => {
+      try {
+        let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_approved_tasks_for_date&_t=' + Date.now();
+        if (date) queryUrl += `&date=${encodeURIComponent(date)}`;
+        if (finalCompany && finalCompany !== '-' && finalCompany !== 'ผู้รับเหมา') queryUrl += `&company=${encodeURIComponent(finalCompany)}`;
+        if (finalProjectId && finalProjectId !== '-') queryUrl += `&projectId=${encodeURIComponent(finalProjectId)}`;
 
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.tasks)) {
-        return data.tasks;
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.tasks)) {
+          return data.tasks;
+        }
+        return [];
+      } catch (err) {
+        console.warn('fetchApprovedTasksForDate error:', err);
+        return [];
       }
-      return [];
-    } catch (err) {
-      console.warn('fetchApprovedTasksForDate error:', err);
-      return [];
-    }
+    });
   },
 
   /**
@@ -321,6 +397,8 @@ export const gasService = {
       });
 
       if (response.ok) {
+        this.clearCache('wplans_');
+        if (planData && planData.plan_id) this.clearCache('tasks_' + planData.plan_id);
         const result = await response.json().catch(() => null);
         return {
           success: true,
@@ -361,6 +439,8 @@ export const gasService = {
       });
 
       if (response.ok) {
+        this.clearCache('logs_' + planId);
+        this.clearCache('wplans_');
         const result = await response.json().catch(() => null);
         return {
           success: true,
@@ -375,53 +455,59 @@ export const gasService = {
   },
 
   /**
-   * ดึงประวัติ Log การอนุมัติและการดำเนินการ (Audit Trail)
+   * ดึงประวัติ Log การอนุมัติและการดำเนินการ (Audit Trail) (Cached 5m)
    */
   async fetchPlanLogs(planId = '') {
     const url = this.getUrl();
     if (!this.isConfigured()) return [];
 
-    try {
-      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_plan_logs&_t=' + Date.now();
-      if (planId) {
-        queryUrl += '&planId=' + encodeURIComponent(planId);
+    const cacheKey = `logs_${planId || 'all'}`;
+    return this._getCachedOrFetch(cacheKey, 5 * 60 * 1000, async () => {
+      try {
+        let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_plan_logs&_t=' + Date.now();
+        if (planId) {
+          queryUrl += '&planId=' + encodeURIComponent(planId);
+        }
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.logs)) {
+          return data.logs;
+        }
+        return [];
+      } catch (err) {
+        console.warn('fetchPlanLogs error:', err);
+        return [];
       }
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.logs)) {
-        return data.logs;
-      }
-      return [];
-    } catch (err) {
-      console.warn('fetchPlanLogs error:', err);
-      return [];
-    }
+    });
   },
 
   /**
-   * ดึงประวัติรายงานประจำวันทั้งหมดจากชีต Daily_Reports สำหรับ PM เรียกดูย้อนหลัง
+   * ดึงประวัติรายงานประจำวันทั้งหมดจากชีต Daily_Reports สำหรับ PM เรียกดูย้อนหลัง (Cached 3m)
    */
   async fetchDailyReports(projectId = '') {
     const url = this.getUrl();
     if (!this.isConfigured()) return [];
 
-    try {
-      let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_reports&_t=' + Date.now();
-      if (projectId && projectId !== '-') {
-        queryUrl += '&projectId=' + encodeURIComponent(projectId);
+    const cacheKey = `reports_${projectId || 'all'}`;
+    return this._getCachedOrFetch(cacheKey, 3 * 60 * 1000, async () => {
+      try {
+        let queryUrl = url + (url.includes('?') ? '&' : '?') + 'action=get_reports&_t=' + Date.now();
+        if (projectId && projectId !== '-') {
+          queryUrl += '&projectId=' + encodeURIComponent(projectId);
+        }
+        const res = await fetch(queryUrl, { method: 'GET' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.reports)) {
+          return data.reports;
+        }
+        return [];
+      } catch (err) {
+        console.warn('fetchDailyReports error:', err);
+        return [];
       }
-      const res = await fetch(queryUrl, { method: 'GET' });
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (data && data.status === 'success' && Array.isArray(data.reports)) {
-        return data.reports;
-      }
-      return [];
-    } catch (err) {
-      console.warn('fetchDailyReports error:', err);
-      return [];
-    }
+    });
   }
 };
 
